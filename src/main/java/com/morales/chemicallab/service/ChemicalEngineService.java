@@ -3,6 +3,9 @@ package com.morales.chemicallab.service;
 import com.morales.chemicallab.dto.AcidRequest;
 import com.morales.chemicallab.dto.CompoundResponse;
 import com.morales.chemicallab.dto.ElementCompoundRequest;
+import com.morales.chemicallab.dto.OxisaltRequest;
+import com.morales.chemicallab.dto.SaltRequest;
+
 import org.springframework.stereotype.Service;
 
 @Service
@@ -158,6 +161,124 @@ public class ChemicalEngineService {
 
         if (request.anionCharge() == null || request.anionCharge() <= 0) {
             throw new IllegalArgumentException("La carga del anión debe ser mayor a cero.");
+        }
+    }
+
+    public CompoundResponse generateSalt(SaltRequest request) {
+        validateSaltRequest(request);
+
+        String formula = buildFormula(
+                request.metalSymbol(),
+                request.metalValence(),
+                false,
+                request.nonMetalSymbol(),
+                request.anionCharge(),
+                false
+        );
+
+        String name = request.anionName() + " de " + request.metalName();
+
+        String explanation = "La sal binaria se forma combinando el metal "
+                + request.metalName()
+                + " con el anión "
+                + request.anionName()
+                + ". El metal trabaja con valencia +"
+                + request.metalValence()
+                + " y el anión con carga -"
+                + request.anionCharge()
+                + ". El sistema cruza las cargas para equilibrar la fórmula.";
+
+        return new CompoundResponse(
+                true,
+                "Sal binaria",
+                formula,
+                name,
+                explanation
+        );
+    }
+
+    public CompoundResponse generateOxisalt(OxisaltRequest request) {
+        validateOxisaltRequest(request);
+
+        String formula = buildFormula(
+                request.metalSymbol(),
+                request.metalValence(),
+                false,
+                request.groupFormula(),
+                request.groupCharge(),
+                true
+        );
+
+        String name = request.groupName() + " de " + request.metalName();
+
+        String explanation = "La oxisal se forma combinando el metal "
+                + request.metalName()
+                + " con el grupo químico "
+                + request.groupName()
+                + " (" + request.groupFormula() + "). El metal trabaja con valencia +"
+                + request.metalValence()
+                + " y el grupo químico con carga -"
+                + request.groupCharge()
+                + ". El sistema cruza las cargas para obtener una fórmula eléctricamente neutra.";
+
+        return new CompoundResponse(
+                true,
+                "Oxisal",
+                formula,
+                name,
+                explanation
+        );
+    }
+
+    private void validateSaltRequest(SaltRequest request) {
+        if (request.metalSymbol() == null || request.metalSymbol().isBlank()) {
+            throw new IllegalArgumentException("El símbolo del metal es obligatorio.");
+        }
+
+        if (request.metalName() == null || request.metalName().isBlank()) {
+            throw new IllegalArgumentException("El nombre del metal es obligatorio.");
+        }
+
+        if (request.metalValence() == null || request.metalValence() <= 0) {
+            throw new IllegalArgumentException("La valencia del metal debe ser mayor a cero.");
+        }
+
+        if (request.nonMetalSymbol() == null || request.nonMetalSymbol().isBlank()) {
+            throw new IllegalArgumentException("La fórmula del no metal es obligatoria.");
+        }
+
+        if (request.anionName() == null || request.anionName().isBlank()) {
+            throw new IllegalArgumentException("El nombre del anión es obligatorio.");
+        }
+
+        if (request.anionCharge() == null || request.anionCharge() <= 0) {
+            throw new IllegalArgumentException("La carga del anión debe ser mayor a cero.");
+        }
+    }
+
+    private void validateOxisaltRequest(OxisaltRequest request) {
+        if (request.metalSymbol() == null || request.metalSymbol().isBlank()) {
+            throw new IllegalArgumentException("El símbolo del metal es obligatorio.");
+        }
+
+        if (request.metalName() == null || request.metalName().isBlank()) {
+            throw new IllegalArgumentException("El nombre del metal es obligatorio.");
+        }
+
+        if (request.metalValence() == null || request.metalValence() <= 0) {
+            throw new IllegalArgumentException("La valencia del metal debe ser mayor a cero.");
+        }
+
+        if (request.groupFormula() == null || request.groupFormula().isBlank()) {
+            throw new IllegalArgumentException("La fórmula del grupo químico es obligatoria.");
+        }
+
+        if (request.groupName() == null || request.groupName().isBlank()) {
+            throw new IllegalArgumentException("El nombre del grupo químico es obligatorio.");
+        }
+
+        if (request.groupCharge() == null || request.groupCharge() <= 0) {
+            throw new IllegalArgumentException("La carga del grupo químico debe ser mayor a cero.");
         }
     }
 }

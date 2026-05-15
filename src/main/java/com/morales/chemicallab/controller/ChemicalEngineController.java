@@ -4,6 +4,8 @@ import com.morales.chemicallab.dto.AcidRequest;
 import com.morales.chemicallab.dto.CompoundResponse;
 import com.morales.chemicallab.dto.ElementCompoundRequest;
 import com.morales.chemicallab.service.ChemicalEngineService;
+import com.morales.chemicallab.dto.SaltRequest;
+import com.morales.chemicallab.dto.OxisaltRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
@@ -30,5 +32,15 @@ public class ChemicalEngineController {
     @PostMapping("/acids")
     public CompoundResponse generateAcid(@Valid @RequestBody AcidRequest request) {
         return chemicalEngineService.generateAcid(request);
+    }
+
+    @PostMapping("/salts")
+    public CompoundResponse generateSalt(@Valid @RequestBody SaltRequest request) {
+        return chemicalEngineService.generateSalt(request);
+    }
+
+    @PostMapping("/oxisalts")
+    public CompoundResponse generateOxisalt(@Valid @RequestBody OxisaltRequest request) {
+        return chemicalEngineService.generateOxisalt(request);
     }
 }
