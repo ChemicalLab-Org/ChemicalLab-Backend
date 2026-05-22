@@ -17,7 +17,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/health").permitAll()
                         .requestMatchers("/api/chemistry/**").permitAll()
-                        // TODO: restringir con roles cuando se implemente JWT
+                        .requestMatchers("/api/auth/**").permitAll()
+                        // TODO: restringir con roles cuando se implemente JWT (Sesion 7)
                         .requestMatchers("/api/users/**").permitAll()
                         .anyRequest().authenticated()
                 )
