@@ -8,7 +8,9 @@
       "Bash(del \"C:\\\\Users\\\\carlo\\\\OneDrive\\\\Escritorio\\\\Taller\\\\ChemicalLab-Backend\\\\src\\\\main\\\\java\\\\com\\\\morales\\\\chemicallab\\\\repository\\\\.gitkeep\")",
       "Bash(./mvnw compile *)",
       "Bash(Get-ChildItem -Recurse -Path \"src\\\\main\\\\java\" -Directory)",
-      "Bash(mvn compile *)"
+      "Bash(mvn compile *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\carlo\\\\OneDrive\\\\Escritorio\\\\Taller\\\\ChemicalLab-Backend\" -Force)",
+      "Bash(Select-Object Name, PSIsContainer)"
     ]
   }
 }
