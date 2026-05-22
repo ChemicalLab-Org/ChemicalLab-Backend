@@ -5,7 +5,8 @@
       "Bash(Select-Object -ExpandProperty FullName)",
       "Bash(Sort-Object)",
       "Bash(del \"C:\\\\Users\\\\carlo\\\\OneDrive\\\\Escritorio\\\\Taller\\\\ChemicalLab-Backend\\\\src\\\\main\\\\java\\\\com\\\\morales\\\\chemicallab\\\\entity\\\\.gitkeep\")",
-      "Bash(del \"C:\\\\Users\\\\carlo\\\\OneDrive\\\\Escritorio\\\\Taller\\\\ChemicalLab-Backend\\\\src\\\\main\\\\java\\\\com\\\\morales\\\\chemicallab\\\\repository\\\\.gitkeep\")"
+      "Bash(del \"C:\\\\Users\\\\carlo\\\\OneDrive\\\\Escritorio\\\\Taller\\\\ChemicalLab-Backend\\\\src\\\\main\\\\java\\\\com\\\\morales\\\\chemicallab\\\\repository\\\\.gitkeep\")",
+      "Bash(./mvnw compile *)"
     ]
   }
 }
