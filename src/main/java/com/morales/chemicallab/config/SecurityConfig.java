@@ -44,6 +44,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
 
+                        // Cambio de contraseña temporal — requiere autenticación JWT
+                        .requestMatchers(HttpMethod.PATCH, "/api/auth/change-temporary-password").authenticated()
+
                         // Documentación Swagger / OpenAPI — útil en desarrollo
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
 
