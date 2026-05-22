@@ -18,7 +18,10 @@
       "PowerShell([Convert]::ToBase64String\\([System.Text.Encoding]::UTF8.GetBytes\\(\"chemicallab-backend-jwt-dev-only-secret-rotate-in-production-2026-min-32-bytes\"\\)\\))",
       "PowerShell(.\\\\mvnw.cmd -q -DskipTests compile 2>&1 | Select-Object -Last 30)",
       "PowerShell(.\\\\mvnw.cmd -DskipTests compile 2>&1 | Select-Object -Last 20)",
-      "PowerShell(.\\\\mvnw.cmd clean compile -DskipTests 2>&1 | Select-Object -Last 15)"
+      "PowerShell(.\\\\mvnw.cmd clean compile -DskipTests 2>&1 | Select-Object -Last 15)",
+      "Bash(./mvnw.cmd -DskipTests compile)",
+      "Bash(./mvnw.cmd -DskipTests clean compile)",
+      "Bash(./mvnw.cmd -DskipTests \"-Dspring-boot.run.arguments=--app.hash-password=admin123 --app.reset-user=admin\" spring-boot:run)"
     ]
   }
 }
