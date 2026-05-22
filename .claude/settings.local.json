@@ -21,7 +21,8 @@
       "PowerShell(.\\\\mvnw.cmd clean compile -DskipTests 2>&1 | Select-Object -Last 15)",
       "Bash(./mvnw.cmd -DskipTests compile)",
       "Bash(./mvnw.cmd -DskipTests clean compile)",
-      "Bash(./mvnw.cmd -DskipTests \"-Dspring-boot.run.arguments=--app.hash-password=admin123 --app.reset-user=admin\" spring-boot:run)"
+      "Bash(./mvnw.cmd -DskipTests \"-Dspring-boot.run.arguments=--app.hash-password=admin123 --app.reset-user=admin\" spring-boot:run)",
+      "Bash(Select-Object FullName)"
     ]
   }
 }

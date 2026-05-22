@@ -1,13 +1,19 @@
 package com.morales.chemicallab.service;
 
 import com.morales.chemicallab.dto.AuthResponse;
+import com.morales.chemicallab.dto.ChangePasswordRequest;
 import com.morales.chemicallab.dto.LoginRequest;
+import com.morales.chemicallab.dto.PasswordChangeResponse;
 import com.morales.chemicallab.entity.UserAccount;
 import com.morales.chemicallab.repository.UserAccountRepository;
 import com.morales.chemicallab.security.JwtService;
+import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +30,42 @@ public class AuthService {
     private final UserAccountRepository userAccountRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+
+    @Transactional
+    public PasswordChangeResponse changeTemporaryPassword(ChangePasswordRequest request) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()
+                || authentication instanceof AnonymousAuthenticationToken) {
+            throw new BadCredentialsException("Usuario no autenticado.");
+        }
+
+        String username = authentication.getName();
+
+        UserAccount user = userAccountRepository.findByUsername(username)
+                .orElseThrow(() -> new EntityNotFoundException("Usuario no encontrado."));
+
+        if (Boolean.FALSE.equals(user.getActive())) {
+            throw new DisabledException("La cuenta se encuentra inactiva.");
+        }
+
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPassword())) {
+            throw new BadCredentialsException("La contraseña actual es incorrecta.");
+        }
+
+        if (!request.newPassword().equals(request.confirmPassword())) {
+            throw new IllegalArgumentException("La nueva contraseña y su confirmación no coinciden.");
+        }
+
+        if (passwordEncoder.matches(request.newPassword(), user.getPassword())) {
+            throw new IllegalArgumentException("La nueva contraseña debe ser diferente a la contraseña actual.");
+        }
+
+        user.setPassword(passwordEncoder.encode(request.newPassword()));
+        user.setTemporaryPassword(false);
+        userAccountRepository.save(user);
+
+        return new PasswordChangeResponse("La contraseña fue actualizada correctamente.", false);
+    }
 
     public AuthResponse login(LoginRequest request) {
         String identifier = request.usernameOrEmail().trim();
