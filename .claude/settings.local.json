@@ -10,7 +10,15 @@
       "Bash(Get-ChildItem -Recurse -Path \"src\\\\main\\\\java\" -Directory)",
       "Bash(mvn compile *)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\carlo\\\\OneDrive\\\\Escritorio\\\\Taller\\\\ChemicalLab-Backend\" -Force)",
-      "Bash(Select-Object Name, PSIsContainer)"
+      "Bash(Select-Object Name, PSIsContainer)",
+      "Bash(./mvnw.cmd -q -DskipTests compile)",
+      "PowerShell(.\\\\mvnw.cmd -q -DskipTests compile)",
+      "PowerShell(.\\\\mvnw.cmd -DskipTests compile 2>&1 | Select-Object -Last 80)",
+      "PowerShell(.\\\\mvnw.cmd clean compile -DskipTests 2>&1 | Select-Object -Last 50)",
+      "PowerShell([Convert]::ToBase64String\\([System.Text.Encoding]::UTF8.GetBytes\\(\"chemicallab-backend-jwt-dev-only-secret-rotate-in-production-2026-min-32-bytes\"\\)\\))",
+      "PowerShell(.\\\\mvnw.cmd -q -DskipTests compile 2>&1 | Select-Object -Last 30)",
+      "PowerShell(.\\\\mvnw.cmd -DskipTests compile 2>&1 | Select-Object -Last 20)",
+      "PowerShell(.\\\\mvnw.cmd clean compile -DskipTests 2>&1 | Select-Object -Last 15)"
     ]
   }
 }
