@@ -37,6 +37,13 @@ public class UserManagementController {
         return userManagementService.deactivateTeacher(teacherUserId);
     }
 
+    @PatchMapping("/teachers/{teacherUserId}/reset-password")
+    public PasswordChangeResponse restablecerContrasenaDocente(
+            @PathVariable Long teacherUserId,
+            @Valid @RequestBody ResetPasswordRequest request) {
+        return userManagementService.resetTeacherPassword(teacherUserId, request);
+    }
+
     // =========================================================================
     // ESTUDIANTES
     // =========================================================================
@@ -67,6 +74,14 @@ public class UserManagementController {
             @PathVariable Long teacherUserId,
             @PathVariable Long studentId) {
         return userManagementService.deactivateStudent(teacherUserId, studentId);
+    }
+
+    @PatchMapping("/teachers/{teacherUserId}/students/{studentId}/reset-password")
+    public PasswordChangeResponse restablecerContrasenaEstudiante(
+            @PathVariable Long teacherUserId,
+            @PathVariable Long studentId,
+            @Valid @RequestBody ResetPasswordRequest request) {
+        return userManagementService.resetStudentPassword(teacherUserId, studentId, request);
     }
 
     // =========================================================================
