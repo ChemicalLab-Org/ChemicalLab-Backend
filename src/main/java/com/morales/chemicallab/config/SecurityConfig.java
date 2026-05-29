@@ -56,10 +56,15 @@ public class SecurityConfig {
                         // Documentación Swagger / OpenAPI — útil en desarrollo
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
 
+                        // Restablecimiento de contraseña de estudiante — solo DOCENTE
+                        // (debe ir antes que la regla de docente para no quedar sombreado)
+                        .requestMatchers(HttpMethod.PATCH, "/api/users/teachers/*/students/*/reset-password").hasRole(DOCENTE)
+
                         // Gestión de docentes — solo ADMINISTRADOR
                         .requestMatchers(HttpMethod.POST, "/api/users/teachers").hasRole(ADMIN)
                         .requestMatchers(HttpMethod.GET, "/api/users/teachers").hasRole(ADMIN)
                         .requestMatchers(HttpMethod.PATCH, "/api/users/teachers/*/deactivate").hasRole(ADMIN)
+                        .requestMatchers(HttpMethod.PATCH, "/api/users/teachers/*/reset-password").hasRole(ADMIN)
 
                         // Gestión de estudiantes — solo DOCENTE
                         .requestMatchers(HttpMethod.POST, "/api/users/teachers/*/students").hasRole(DOCENTE)

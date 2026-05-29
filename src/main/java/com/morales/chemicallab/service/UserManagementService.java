@@ -4,6 +4,8 @@ import com.morales.chemicallab.dto.*;
 import com.morales.chemicallab.entity.*;
 import com.morales.chemicallab.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -79,6 +81,28 @@ public class UserManagementService {
                 .orElseThrow(() -> new IllegalArgumentException("Docente no encontrado."));
 
         return toTeacherResponse(teacher);
+    }
+
+    /**
+     * Restablece la contraseña temporal de un docente. La realiza el administrador:
+     * la nueva contraseña se cifra con BCrypt y el docente queda obligado a cambiarla
+     * en su próximo ingreso (temporaryPassword = true).
+     */
+    public PasswordChangeResponse resetTeacherPassword(Long teacherUserId, ResetPasswordRequest request) {
+        validatePasswordsMatch(request);
+
+        UserAccount user = userAccountRepository.findById(teacherUserId)
+                .orElseThrow(() -> new IllegalArgumentException("Docente no encontrado."));
+
+        if (user.getRole() != Role.DOCENTE) {
+            throw new IllegalArgumentException("El usuario indicado no pertenece al rol docente.");
+        }
+
+        user.setPassword(passwordEncoder.encode(request.newTemporaryPassword()));
+        user.setTemporaryPassword(true);
+        userAccountRepository.save(user);
+
+        return new PasswordChangeResponse("Contraseña restablecida correctamente", true);
     }
 
     // =========================================================================
@@ -181,6 +205,30 @@ public class UserManagementService {
         return toStudentResponse(student);
     }
 
+    /**
+     * Restablece la contraseña temporal de un estudiante. La realiza el docente
+     * dueño del estudiante: la nueva contraseña se cifra con BCrypt y el estudiante
+     * queda obligado a cambiarla en su próximo ingreso (temporaryPassword = true).
+     */
+    public PasswordChangeResponse resetStudentPassword(Long teacherUserId, Long studentId, ResetPasswordRequest request) {
+        validatePasswordsMatch(request);
+        validateAuthenticatedTeacher(teacherUserId);
+
+        TeacherProfile teacher = findTeacherProfileByUserId(teacherUserId);
+
+        StudentProfile student = studentProfileRepository.findById(studentId)
+                .orElseThrow(() -> new IllegalArgumentException("Estudiante no encontrado."));
+
+        validateStudentBelongsToTeacher(student, teacher);
+
+        UserAccount account = student.getUser();
+        account.setPassword(passwordEncoder.encode(request.newTemporaryPassword()));
+        account.setTemporaryPassword(true);
+        userAccountRepository.save(account);
+
+        return new PasswordChangeResponse("Contraseña restablecida correctamente", true);
+    }
+
     // =========================================================================
     // USUARIOS (general)
     // =========================================================================
@@ -260,6 +308,30 @@ public class UserManagementService {
     private void validateStudentBelongsToTeacher(StudentProfile student, TeacherProfile teacher) {
         if (!student.getTeacher().getId().equals(teacher.getId())) {
             throw new IllegalArgumentException("El estudiante no pertenece al docente indicado.");
+        }
+    }
+
+    private void validatePasswordsMatch(ResetPasswordRequest request) {
+        if (!request.newTemporaryPassword().equals(request.confirmTemporaryPassword())) {
+            throw new IllegalArgumentException("La nueva contraseña y su confirmación no coinciden.");
+        }
+    }
+
+    /**
+     * Verifica que el docente autenticado sea el mismo indicado en la ruta, de modo
+     * que un docente no pueda restablecer contraseñas de estudiantes de otro docente.
+     */
+    private void validateAuthenticatedTeacher(Long teacherUserId) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || authentication.getName() == null) {
+            throw new IllegalArgumentException("No fue posible identificar al docente autenticado.");
+        }
+
+        UserAccount authenticatedUser = userAccountRepository.findByUsername(authentication.getName())
+                .orElseThrow(() -> new IllegalArgumentException("No fue posible identificar al docente autenticado."));
+
+        if (!authenticatedUser.getId().equals(teacherUserId)) {
+            throw new IllegalArgumentException("No puede restablecer contraseñas de estudiantes de otro docente.");
         }
     }
 
