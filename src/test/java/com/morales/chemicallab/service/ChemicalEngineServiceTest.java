@@ -22,7 +22,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class ChemicalEngineServiceTest {
 
-    private final ChemicalEngineService service = new ChemicalEngineService(new ChemistryCatalogService());
+    private final ChemistryCatalogService catalog = new ChemistryCatalogService();
+    private final ChemicalEngineService service =
+            new ChemicalEngineService(catalog, new ChemicalNomenclatureService(catalog));
 
     private ElementCompoundRequest element(String symbol, String name, int valence) {
         return new ElementCompoundRequest(symbol, name, valence);
