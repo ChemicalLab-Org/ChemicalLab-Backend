@@ -1,14 +1,17 @@
 package com.morales.chemicallab.controller;
 
+import com.morales.chemicallab.dto.AcidNonMetalResponse;
 import com.morales.chemicallab.dto.AcidRequest;
 import com.morales.chemicallab.dto.BinaryAnionResponse;
+import com.morales.chemicallab.dto.CentralElementResponse;
 import com.morales.chemicallab.dto.CompoundResponse;
 import com.morales.chemicallab.dto.ElementCompoundRequest;
+import com.morales.chemicallab.dto.MetalResponse;
+import com.morales.chemicallab.dto.OxisaltRequest;
 import com.morales.chemicallab.dto.OxoanionResponse;
+import com.morales.chemicallab.dto.SaltRequest;
 import com.morales.chemicallab.service.ChemicalEngineService;
 import com.morales.chemicallab.service.ChemistryCatalogService;
-import com.morales.chemicallab.dto.SaltRequest;
-import com.morales.chemicallab.dto.OxisaltRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
@@ -28,6 +31,8 @@ public class ChemicalEngineController {
         this.chemicalEngineService = chemicalEngineService;
         this.chemistryCatalogService = chemistryCatalogService;
     }
+
+    // ===== Formación de compuestos =====
 
     @PostMapping("/oxides")
     public CompoundResponse generateOxide(@Valid @RequestBody ElementCompoundRequest request) {
@@ -54,15 +59,41 @@ public class ChemicalEngineController {
         return chemicalEngineService.generateOxisalt(request);
     }
 
+    // ===== Catálogos (fuente de verdad para el frontend) =====
+
+    /** Catálogo de metales con sus valencias permitidas. */
+    @GetMapping("/catalog/metals")
+    public List<MetalResponse> metals() {
+        return chemistryCatalogService.metals();
+    }
+
     /** Catálogo de aniones monoatómicos válidos para sales binarias. */
-    @GetMapping("/catalog/binary-anions")
-    public List<BinaryAnionResponse> binaryAnions() {
+    @GetMapping("/catalog/binary-nonmetals")
+    public List<BinaryAnionResponse> binaryNonMetals() {
         return chemistryCatalogService.binaryAnions();
     }
 
-    /** Catálogo de oxoaniones (grupos oxácidos) válidos para oxisales. */
+    /** Catálogo de no metales que forman ácido hidrácido. */
+    @GetMapping("/catalog/acid-nonmetals")
+    public List<AcidNonMetalResponse> acidNonMetals() {
+        return chemistryCatalogService.acidNonMetals();
+    }
+
+    /** Catálogo de elementos centrales presentes en los oxoaniones. */
+    @GetMapping("/catalog/oxoanion-central-elements")
+    public List<CentralElementResponse> oxoanionCentralElements() {
+        return chemistryCatalogService.oxoanionCentralElements();
+    }
+
+    /**
+     * Catálogo de oxoaniones (grupos oxácidos). Si se indica {@code centralElement}
+     * se filtran los del elemento central correspondiente.
+     */
     @GetMapping("/catalog/oxoanions")
-    public List<OxoanionResponse> oxoanions() {
-        return chemistryCatalogService.oxoanions();
+    public List<OxoanionResponse> oxoanions(@RequestParam(required = false) String centralElement) {
+        if (centralElement == null || centralElement.isBlank()) {
+            return chemistryCatalogService.oxoanions();
+        }
+        return chemistryCatalogService.oxoanions(centralElement);
     }
 }
