@@ -18,6 +18,12 @@ entorno (ver tabla en `DEPLOY.md`).
   (contraseñas configurables vía `ADMIN_INITIAL_PASSWORD`, `TEACHER_INITIAL_PASSWORD`,
   `STUDENT_INITIAL_PASSWORD`).
 
+## Motor químico
+
+Formación de compuestos (óxidos, hidróxidos, ácidos, sales binarias y oxisales) y sus
+endpoints de catálogo, con ejemplos de petición, en
+[`docs/MOTOR_QUIMICO.md`](./docs/MOTOR_QUIMICO.md).
+
 ## Despliegue
 
 Pasos completos para desplegar en Render (backend + PostgreSQL) y Vercel (frontend) en
