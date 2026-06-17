@@ -325,9 +325,12 @@ public class ChemicalNomenclatureService {
                 ? anionWithOxidation
                 : multiplicative(groupSub) + "(" + anionWithOxidation + ")";
 
+        // El número de oxidación del metal solo se añade cuando el grupo no lleva
+        // prefijo multiplicador (groupSub == 1); con «bis», «tris»… la estequiometría
+        // ya determina el estado de oxidación y el romano sería redundante.
         boolean multivalent = metal.valences().size() > 1;
         String metalPart = (metalSub > 1 ? PREFIXES[clampPrefix(metalSub)] : "") + metal.name();
-        if (multivalent) {
+        if (multivalent && groupSub == 1) {
             metalPart = metalPart + " (" + roman(valence) + ")";
         }
         String systematic = groupPart + " de " + metalPart;

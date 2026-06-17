@@ -292,4 +292,11 @@ class ChemicalNomenclatureServiceTest {
         assertNames(salt("Sn", 4, "N"),
                 "nitruro estáñico", "nitruro de estaño (IV)", "tetranitruro de triestaño");
     }
+
+    @Test
+    void caso38_sulfatoEstanico() {
+        // Con grupo multiplicado (bis-) la sistemática no repite el romano del metal.
+        assertNames(oxisalt("Sn", 4, "sulfato"),
+                "sulfato estáñico", "sulfato de estaño (IV)", "bis(tetraoxosulfato (VI)) de estaño");
+    }
 }
