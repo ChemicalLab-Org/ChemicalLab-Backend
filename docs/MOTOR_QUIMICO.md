@@ -118,6 +118,54 @@ POST /api/chemistry/oxides
 - Se rechazan gases nobles, oxígeno e hidrógeno como anión de sal binaria, y las
   valencias no registradas para cada metal.
 
+## Auditoría de catálogos y alcance (validación integral)
+
+El núcleo químico se validó de forma integral en la Sesión 19.2. Esta es la
+referencia de lo **soportado** y lo **excluido**, a nivel escolar/MVP (no cubre
+toda la química avanzada).
+
+### Catálogos soportados
+
+- **Metales (24)** con sus valencias: Li⁺¹, Na⁺¹, K⁺¹, Rb⁺¹, Cs⁺¹, Be⁺², Mg⁺²,
+  Ca⁺², Sr⁺², Ba⁺², Al⁺³, Zn⁺², Ag⁺¹, Fe⁺²ʼ⁺³, Cu⁺¹ʼ⁺², Hg⁺¹ʼ⁺², Sn⁺²ʼ⁺⁴,
+  Pb⁺²ʼ⁺⁴, Ni⁺²ʼ⁺³, Co⁺²ʼ⁺³, Cr⁺²ʼ⁺³ʼ⁺⁶, Mn⁺²ʼ⁺⁴ʼ⁺⁷, Au⁺¹ʼ⁺³, Pt⁺²ʼ⁺⁴.
+- **Aniones de sal binaria (10):** fluoruro F⁻¹, cloruro Cl⁻¹, bromuro Br⁻¹,
+  yoduro I⁻¹, sulfuro S⁻², seleniuro Se⁻², telururo Te⁻², nitruro N⁻³,
+  fosfuro P⁻³, carburo C⁻⁴.
+- **No metales de hidrácido (7):** F, Cl, Br, I (−1) y S, Se, Te (−2).
+- **Oxoaniones (16):** sulfato (SO₄⁻²), sulfito (SO₃⁻²), nitrato (NO₃⁻¹),
+  nitrito (NO₂⁻¹), carbonato (CO₃⁻²), fosfato (PO₄⁻³), fosfito (PO₃⁻³),
+  hipoclorito (ClO⁻¹), clorito (ClO₂⁻¹), clorato (ClO₃⁻¹), perclorato (ClO₄⁻¹),
+  bromato (BrO₃⁻¹), yodato (IO₃⁻¹), permanganato (MnO₄⁻¹), cromato (CrO₄⁻²),
+  dicromato (Cr₂O₇⁻²).
+
+### Elementos excluidos y razón
+
+- **Gases nobles** (He, Ne, Ar, Kr, Xe, Rn): no forman compuestos en el alcance.
+- **Oxígeno como anión de sal binaria:** con un metal forma un óxido, no una sal.
+- **Hidrógeno como anión de sal binaria:** fuera del alcance escolar.
+- **N, P, C como hidrácidos:** se mantienen como aniones binarios (nitruro,
+  fosfuro, carburo) pero no como hidrácidos, según el criterio escolar.
+
+### Reglas de validación verificadas
+
+El motor lanza `IllegalArgumentException` (HTTP 400) ante: gas noble, oxígeno o
+hidrógeno como anión de sal binaria, valencia no permitida para un metal, no
+metal que no forma hidrácido, oxoanión inexistente y elemento fuera del catálogo.
+La fórmula cruza cargas, simplifica por MCD, omite el subíndice 1 y usa
+paréntesis solo en grupos poliatómicos con subíndice mayor a 1.
+
+### Matriz de fórmulas validadas (tests)
+
+| Tipo       | Casos cubiertos en `ChemicalEngineServiceTest`                          |
+| ---------- | ----------------------------------------------------------------------- |
+| Óxidos     | Na₂O, CaO, Al₂O₃, FeO, Fe₂O₃, P₂O₃, P₂O₅, SO₂, SO₃                       |
+| Hidróxidos | NaOH, Ca(OH)₂, Al(OH)₃, Fe(OH)₂, Fe(OH)₃, Sn(OH)₂, Sn(OH)₄              |
+| Hidrácidos | HF, HCl, HBr, HI, H₂S, H₂Se, H₂Te                                       |
+| Oxácidos   | H₂SO₄, H₂SO₃, HNO₃, HNO₂, H₂CO₃, H₃PO₄, H₃PO₃, HClO₃, HClO, HClO₄       |
+| Sales      | NaCl, CaCl₂, Al₂S₃, FeCl₂, FeCl₃, CuBr, CuBr₂, SnCl₂, SnCl₄, Sn₃N₄, ZnS |
+| Oxisales   | Na₂SO₄, CaSO₄, Al₂(SO₄)₃, NaNO₃, Ca(NO₃)₂, FePO₄, Mg₃(PO₄)₂, K₂CO₃, CaCO₃, CuSO₄, Sn(SO₄)₂ |
+
 ## Nomenclaturas
 
 Desde la Sesión 19 cada respuesta incluye un objeto `nomenclature` con tres
@@ -232,6 +280,14 @@ Estos casos están cubiertos por `ChemicalNomenclatureServiceTest` (uno por fila
 | Ca(NO₃)₂     | nitrato cálcico        | nitrato de calcio              | bis(trioxonitrato (V)) de calcio         |
 | FePO₄        | fosfato férrico        | fosfato de hierro (III)        | tetraoxofosfato (V) de hierro (III)      |
 | Mg₃(PO₄)₂    | fosfato magnésico      | fosfato de magnesio            | bis(tetraoxofosfato (V)) de trimagnesio  |
+| SnO          | óxido estañoso         | óxido de estaño (II)           | monóxido de estaño                       |
+| SnO₂         | óxido estáñico         | óxido de estaño (IV)           | dióxido de estaño                        |
+| Sn(OH)₂      | hidróxido estañoso     | hidróxido de estaño (II)       | dihidróxido de estaño                    |
+| Sn(OH)₄      | hidróxido estáñico     | hidróxido de estaño (IV)       | tetrahidróxido de estaño                 |
+| SnCl₂        | cloruro estañoso       | cloruro de estaño (II)         | dicloruro de estaño                      |
+| SnCl₄        | cloruro estáñico       | cloruro de estaño (IV)         | tetracloruro de estaño                   |
+| Sn₃N₄        | nitruro estáñico       | nitruro de estaño (IV)         | tetranitruro de triestaño                |
+| Sn(SO₄)₂     | sulfato estáñico       | sulfato de estaño (IV)         | bis(tetraoxosulfato (VI)) de estaño      |
 
 ### Casos con forma simplificada y documentada
 
@@ -245,6 +301,11 @@ Estos casos están cubiertos por `ChemicalNomenclatureServiceTest` (uno por fila
   el grupo repetido se usan los prefijos multiplicativos `bis(…)`, `tris(…)`,
   conservando el estado de oxidación dentro del paréntesis
   (`bis(trioxonitrato (V)) de calcio`).
+- **Oxisal — número de oxidación del metal en sistemática:** se añade el romano al
+  metal solo cuando el grupo **no** lleva prefijo multiplicador (subíndice del
+  grupo = 1), porque en ese caso la estequiometría no lo evidencia
+  (`tetraoxofosfato (V) de hierro (III)`). Con grupo multiplicado el romano sería
+  redundante y se omite (`bis(tetraoxosulfato (VI)) de estaño`).
 - **Variante aceptada — adjetivo vs. «de elemento»:** en tradicional se elige
   siempre el **adjetivo clásico** cuando existe (`sulfato sódico`, no «sulfato de
   sodio»). La forma «de elemento» queda reservada para Stock y como fallback
