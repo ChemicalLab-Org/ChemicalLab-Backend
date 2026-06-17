@@ -128,15 +128,38 @@ ejemplo, para saber si un metal tiene más de una valencia).
 
 ### Criterios generales
 
-- **Tradicional:** para metales con **una sola valencia** se usa la forma
-  «base de elemento» (p. ej. `óxido de sodio`). Para metales con **más de una
-  valencia** se usan las raíces -oso/-ico (p. ej. `óxido ferroso` / `óxido
-  férrico`). Criterio adoptado y consistente en todo el motor.
-- **Stock:** se añade el número de oxidación en romanos **solo** cuando el metal
-  tiene más de una valencia (`óxido de hierro (II)`); con valencia única coincide
-  con la forma «de elemento».
+- **Tradicional:** para hidróxidos, sales y oxisales con metales de **una sola
+  valencia** se usa la forma «base de elemento» (p. ej. `cloruro de sodio`); con
+  **varias valencias** se usan las raíces -oso/-ico (`cloruro ferroso` / `cloruro
+  férrico`). Los **óxidos** tienen reglas propias (ver más abajo).
+- **Stock:** se añade el número de oxidación en romanos **solo** cuando el
+  elemento tiene más de una valencia (`óxido de hierro (II)`); con valencia única
+  coincide con la forma «de elemento». Los no metales (anhídridos) siempre llevan
+  romano.
 - **Sistemática:** prefijos multiplicadores `mono-, di-, tri-, tetra-…` sobre los
   subíndices reales de la fórmula (`trióxido de dihierro`).
+
+### Óxidos: metálicos vs. anhídridos
+
+El número de oxidación del elemento se toma de la valencia con la que se combina
+(el oxígeno trabaja con -2). La nomenclatura tradicional distingue:
+
+- **Óxidos metálicos** (el elemento está en el catálogo de metales):
+  - Valencia única → adjetivo del metal: `óxido cálcico`, `óxido sódico`,
+    `óxido alumínico`.
+  - Varias valencias → raíz -oso/-ico: `óxido ferroso` (Fe +2), `óxido férrico`
+    (Fe +3), `óxido cuproso` (Cu +1), `óxido cúprico` (Cu +2).
+  - Stock: sin romano para valencia única (`óxido de calcio`); con romano para
+    varias valencias (`óxido de hierro (II)`).
+- **Óxidos no metálicos / anhídridos** (el elemento es no metal):
+  - Tradicional como anhídrido: `anhídrido sulfuroso` (S +4), `anhídrido
+    sulfúrico` (S +6), `anhídrido fosforoso` (P +3), `anhídrido fosfórico` (P +5),
+    `anhídrido perclórico` (Cl +7)…
+  - Stock siempre con romano: `óxido de fósforo (III)`, `óxido de azufre (IV)`.
+  - Sistemática igual que los metálicos, por proporción de átomos: `trióxido de
+    difósforo`, `dióxido de azufre`.
+  - Si la valencia no está en el catálogo de anhídridos se usa el fallback
+    `anhídrido de <elemento>` y se documenta en `notes`.
 
 ### Utilidades implementadas
 
@@ -146,6 +169,10 @@ ejemplo, para saber si un metal tiene más de una valencia).
 - Prefijos multiplicativos para grupos repetidos: 2→bis, 3→tris, 4→tetrakis.
 - Raíces tradicionales -oso/-ico de los metales con varias valencias (hierro,
   cobre, estaño, plomo, mercurio, oro, cobalto, níquel, cromo, manganeso, platino).
+- Adjetivos tradicionales de óxidos metálicos de valencia única (sódico, cálcico,
+  alumínico, magnésico…).
+- Nombres de anhídridos por no metal y valencia (carbono, azufre, nitrógeno,
+  fósforo, cloro, bromo, yodo, selenio, telurio).
 
 ### Alcance por tipo de compuesto
 

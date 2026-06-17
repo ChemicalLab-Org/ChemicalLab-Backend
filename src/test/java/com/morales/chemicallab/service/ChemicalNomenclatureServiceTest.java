@@ -55,7 +55,32 @@ class ChemicalNomenclatureServiceTest {
         assertThat(n.notes()).isNotNull();
     }
 
-    // ===== Óxidos =====
+    // ===== Óxidos metálicos =====
+
+    @Test
+    void nombraOxidoDeCalcio() {
+        NomenclatureResponse n = oxide("Ca", "calcio", 2);
+        assertThat(n.traditional()).isEqualTo("óxido cálcico");
+        assertThat(n.stock()).isEqualTo("óxido de calcio");
+        assertThat(n.systematic()).isEqualTo("monóxido de calcio");
+        assertNoBlanks(n);
+    }
+
+    @Test
+    void nombraOxidoDeSodio() {
+        NomenclatureResponse n = oxide("Na", "sodio", 1);
+        assertThat(n.traditional()).isEqualTo("óxido sódico");
+        assertThat(n.stock()).isEqualTo("óxido de sodio");
+        assertThat(n.systematic()).isEqualTo("monóxido de disodio");
+    }
+
+    @Test
+    void nombraOxidoDeAluminio() {
+        NomenclatureResponse n = oxide("Al", "aluminio", 3);
+        assertThat(n.traditional()).isEqualTo("óxido alumínico");
+        assertThat(n.stock()).isEqualTo("óxido de aluminio");
+        assertThat(n.systematic()).isEqualTo("trióxido de dialuminio");
+    }
 
     @Test
     void nombraOxidoDeHierroII() {
@@ -74,19 +99,39 @@ class ChemicalNomenclatureServiceTest {
         assertThat(n.systematic()).isEqualTo("trióxido de dihierro");
     }
 
+    // ===== Óxidos no metálicos (anhídridos) =====
+
     @Test
-    void nombraOxidoDeSodio() {
-        NomenclatureResponse n = oxide("Na", "sodio", 1);
-        assertThat(n.traditional()).isEqualTo("óxido de sodio");
-        assertThat(n.stock()).isEqualTo("óxido de sodio");
-        assertThat(n.systematic()).isEqualTo("monóxido de disodio");
+    void nombraAnhidridoFosforoso() {
+        NomenclatureResponse n = oxide("P", "fósforo", 3);
+        assertThat(n.traditional()).isEqualTo("anhídrido fosforoso");
+        assertThat(n.stock()).isEqualTo("óxido de fósforo (III)");
+        assertThat(n.systematic()).isEqualTo("trióxido de difósforo");
+        assertNoBlanks(n);
     }
 
     @Test
-    void nombraOxidoDeAluminio() {
-        NomenclatureResponse n = oxide("Al", "aluminio", 3);
-        assertThat(n.stock()).isEqualTo("óxido de aluminio");
-        assertThat(n.systematic()).isEqualTo("trióxido de dialuminio");
+    void nombraAnhidridoFosforico() {
+        NomenclatureResponse n = oxide("P", "fósforo", 5);
+        assertThat(n.traditional()).isEqualTo("anhídrido fosfórico");
+        assertThat(n.stock()).isEqualTo("óxido de fósforo (V)");
+        assertThat(n.systematic()).isEqualTo("pentóxido de difósforo");
+    }
+
+    @Test
+    void nombraAnhidridoSulfuroso() {
+        NomenclatureResponse n = oxide("S", "azufre", 4);
+        assertThat(n.traditional()).isEqualTo("anhídrido sulfuroso");
+        assertThat(n.stock()).isEqualTo("óxido de azufre (IV)");
+        assertThat(n.systematic()).isEqualTo("dióxido de azufre");
+    }
+
+    @Test
+    void nombraAnhidridoSulfurico() {
+        NomenclatureResponse n = oxide("S", "azufre", 6);
+        assertThat(n.traditional()).isEqualTo("anhídrido sulfúrico");
+        assertThat(n.stock()).isEqualTo("óxido de azufre (VI)");
+        assertThat(n.systematic()).isEqualTo("trióxido de azufre");
     }
 
     // ===== Hidróxidos =====
@@ -229,10 +274,15 @@ class ChemicalNomenclatureServiceTest {
 
     @Test
     void ningunCasoMinimoDevuelveCamposVacios() {
+        assertNoBlanks(oxide("Ca", "calcio", 2));
         assertNoBlanks(oxide("Fe", "hierro", 2));
         assertNoBlanks(oxide("Fe", "hierro", 3));
         assertNoBlanks(oxide("Na", "sodio", 1));
         assertNoBlanks(oxide("Al", "aluminio", 3));
+        assertNoBlanks(oxide("P", "fósforo", 3));
+        assertNoBlanks(oxide("P", "fósforo", 5));
+        assertNoBlanks(oxide("S", "azufre", 4));
+        assertNoBlanks(oxide("S", "azufre", 6));
         assertNoBlanks(hydroxide("Fe", "hierro", 2));
         assertNoBlanks(hydroxide("Fe", "hierro", 3));
         assertNoBlanks(hydroxide("Ca", "calcio", 2));

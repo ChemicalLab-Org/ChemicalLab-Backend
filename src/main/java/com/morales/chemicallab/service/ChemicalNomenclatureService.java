@@ -101,6 +101,47 @@ public class ChemicalNomenclatureService {
             Map.entry("dicromato", "dicrómico")
     );
 
+    /**
+     * Adjetivo tradicional del óxido metálico para metales de valencia única
+     * (p. ej. «cálcico» → «óxido cálcico»). Los metales con varias valencias usan
+     * las raíces -oso/-ico de {@link #METAL_TRAD_ROOTS}.
+     */
+    private static final Map<String, String> METAL_OXIDE_ADJECTIVE = Map.ofEntries(
+            Map.entry("Li", "lítico"),
+            Map.entry("Na", "sódico"),
+            Map.entry("K", "potásico"),
+            Map.entry("Rb", "rubídico"),
+            Map.entry("Cs", "césico"),
+            Map.entry("Be", "berílico"),
+            Map.entry("Mg", "magnésico"),
+            Map.entry("Ca", "cálcico"),
+            Map.entry("Sr", "estróncico"),
+            Map.entry("Ba", "bárico"),
+            Map.entry("Al", "alumínico"),
+            Map.entry("Zn", "cíncico"),
+            Map.entry("Ag", "argéntico")
+    );
+
+    /**
+     * Nombre tradicional del anhídrido (óxido no metálico) por símbolo del no
+     * metal y valencia. Los no metales con varias valencias usan los prefijos
+     * hipo-/per- y sufijos -oso/-ico clásicos.
+     */
+    private static final Map<String, Map<Integer, String>> ANHYDRIDE_NAMES = Map.ofEntries(
+            Map.entry("C", Map.of(2, "anhídrido carbonoso", 4, "anhídrido carbónico")),
+            Map.entry("S", Map.of(4, "anhídrido sulfuroso", 6, "anhídrido sulfúrico")),
+            Map.entry("Se", Map.of(4, "anhídrido selenioso", 6, "anhídrido selénico")),
+            Map.entry("Te", Map.of(4, "anhídrido teluroso", 6, "anhídrido telúrico")),
+            Map.entry("N", Map.of(3, "anhídrido nitroso", 5, "anhídrido nítrico")),
+            Map.entry("P", Map.of(3, "anhídrido fosforoso", 5, "anhídrido fosfórico")),
+            Map.entry("Cl", Map.of(1, "anhídrido hipocloroso", 3, "anhídrido cloroso",
+                    5, "anhídrido clórico", 7, "anhídrido perclórico")),
+            Map.entry("Br", Map.of(1, "anhídrido hipobromoso", 3, "anhídrido bromoso",
+                    5, "anhídrido brómico", 7, "anhídrido perbrómico")),
+            Map.entry("I", Map.of(1, "anhídrido hipoyodoso", 3, "anhídrido yodoso",
+                    5, "anhídrido yódico", 7, "anhídrido peryódico"))
+    );
+
     /** Raíz sistemática del elemento central para los nombres «...ato». */
     private static final Map<String, String> CENTRAL_STEM = Map.of(
             "S", "sulf",
@@ -117,17 +158,79 @@ public class ChemicalNomenclatureService {
     // ===== Óxidos =====
 
     /**
-     * Nomenclatura de un óxido (elemento + oxígeno). El elemento puede ser un
-     * metal del catálogo (que determina si hay número de oxidación en Stock) o un
-     * no metal de óxido escolar; en este último caso se usa la forma «de + nombre».
+     * Nomenclatura de un óxido (elemento + oxígeno).
+     *
+     * <p>Distingue dos casos según el elemento principal:
+     * <ul>
+     *   <li><b>Óxido metálico</b> (el elemento está en el catálogo de metales):
+     *       la tradicional usa el adjetivo del metal (valencia única, p. ej.
+     *       «óxido cálcico») o la raíz -oso/-ico (varias valencias, «óxido
+     *       ferroso»/«óxido férrico»).</li>
+     *   <li><b>Anhídrido</b> (el elemento es no metal): la tradicional usa el
+     *       nombre de anhídrido (p. ej. «anhídrido fosforoso»).</li>
+     * </ul>
+     *
+     * <p>El número de oxidación de Stock se toma de la valencia con la que el
+     * elemento se combina (el oxígeno trabaja con -2): se muestra en romanos para
+     * metales con varias valencias y siempre para los no metales.
      */
     public NomenclatureResponse forOxide(String symbol, String elementName, int valence) {
         int[] subs = crossSubscripts(valence, 2); // {subíndice del elemento, subíndice del oxígeno}
         String systematic = oxidePrefixed(subs[1]) + " de " + sysPrefixOmitMono(subs[0]) + elementName;
 
         Optional<MetalResponse> metal = catalog.findMetal(symbol);
-        boolean multivalent = metal.map(m -> m.valences().size() > 1).orElse(false);
-        return metalBased("óxido", symbol, elementName, valence, multivalent, systematic);
+        if (metal.isEmpty()) {
+            return anhydrideNomenclature(symbol, elementName, valence, systematic);
+        }
+        return metalOxideNomenclature(metal.get(), valence, systematic);
+    }
+
+    /** Nomenclatura de un óxido metálico (tradicional con adjetivo o raíz -oso/-ico). */
+    private NomenclatureResponse metalOxideNomenclature(MetalResponse metal, int valence, String systematic) {
+        String name = metal.name();
+        String traditional;
+        String stock;
+        String notes = "";
+
+        if (metal.valences().size() > 1) {
+            String root = rootFor(metal.symbol(), valence);
+            if (root != null) {
+                traditional = "óxido " + root;
+            } else {
+                traditional = "óxido de " + name + " (" + roman(valence) + ")";
+                notes = "Sin raíz tradicional -oso/-ico para la valencia " + valence
+                        + "; se usa la forma con número de oxidación.";
+            }
+            stock = "óxido de " + name + " (" + roman(valence) + ")";
+        } else {
+            String adjective = METAL_OXIDE_ADJECTIVE.get(metal.symbol());
+            if (adjective != null) {
+                traditional = "óxido " + adjective;
+            } else {
+                traditional = "óxido de " + name;
+                notes = "Sin adjetivo tradicional definido para este metal; se usa «óxido de " + name + "».";
+            }
+            stock = "óxido de " + name;
+        }
+        return new NomenclatureResponse(traditional, stock, systematic, notes);
+    }
+
+    /** Nomenclatura de un anhídrido (óxido no metálico). Stock siempre con romano. */
+    private NomenclatureResponse anhydrideNomenclature(String symbol, String elementName,
+                                                       int valence, String systematic) {
+        Map<Integer, String> byValence = ANHYDRIDE_NAMES.get(symbol);
+        String anhydride = byValence == null ? null : byValence.get(valence);
+        String traditional;
+        String notes = "";
+        if (anhydride != null) {
+            traditional = anhydride;
+        } else {
+            traditional = "anhídrido de " + elementName;
+            notes = "Sin nombre de anhídrido definido para la valencia " + valence
+                    + "; se usa «anhídrido de " + elementName + "».";
+        }
+        String stock = "óxido de " + elementName + " (" + roman(valence) + ")";
+        return new NomenclatureResponse(traditional, stock, systematic, notes);
     }
 
     // ===== Hidróxidos =====
