@@ -126,18 +126,27 @@ fórmulas y el de nombres están separados: el primero cruza cargas, el segundo
 traduce la combinación a nombres usando el catálogo como fuente de verdad (por
 ejemplo, para saber si un metal tiene más de una valencia).
 
-### Criterios generales
+### Criterio único del MVP
 
-- **Tradicional:** para hidróxidos, sales y oxisales con metales de **una sola
-  valencia** se usa la forma «base de elemento» (p. ej. `cloruro de sodio`); con
-  **varias valencias** se usan las raíces -oso/-ico (`cloruro ferroso` / `cloruro
-  férrico`). Los **óxidos** tienen reglas propias (ver más abajo).
-- **Stock:** se añade el número de oxidación en romanos **solo** cuando el
-  elemento tiene más de una valencia (`óxido de hierro (II)`); con valencia única
-  coincide con la forma «de elemento». Los no metales (anhídridos) siempre llevan
-  romano.
-- **Sistemática:** prefijos multiplicadores `mono-, di-, tri-, tetra-…` sobre los
-  subíndices reales de la fórmula (`trióxido de dihierro`).
+El proyecto usa un criterio **uniforme** para óxidos, hidróxidos, sales y
+oxisales (los óxidos no metálicos se nombran como anhídridos, ver más abajo):
+
+- **Tradicional:**
+  - Metal con **varias valencias** → raíz -oso/-ico según la valencia
+    (`cloruro ferroso` / `cloruro férrico`).
+  - Metal de **valencia única** → adjetivo del metal cuando existe
+    (`óxido cálcico`, `hidróxido sódico`, `cloruro cálcico`, `sulfato sódico`).
+    Si no hay adjetivo, fallback «base de elemento» documentado en `notes`.
+  - No metal en óxido → nombre de **anhídrido** (`anhídrido sulfúrico`).
+- **Stock:** forma «base de elemento»; se añade el número de oxidación en romanos
+  cuando el elemento tiene **valencia variable** (`óxido de hierro (II)`,
+  `cloruro de hierro (III)`) o cuando es un no metal (`óxido de fósforo (III)`).
+  Con valencia única no lleva romano (`óxido de calcio`).
+- **Sistemática:** prefijos estequiométricos `mono-, di-, tri-, tetra-…` sobre los
+  subíndices reales de la fórmula. El componente **electronegativo** (oxígeno, OH,
+  no metal) conserva `mono-` (`monóxido de calcio`, `monohidróxido de sodio`,
+  `monocloruro de sodio`); el **metal** omite `mono-` (`de sodio`, no «de
+  monosodio»).
 
 ### Óxidos: metálicos vs. anhídridos
 
@@ -169,10 +178,12 @@ El número de oxidación del elemento se toma de la valencia con la que se combi
 - Prefijos multiplicativos para grupos repetidos: 2→bis, 3→tris, 4→tetrakis.
 - Raíces tradicionales -oso/-ico de los metales con varias valencias (hierro,
   cobre, estaño, plomo, mercurio, oro, cobalto, níquel, cromo, manganeso, platino).
-- Adjetivos tradicionales de óxidos metálicos de valencia única (sódico, cálcico,
-  alumínico, magnésico…).
+- Adjetivos tradicionales de metales de valencia única (sódico, cálcico,
+  alumínico, magnésico…), comunes a óxidos, hidróxidos, sales y oxisales.
 - Nombres de anhídridos por no metal y valencia (carbono, azufre, nitrógeno,
   fósforo, cloro, bromo, yodo, selenio, telurio).
+- Raíz «-ico» del oxácido por elemento central para el Stock de oxácidos
+  (sulfúrico, nítrico, fosfórico, carbónico, clórico, brómico, yódico…).
 
 ### Alcance por tipo de compuesto
 
@@ -185,16 +196,59 @@ El número de oxidación del elemento se toma de la valencia con la que se combi
 | Sales binarias  | `cloruro férrico`            | `cloruro de hierro (III)`      | `tricloruro de hierro`                   |
 | Oxisales        | `fosfato férrico`            | `fosfato de hierro (III)`      | `tetraoxofosfato (V) de hierro (III)`    |
 
+### Matriz de casos validados
+
+Estos casos están cubiertos por `ChemicalNomenclatureServiceTest` (uno por fila):
+
+| Fórmula      | Tradicional            | Stock                          | Sistemática                              |
+| ------------ | ---------------------- | ------------------------------ | ---------------------------------------- |
+| CaO          | óxido cálcico          | óxido de calcio                | monóxido de calcio                       |
+| Na₂O         | óxido sódico           | óxido de sodio                 | monóxido de disodio                      |
+| Al₂O₃        | óxido alumínico        | óxido de aluminio              | trióxido de dialuminio                   |
+| FeO          | óxido ferroso          | óxido de hierro (II)           | monóxido de hierro                       |
+| Fe₂O₃        | óxido férrico          | óxido de hierro (III)          | trióxido de dihierro                     |
+| P₂O₃         | anhídrido fosforoso    | óxido de fósforo (III)         | trióxido de difósforo                    |
+| P₂O₅         | anhídrido fosfórico    | óxido de fósforo (V)           | pentóxido de difósforo                   |
+| SO₂          | anhídrido sulfuroso    | óxido de azufre (IV)           | dióxido de azufre                        |
+| SO₃          | anhídrido sulfúrico    | óxido de azufre (VI)           | trióxido de azufre                       |
+| Ca(OH)₂      | hidróxido cálcico      | hidróxido de calcio            | dihidróxido de calcio                    |
+| NaOH         | hidróxido sódico       | hidróxido de sodio             | monohidróxido de sodio                   |
+| Fe(OH)₂      | hidróxido ferroso      | hidróxido de hierro (II)       | dihidróxido de hierro                    |
+| Fe(OH)₃      | hidróxido férrico      | hidróxido de hierro (III)      | trihidróxido de hierro                   |
+| HCl          | ácido clorhídrico      | cloruro de hidrógeno           | cloruro de hidrógeno                     |
+| HBr          | ácido bromhídrico      | bromuro de hidrógeno           | bromuro de hidrógeno                     |
+| H₂S          | ácido sulfhídrico      | sulfuro de hidrógeno           | sulfuro de dihidrógeno                   |
+| H₂SO₄        | ácido sulfúrico        | ácido tetraoxosulfúrico (VI)   | tetraoxosulfato (VI) de dihidrógeno      |
+| H₂SO₃        | ácido sulfuroso        | ácido trioxosulfúrico (IV)     | trioxosulfato (IV) de dihidrógeno        |
+| HNO₃         | ácido nítrico          | ácido trioxonítrico (V)        | trioxonitrato (V) de hidrógeno           |
+| HNO₂         | ácido nitroso          | ácido dioxonítrico (III)       | dioxonitrato (III) de hidrógeno          |
+| H₃PO₄        | ácido fosfórico        | ácido tetraoxofosfórico (V)    | tetraoxofosfato (V) de trihidrógeno      |
+| NaCl         | cloruro sódico         | cloruro de sodio               | monocloruro de sodio                     |
+| CaCl₂        | cloruro cálcico        | cloruro de calcio              | dicloruro de calcio                      |
+| FeCl₂        | cloruro ferroso        | cloruro de hierro (II)         | dicloruro de hierro                      |
+| FeCl₃        | cloruro férrico        | cloruro de hierro (III)        | tricloruro de hierro                     |
+| Al₂S₃        | sulfuro alumínico      | sulfuro de aluminio            | trisulfuro de dialuminio                 |
+| Na₂SO₄       | sulfato sódico         | sulfato de sodio               | tetraoxosulfato (VI) de disodio          |
+| Ca(NO₃)₂     | nitrato cálcico        | nitrato de calcio              | bis(trioxonitrato (V)) de calcio         |
+| FePO₄        | fosfato férrico        | fosfato de hierro (III)        | tetraoxofosfato (V) de hierro (III)      |
+| Mg₃(PO₄)₂    | fosfato magnésico      | fosfato de magnesio            | bis(tetraoxofosfato (V)) de trimagnesio  |
+
 ### Casos con forma simplificada y documentada
 
 - **Oxácidos y oxisales — Stock/sistemática:** la regla completa de la
   nomenclatura sistemática de oxoácidos es avanzada para el nivel del MVP. Se
   implementa una forma **derivada y consistente**: prefijo de oxígenos + `oxo` +
   raíz + `ato`, con el número de oxidación del átomo central en romanos
-  (calculado por balance de cargas). Para Stock del oxácido se antepone `ácido` y
-  se usa el adjetivo tradicional con el prefijo de oxígenos
-  (`ácido tetraoxosulfúrico (VI)`). En oxisales con el grupo repetido se usan los
-  prefijos multiplicativos `bis(…)`, `tris(…)` (`bis(trioxonitrato) de calcio`).
+  (calculado por balance de cargas). Para el Stock del oxácido se antepone `ácido`
+  y se usa la raíz «-ico» del elemento central con el prefijo de oxígenos
+  (`ácido tetraoxosulfúrico (VI)`, `ácido trioxosulfúrico (IV)`). En oxisales con
+  el grupo repetido se usan los prefijos multiplicativos `bis(…)`, `tris(…)`,
+  conservando el estado de oxidación dentro del paréntesis
+  (`bis(trioxonitrato (V)) de calcio`).
+- **Variante aceptada — adjetivo vs. «de elemento»:** en tradicional se elige
+  siempre el **adjetivo clásico** cuando existe (`sulfato sódico`, no «sulfato de
+  sodio»). La forma «de elemento» queda reservada para Stock y como fallback
+  documentado cuando falta el adjetivo.
 - **Valencias sin raíz -oso/-ico** (p. ej. cromo +6, manganeso +7): no se inventa
   un nombre tradicional; se devuelve la forma con número de oxidación y se deja
   constancia en `notes`.

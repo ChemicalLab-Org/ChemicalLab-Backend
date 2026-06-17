@@ -102,11 +102,12 @@ public class ChemicalNomenclatureService {
     );
 
     /**
-     * Adjetivo tradicional del óxido metálico para metales de valencia única
-     * (p. ej. «cálcico» → «óxido cálcico»). Los metales con varias valencias usan
-     * las raíces -oso/-ico de {@link #METAL_TRAD_ROOTS}.
+     * Adjetivo tradicional del metal de valencia única, común a óxidos,
+     * hidróxidos, sales y oxisales (p. ej. «cálcico» → «óxido cálcico»,
+     * «hidróxido cálcico», «cloruro cálcico»). Los metales con varias valencias
+     * usan las raíces -oso/-ico de {@link #METAL_TRAD_ROOTS}.
      */
-    private static final Map<String, String> METAL_OXIDE_ADJECTIVE = Map.ofEntries(
+    private static final Map<String, String> METAL_ADJECTIVE = Map.ofEntries(
             Map.entry("Li", "lítico"),
             Map.entry("Na", "sódico"),
             Map.entry("K", "potásico"),
@@ -155,6 +156,23 @@ public class ChemicalNomenclatureService {
             "Cr", "crom"
     );
 
+    /**
+     * Raíz «-ico» del oxácido por elemento central, usada en la nomenclatura de
+     * Stock de oxácidos (p. ej. «ácido trioxosulfúrico (IV)»). Es independiente
+     * del número de oxígenos: el estado de oxidación se indica con el romano.
+     */
+    private static final Map<String, String> STOCK_ACID_ROOT = Map.of(
+            "S", "sulfúrico",
+            "N", "nítrico",
+            "C", "carbónico",
+            "P", "fosfórico",
+            "Cl", "clórico",
+            "Br", "brómico",
+            "I", "yódico",
+            "Mn", "mangánico",
+            "Cr", "crómico"
+    );
+
     // ===== Óxidos =====
 
     /**
@@ -182,37 +200,7 @@ public class ChemicalNomenclatureService {
         if (metal.isEmpty()) {
             return anhydrideNomenclature(symbol, elementName, valence, systematic);
         }
-        return metalOxideNomenclature(metal.get(), valence, systematic);
-    }
-
-    /** Nomenclatura de un óxido metálico (tradicional con adjetivo o raíz -oso/-ico). */
-    private NomenclatureResponse metalOxideNomenclature(MetalResponse metal, int valence, String systematic) {
-        String name = metal.name();
-        String traditional;
-        String stock;
-        String notes = "";
-
-        if (metal.valences().size() > 1) {
-            String root = rootFor(metal.symbol(), valence);
-            if (root != null) {
-                traditional = "óxido " + root;
-            } else {
-                traditional = "óxido de " + name + " (" + roman(valence) + ")";
-                notes = "Sin raíz tradicional -oso/-ico para la valencia " + valence
-                        + "; se usa la forma con número de oxidación.";
-            }
-            stock = "óxido de " + name + " (" + roman(valence) + ")";
-        } else {
-            String adjective = METAL_OXIDE_ADJECTIVE.get(metal.symbol());
-            if (adjective != null) {
-                traditional = "óxido " + adjective;
-            } else {
-                traditional = "óxido de " + name;
-                notes = "Sin adjetivo tradicional definido para este metal; se usa «óxido de " + name + "».";
-            }
-            stock = "óxido de " + name;
-        }
-        return new NomenclatureResponse(traditional, stock, systematic, notes);
+        return metalBased("óxido", metal.get(), valence, systematic);
     }
 
     /** Nomenclatura de un anhídrido (óxido no metálico). Stock siempre con romano. */
@@ -238,9 +226,9 @@ public class ChemicalNomenclatureService {
     /** Nomenclatura de un hidróxido (metal + grupo OH⁻). */
     public NomenclatureResponse forHydroxide(MetalResponse metal, int valence) {
         // OH trabaja con carga 1: el subíndice del grupo coincide con la valencia.
-        String systematic = sysPrefixOmitMono(valence) + "hidróxido de " + metal.name();
-        return metalBased("hidróxido", metal.symbol(), metal.name(), valence,
-                metal.valences().size() > 1, systematic);
+        // La sistemática siempre lleva prefijo en el hidróxido (monohidróxido…).
+        String systematic = sysPrefixAlways(valence) + "hidróxido de " + metal.name();
+        return metalBased("hidróxido", metal, valence, systematic);
     }
 
     // ===== Sales binarias =====
@@ -248,10 +236,10 @@ public class ChemicalNomenclatureService {
     /** Nomenclatura de una sal binaria (metal + no metal). */
     public NomenclatureResponse forBinarySalt(MetalResponse metal, int valence, BinaryAnionResponse anion) {
         int[] subs = crossSubscripts(valence, anion.charge()); // {subíndice metal, subíndice anión}
-        String systematic = sysPrefixOmitMono(subs[1]) + anion.name()
+        // El no metal siempre lleva prefijo (monocloruro…); el metal omite «mono».
+        String systematic = sysPrefixAlways(subs[1]) + anion.name()
                 + " de " + sysPrefixOmitMono(subs[0]) + metal.name();
-        return metalBased(anion.name(), metal.symbol(), metal.name(), valence,
-                metal.valences().size() > 1, systematic);
+        return metalBased(anion.name(), metal, valence, systematic);
     }
 
     // ===== Ácidos hidrácidos =====
@@ -299,8 +287,9 @@ public class ChemicalNomenclatureService {
             notes = "Sin adjetivo tradicional definido; se documenta la forma derivada del oxácido.";
         }
 
-        // Stock «de ácidos»: ácido + (oxígenos)oxo + adjetivo tradicional + (n.º oxidación).
-        String stockRoot = adjective != null ? adjective : stem + "ico";
+        // Stock «de ácidos»: ácido + (oxígenos)oxo + raíz «-ico» del elemento + (n.º oxidación).
+        // La raíz «-ico» es fija por elemento central; el estado de oxidación lo da el romano.
+        String stockRoot = STOCK_ACID_ROOT.getOrDefault(group.centralElement(), stem + "ico");
         String stock = "ácido " + PREFIXES[clampPrefix(oxygens)] + "oxo" + stockRoot + " (" + roman(oxidation) + ")";
 
         String systematic = anionSystematic + " (" + roman(oxidation) + ") de "
@@ -329,9 +318,12 @@ public class ChemicalNomenclatureService {
         String anionSystematic = PREFIXES[clampPrefix(oxygens)] + "oxo"
                 + (centralCount > 1 ? PREFIXES[clampPrefix(centralCount)] : "") + stem + "ato";
 
+        // El estado de oxidación del grupo se conserva dentro del paréntesis aunque
+        // el grupo se multiplique: «bis(trioxonitrato (V)) de calcio».
+        String anionWithOxidation = anionSystematic + " (" + roman(oxidation) + ")";
         String groupPart = groupSub == 1
-                ? anionSystematic + " (" + roman(oxidation) + ")"
-                : multiplicative(groupSub) + "(" + anionSystematic + ")";
+                ? anionWithOxidation
+                : multiplicative(groupSub) + "(" + anionWithOxidation + ")";
 
         boolean multivalent = metal.valences().size() > 1;
         String metalPart = (metalSub > 1 ? PREFIXES[clampPrefix(metalSub)] : "") + metal.name();
@@ -340,36 +332,54 @@ public class ChemicalNomenclatureService {
         }
         String systematic = groupPart + " de " + metalPart;
 
-        return metalBased(group.name(), metal.symbol(), metal.name(), valence, multivalent, systematic);
+        return metalBased(group.name(), metal, valence, systematic);
     }
 
     // ===== Núcleo común para compuestos metal + (anión/grupo) =====
 
     /**
      * Arma la nomenclatura de un compuesto cuyo catión es un metal y cuyo nombre
-     * base es {@code baseNoun} («óxido», «hidróxido», «cloruro», «sulfato»…). La
-     * sistemática se calcula fuera (depende del tipo) y se recibe ya resuelta.
+     * base es {@code baseNoun} («óxido», «hidróxido», «cloruro», «sulfato»…).
+     *
+     * <p>Criterio único del MVP para la nomenclatura tradicional:
+     * <ul>
+     *   <li>Metal con <b>varias valencias</b>: raíz -oso/-ico según la valencia
+     *       (p. ej. «cloruro ferroso»/«cloruro férrico»). Si no hay raíz definida,
+     *       se cae en la forma con número de oxidación y se documenta.</li>
+     *   <li>Metal de <b>valencia única</b>: adjetivo del metal cuando existe
+     *       («cloruro sódico», «hidróxido cálcico»); si no, fallback «base de
+     *       elemento» documentado en {@code notes}.</li>
+     * </ul>
+     * El Stock usa «base de elemento» y añade el romano solo si el metal tiene
+     * varias valencias. La sistemática se calcula fuera y se recibe ya resuelta.
      */
-    private NomenclatureResponse metalBased(String baseNoun, String symbol, String metalName,
-                                            int valence, boolean multivalent, String systematic) {
+    private NomenclatureResponse metalBased(String baseNoun, MetalResponse metal,
+                                            int valence, String systematic) {
+        String name = metal.name();
         String traditional;
         String stock;
         String notes = "";
 
-        if (multivalent) {
-            String root = rootFor(symbol, valence);
+        if (metal.valences().size() > 1) {
+            String root = rootFor(metal.symbol(), valence);
             if (root != null) {
                 traditional = baseNoun + " " + root;
             } else {
-                traditional = baseNoun + " de " + metalName + " (" + roman(valence) + ")";
+                traditional = baseNoun + " de " + name + " (" + roman(valence) + ")";
                 notes = "Sin raíz tradicional -oso/-ico para la valencia " + valence
                         + "; se usa la forma con número de oxidación.";
             }
-            stock = baseNoun + " de " + metalName + " (" + roman(valence) + ")";
+            stock = baseNoun + " de " + name + " (" + roman(valence) + ")";
         } else {
-            // Valencia única: la forma «de + nombre» es a la vez tradicional y de Stock.
-            traditional = baseNoun + " de " + metalName;
-            stock = baseNoun + " de " + metalName;
+            String adjective = METAL_ADJECTIVE.get(metal.symbol());
+            if (adjective != null) {
+                traditional = baseNoun + " " + adjective;
+            } else {
+                traditional = baseNoun + " de " + name;
+                notes = "Sin adjetivo tradicional definido para este metal; se usa «" + baseNoun
+                        + " de " + name + "».";
+            }
+            stock = baseNoun + " de " + name;
         }
 
         return new NomenclatureResponse(traditional, stock, systematic, notes);
@@ -406,6 +416,11 @@ public class ChemicalNomenclatureService {
         if (count == 1) {
             return "";
         }
+        return PREFIXES[clampPrefix(count)];
+    }
+
+    /** Prefijo multiplicador sistemático conservando «mono» para la cantidad 1. */
+    private String sysPrefixAlways(int count) {
         return PREFIXES[clampPrefix(count)];
     }
 

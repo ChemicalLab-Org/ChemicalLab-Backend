@@ -2,7 +2,6 @@ package com.morales.chemicallab.service;
 
 import com.morales.chemicallab.dto.AcidRequest;
 import com.morales.chemicallab.dto.AcidType;
-import com.morales.chemicallab.dto.CompoundResponse;
 import com.morales.chemicallab.dto.ElementCompoundRequest;
 import com.morales.chemicallab.dto.NomenclatureResponse;
 import com.morales.chemicallab.dto.OxisaltRequest;
@@ -13,9 +12,10 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Pruebas de las tres nomenclaturas (tradicional, Stock y sistemática) que el
- * motor devuelve para cada tipo de compuesto. Verifican los nombres esperados en
- * los casos principales y que ningún campo quede nulo o vacío.
+ * Matriz de validación de las tres nomenclaturas (tradicional, Stock y
+ * sistemática) para cada tipo de compuesto del MVP. Cada prueba corresponde a un
+ * caso de la matriz acordada en la auditoría de la Sesión 19; también se verifica
+ * que ningún campo quede nulo o vacío.
  */
 class ChemicalNomenclatureServiceTest {
 
@@ -47,258 +47,205 @@ class ChemicalNomenclatureServiceTest {
         return service.generateOxisalt(new OxisaltRequest(metal, valence, oxoanionKey)).nomenclature();
     }
 
-    private void assertNoBlanks(NomenclatureResponse n) {
+    private void assertNames(NomenclatureResponse n, String traditional, String stock, String systematic) {
         assertThat(n).isNotNull();
-        assertThat(n.traditional()).isNotBlank();
-        assertThat(n.stock()).isNotBlank();
-        assertThat(n.systematic()).isNotBlank();
+        assertThat(n.traditional()).isEqualTo(traditional);
+        assertThat(n.stock()).isEqualTo(stock);
+        assertThat(n.systematic()).isEqualTo(systematic);
         assertThat(n.notes()).isNotNull();
     }
 
     // ===== Óxidos metálicos =====
 
     @Test
-    void nombraOxidoDeCalcio() {
-        NomenclatureResponse n = oxide("Ca", "calcio", 2);
-        assertThat(n.traditional()).isEqualTo("óxido cálcico");
-        assertThat(n.stock()).isEqualTo("óxido de calcio");
-        assertThat(n.systematic()).isEqualTo("monóxido de calcio");
-        assertNoBlanks(n);
+    void caso01_oxidoDeCalcio() {
+        assertNames(oxide("Ca", "calcio", 2),
+                "óxido cálcico", "óxido de calcio", "monóxido de calcio");
     }
 
     @Test
-    void nombraOxidoDeSodio() {
-        NomenclatureResponse n = oxide("Na", "sodio", 1);
-        assertThat(n.traditional()).isEqualTo("óxido sódico");
-        assertThat(n.stock()).isEqualTo("óxido de sodio");
-        assertThat(n.systematic()).isEqualTo("monóxido de disodio");
+    void caso02_oxidoDeSodio() {
+        assertNames(oxide("Na", "sodio", 1),
+                "óxido sódico", "óxido de sodio", "monóxido de disodio");
     }
 
     @Test
-    void nombraOxidoDeAluminio() {
-        NomenclatureResponse n = oxide("Al", "aluminio", 3);
-        assertThat(n.traditional()).isEqualTo("óxido alumínico");
-        assertThat(n.stock()).isEqualTo("óxido de aluminio");
-        assertThat(n.systematic()).isEqualTo("trióxido de dialuminio");
+    void caso03_oxidoDeAluminio() {
+        assertNames(oxide("Al", "aluminio", 3),
+                "óxido alumínico", "óxido de aluminio", "trióxido de dialuminio");
     }
 
     @Test
-    void nombraOxidoDeHierroII() {
-        NomenclatureResponse n = oxide("Fe", "hierro", 2);
-        assertThat(n.traditional()).isEqualTo("óxido ferroso");
-        assertThat(n.stock()).isEqualTo("óxido de hierro (II)");
-        assertThat(n.systematic()).isEqualTo("monóxido de hierro");
-        assertNoBlanks(n);
+    void caso04_oxidoFerroso() {
+        assertNames(oxide("Fe", "hierro", 2),
+                "óxido ferroso", "óxido de hierro (II)", "monóxido de hierro");
     }
 
     @Test
-    void nombraOxidoDeHierroIII() {
-        NomenclatureResponse n = oxide("Fe", "hierro", 3);
-        assertThat(n.traditional()).isEqualTo("óxido férrico");
-        assertThat(n.stock()).isEqualTo("óxido de hierro (III)");
-        assertThat(n.systematic()).isEqualTo("trióxido de dihierro");
+    void caso05_oxidoFerrico() {
+        assertNames(oxide("Fe", "hierro", 3),
+                "óxido férrico", "óxido de hierro (III)", "trióxido de dihierro");
     }
 
     // ===== Óxidos no metálicos (anhídridos) =====
 
     @Test
-    void nombraAnhidridoFosforoso() {
-        NomenclatureResponse n = oxide("P", "fósforo", 3);
-        assertThat(n.traditional()).isEqualTo("anhídrido fosforoso");
-        assertThat(n.stock()).isEqualTo("óxido de fósforo (III)");
-        assertThat(n.systematic()).isEqualTo("trióxido de difósforo");
-        assertNoBlanks(n);
+    void caso06_anhidridoFosforoso() {
+        assertNames(oxide("P", "fósforo", 3),
+                "anhídrido fosforoso", "óxido de fósforo (III)", "trióxido de difósforo");
     }
 
     @Test
-    void nombraAnhidridoFosforico() {
-        NomenclatureResponse n = oxide("P", "fósforo", 5);
-        assertThat(n.traditional()).isEqualTo("anhídrido fosfórico");
-        assertThat(n.stock()).isEqualTo("óxido de fósforo (V)");
-        assertThat(n.systematic()).isEqualTo("pentóxido de difósforo");
+    void caso07_anhidridoFosforico() {
+        assertNames(oxide("P", "fósforo", 5),
+                "anhídrido fosfórico", "óxido de fósforo (V)", "pentóxido de difósforo");
     }
 
     @Test
-    void nombraAnhidridoSulfuroso() {
-        NomenclatureResponse n = oxide("S", "azufre", 4);
-        assertThat(n.traditional()).isEqualTo("anhídrido sulfuroso");
-        assertThat(n.stock()).isEqualTo("óxido de azufre (IV)");
-        assertThat(n.systematic()).isEqualTo("dióxido de azufre");
+    void caso08_anhidridoSulfuroso() {
+        assertNames(oxide("S", "azufre", 4),
+                "anhídrido sulfuroso", "óxido de azufre (IV)", "dióxido de azufre");
     }
 
     @Test
-    void nombraAnhidridoSulfurico() {
-        NomenclatureResponse n = oxide("S", "azufre", 6);
-        assertThat(n.traditional()).isEqualTo("anhídrido sulfúrico");
-        assertThat(n.stock()).isEqualTo("óxido de azufre (VI)");
-        assertThat(n.systematic()).isEqualTo("trióxido de azufre");
+    void caso09_anhidridoSulfurico() {
+        assertNames(oxide("S", "azufre", 6),
+                "anhídrido sulfúrico", "óxido de azufre (VI)", "trióxido de azufre");
     }
 
     // ===== Hidróxidos =====
 
     @Test
-    void nombraHidroxidoDeHierroII() {
-        NomenclatureResponse n = hydroxide("Fe", "hierro", 2);
-        assertThat(n.traditional()).isEqualTo("hidróxido ferroso");
-        assertThat(n.stock()).isEqualTo("hidróxido de hierro (II)");
-        assertThat(n.systematic()).isEqualTo("dihidróxido de hierro");
+    void caso10_hidroxidoCalcico() {
+        assertNames(hydroxide("Ca", "calcio", 2),
+                "hidróxido cálcico", "hidróxido de calcio", "dihidróxido de calcio");
     }
 
     @Test
-    void nombraHidroxidoDeHierroIII() {
-        NomenclatureResponse n = hydroxide("Fe", "hierro", 3);
-        assertThat(n.traditional()).isEqualTo("hidróxido férrico");
-        assertThat(n.stock()).isEqualTo("hidróxido de hierro (III)");
-        assertThat(n.systematic()).isEqualTo("trihidróxido de hierro");
+    void caso11_hidroxidoSodico() {
+        assertNames(hydroxide("Na", "sodio", 1),
+                "hidróxido sódico", "hidróxido de sodio", "monohidróxido de sodio");
     }
 
     @Test
-    void nombraHidroxidoDeCalcio() {
-        NomenclatureResponse n = hydroxide("Ca", "calcio", 2);
-        assertThat(n.traditional()).isEqualTo("hidróxido de calcio");
-        assertThat(n.systematic()).isEqualTo("dihidróxido de calcio");
-    }
-
-    // ===== Hidrácidos =====
-
-    @Test
-    void nombraAcidoClorhidrico() {
-        NomenclatureResponse n = hydracid("Cl");
-        assertThat(n.traditional()).isEqualTo("ácido clorhídrico");
-        assertThat(n.stock()).isEqualTo("cloruro de hidrógeno");
-        assertThat(n.systematic()).isEqualTo("cloruro de hidrógeno");
+    void caso12_hidroxidoFerroso() {
+        assertNames(hydroxide("Fe", "hierro", 2),
+                "hidróxido ferroso", "hidróxido de hierro (II)", "dihidróxido de hierro");
     }
 
     @Test
-    void nombraAcidoSulfhidrico() {
-        NomenclatureResponse n = hydracid("S");
-        assertThat(n.traditional()).isEqualTo("ácido sulfhídrico");
-        assertThat(n.stock()).isEqualTo("sulfuro de hidrógeno");
-        assertThat(n.systematic()).isEqualTo("sulfuro de dihidrógeno");
+    void caso13_hidroxidoFerrico() {
+        assertNames(hydroxide("Fe", "hierro", 3),
+                "hidróxido férrico", "hidróxido de hierro (III)", "trihidróxido de hierro");
+    }
+
+    // ===== Ácidos hidrácidos =====
+
+    @Test
+    void caso14_acidoClorhidrico() {
+        assertNames(hydracid("Cl"),
+                "ácido clorhídrico", "cloruro de hidrógeno", "cloruro de hidrógeno");
+    }
+
+    @Test
+    void caso15_acidoBromhidrico() {
+        assertNames(hydracid("Br"),
+                "ácido bromhídrico", "bromuro de hidrógeno", "bromuro de hidrógeno");
+    }
+
+    @Test
+    void caso16_acidoSulfhidrico() {
+        assertNames(hydracid("S"),
+                "ácido sulfhídrico", "sulfuro de hidrógeno", "sulfuro de dihidrógeno");
     }
 
     // ===== Oxácidos =====
 
     @Test
-    void nombraAcidoSulfurico() {
-        NomenclatureResponse n = oxoacid("sulfato");
-        assertThat(n.traditional()).isEqualTo("ácido sulfúrico");
-        assertThat(n.stock()).isEqualTo("ácido tetraoxosulfúrico (VI)");
-        assertThat(n.systematic()).isEqualTo("tetraoxosulfato (VI) de dihidrógeno");
+    void caso17_acidoSulfurico() {
+        assertNames(oxoacid("sulfato"),
+                "ácido sulfúrico", "ácido tetraoxosulfúrico (VI)", "tetraoxosulfato (VI) de dihidrógeno");
     }
 
     @Test
-    void nombraAcidoNitrico() {
-        NomenclatureResponse n = oxoacid("nitrato");
-        assertThat(n.traditional()).isEqualTo("ácido nítrico");
-        assertThat(n.systematic()).isEqualTo("trioxonitrato (V) de hidrógeno");
-        assertNoBlanks(n);
+    void caso18_acidoSulfuroso() {
+        assertNames(oxoacid("sulfito"),
+                "ácido sulfuroso", "ácido trioxosulfúrico (IV)", "trioxosulfato (IV) de dihidrógeno");
     }
 
     @Test
-    void nombraAcidoFosforico() {
-        NomenclatureResponse n = oxoacid("fosfato");
-        assertThat(n.traditional()).isEqualTo("ácido fosfórico");
-        assertThat(n.systematic()).isEqualTo("tetraoxofosfato (V) de trihidrógeno");
-        assertNoBlanks(n);
+    void caso19_acidoNitrico() {
+        assertNames(oxoacid("nitrato"),
+                "ácido nítrico", "ácido trioxonítrico (V)", "trioxonitrato (V) de hidrógeno");
+    }
+
+    @Test
+    void caso20_acidoNitroso() {
+        assertNames(oxoacid("nitrito"),
+                "ácido nitroso", "ácido dioxonítrico (III)", "dioxonitrato (III) de hidrógeno");
+    }
+
+    @Test
+    void caso21_acidoFosforico() {
+        assertNames(oxoacid("fosfato"),
+                "ácido fosfórico", "ácido tetraoxofosfórico (V)", "tetraoxofosfato (V) de trihidrógeno");
     }
 
     // ===== Sales binarias =====
 
     @Test
-    void nombraClorurodeSodio() {
-        NomenclatureResponse n = salt("Na", 1, "Cl");
-        assertThat(n.traditional()).isEqualTo("cloruro de sodio");
-        assertThat(n.systematic()).isEqualTo("cloruro de sodio");
+    void caso22_cloruroSodico() {
+        assertNames(salt("Na", 1, "Cl"),
+                "cloruro sódico", "cloruro de sodio", "monocloruro de sodio");
     }
 
     @Test
-    void nombraClorurodeCalcio() {
-        NomenclatureResponse n = salt("Ca", 2, "Cl");
-        assertThat(n.traditional()).isEqualTo("cloruro de calcio");
-        assertThat(n.systematic()).isEqualTo("dicloruro de calcio");
+    void caso23_cloruroCalcico() {
+        assertNames(salt("Ca", 2, "Cl"),
+                "cloruro cálcico", "cloruro de calcio", "dicloruro de calcio");
     }
 
     @Test
-    void nombraCloruroFerrosoYFerrico() {
-        NomenclatureResponse ferroso = salt("Fe", 2, "Cl");
-        assertThat(ferroso.traditional()).isEqualTo("cloruro ferroso");
-        assertThat(ferroso.stock()).isEqualTo("cloruro de hierro (II)");
-        assertThat(ferroso.systematic()).isEqualTo("dicloruro de hierro");
-
-        NomenclatureResponse ferrico = salt("Fe", 3, "Cl");
-        assertThat(ferrico.traditional()).isEqualTo("cloruro férrico");
-        assertThat(ferrico.stock()).isEqualTo("cloruro de hierro (III)");
-        assertThat(ferrico.systematic()).isEqualTo("tricloruro de hierro");
+    void caso24_cloruroFerroso() {
+        assertNames(salt("Fe", 2, "Cl"),
+                "cloruro ferroso", "cloruro de hierro (II)", "dicloruro de hierro");
     }
 
     @Test
-    void nombraSulfurodeAluminio() {
-        NomenclatureResponse n = salt("Al", 3, "S");
-        assertThat(n.traditional()).isEqualTo("sulfuro de aluminio");
-        assertThat(n.systematic()).isEqualTo("trisulfuro de dialuminio");
+    void caso25_cloruroFerrico() {
+        assertNames(salt("Fe", 3, "Cl"),
+                "cloruro férrico", "cloruro de hierro (III)", "tricloruro de hierro");
+    }
+
+    @Test
+    void caso26_sulfuroAluminico() {
+        assertNames(salt("Al", 3, "S"),
+                "sulfuro alumínico", "sulfuro de aluminio", "trisulfuro de dialuminio");
     }
 
     // ===== Oxisales =====
 
     @Test
-    void nombraSulfatodeSodio() {
-        NomenclatureResponse n = oxisalt("Na", 1, "sulfato");
-        assertThat(n.traditional()).isEqualTo("sulfato de sodio");
-        assertThat(n.systematic()).isEqualTo("tetraoxosulfato (VI) de disodio");
+    void caso27_sulfatoSodico() {
+        assertNames(oxisalt("Na", 1, "sulfato"),
+                "sulfato sódico", "sulfato de sodio", "tetraoxosulfato (VI) de disodio");
     }
 
     @Test
-    void nombraNitratodeCalcio() {
-        NomenclatureResponse n = oxisalt("Ca", 2, "nitrato");
-        assertThat(n.traditional()).isEqualTo("nitrato de calcio");
-        assertThat(n.systematic()).isEqualTo("bis(trioxonitrato) de calcio");
+    void caso28_nitratoCalcico() {
+        assertNames(oxisalt("Ca", 2, "nitrato"),
+                "nitrato cálcico", "nitrato de calcio", "bis(trioxonitrato (V)) de calcio");
     }
 
     @Test
-    void nombraFosfatodeHierroIII() {
-        NomenclatureResponse n = oxisalt("Fe", 3, "fosfato");
-        assertThat(n.traditional()).isEqualTo("fosfato férrico");
-        assertThat(n.stock()).isEqualTo("fosfato de hierro (III)");
-        assertThat(n.systematic()).isEqualTo("tetraoxofosfato (V) de hierro (III)");
+    void caso29_fosfatoFerrico() {
+        assertNames(oxisalt("Fe", 3, "fosfato"),
+                "fosfato férrico", "fosfato de hierro (III)", "tetraoxofosfato (V) de hierro (III)");
     }
 
     @Test
-    void nombraFosfatodeMagnesio() {
-        NomenclatureResponse n = oxisalt("Mg", 2, "fosfato");
-        assertThat(n.traditional()).isEqualTo("fosfato de magnesio");
-        assertThat(n.systematic()).isEqualTo("bis(tetraoxofosfato) de trimagnesio");
-    }
-
-    // ===== Garantía de no vacíos en todos los casos mínimos =====
-
-    @Test
-    void ningunCasoMinimoDevuelveCamposVacios() {
-        assertNoBlanks(oxide("Ca", "calcio", 2));
-        assertNoBlanks(oxide("Fe", "hierro", 2));
-        assertNoBlanks(oxide("Fe", "hierro", 3));
-        assertNoBlanks(oxide("Na", "sodio", 1));
-        assertNoBlanks(oxide("Al", "aluminio", 3));
-        assertNoBlanks(oxide("P", "fósforo", 3));
-        assertNoBlanks(oxide("P", "fósforo", 5));
-        assertNoBlanks(oxide("S", "azufre", 4));
-        assertNoBlanks(oxide("S", "azufre", 6));
-        assertNoBlanks(hydroxide("Fe", "hierro", 2));
-        assertNoBlanks(hydroxide("Fe", "hierro", 3));
-        assertNoBlanks(hydroxide("Ca", "calcio", 2));
-        assertNoBlanks(hydracid("Cl"));
-        assertNoBlanks(hydracid("S"));
-        assertNoBlanks(oxoacid("sulfato"));
-        assertNoBlanks(oxoacid("nitrato"));
-        assertNoBlanks(oxoacid("fosfato"));
-        assertNoBlanks(salt("Na", 1, "Cl"));
-        assertNoBlanks(salt("Ca", 2, "Cl"));
-        assertNoBlanks(salt("Fe", 2, "Cl"));
-        assertNoBlanks(salt("Fe", 3, "Cl"));
-        assertNoBlanks(salt("Al", 3, "S"));
-        assertNoBlanks(oxisalt("Na", 1, "sulfato"));
-        assertNoBlanks(oxisalt("Ca", 2, "nitrato"));
-        assertNoBlanks(oxisalt("Fe", 3, "fosfato"));
-        assertNoBlanks(oxisalt("Mg", 2, "fosfato"));
+    void caso30_fosfatoMagnesico() {
+        assertNames(oxisalt("Mg", 2, "fosfato"),
+                "fosfato magnésico", "fosfato de magnesio", "bis(tetraoxofosfato (V)) de trimagnesio");
     }
 }
