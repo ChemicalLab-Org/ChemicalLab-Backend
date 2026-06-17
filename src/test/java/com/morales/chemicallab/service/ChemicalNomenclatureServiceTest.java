@@ -248,4 +248,48 @@ class ChemicalNomenclatureServiceTest {
         assertNames(oxisalt("Mg", 2, "fosfato"),
                 "fosfato magnésico", "fosfato de magnesio", "bis(tetraoxofosfato (V)) de trimagnesio");
     }
+
+    // ===== Estaño: criterio escolar estañoso (+2) / estáñico (+4) =====
+
+    @Test
+    void caso31_oxidoEstanoso() {
+        assertNames(oxide("Sn", "estaño", 2),
+                "óxido estañoso", "óxido de estaño (II)", "monóxido de estaño");
+    }
+
+    @Test
+    void caso32_oxidoEstanico() {
+        assertNames(oxide("Sn", "estaño", 4),
+                "óxido estáñico", "óxido de estaño (IV)", "dióxido de estaño");
+    }
+
+    @Test
+    void caso33_hidroxidoEstanoso() {
+        assertNames(hydroxide("Sn", "estaño", 2),
+                "hidróxido estañoso", "hidróxido de estaño (II)", "dihidróxido de estaño");
+    }
+
+    @Test
+    void caso34_hidroxidoEstanico() {
+        assertNames(hydroxide("Sn", "estaño", 4),
+                "hidróxido estáñico", "hidróxido de estaño (IV)", "tetrahidróxido de estaño");
+    }
+
+    @Test
+    void caso35_cloruroEstanoso() {
+        assertNames(salt("Sn", 2, "Cl"),
+                "cloruro estañoso", "cloruro de estaño (II)", "dicloruro de estaño");
+    }
+
+    @Test
+    void caso36_cloruroEstanico() {
+        assertNames(salt("Sn", 4, "Cl"),
+                "cloruro estáñico", "cloruro de estaño (IV)", "tetracloruro de estaño");
+    }
+
+    @Test
+    void caso37_nitruroEstanico() {
+        assertNames(salt("Sn", 4, "N"),
+                "nitruro estáñico", "nitruro de estaño (IV)", "tetranitruro de triestaño");
+    }
 }

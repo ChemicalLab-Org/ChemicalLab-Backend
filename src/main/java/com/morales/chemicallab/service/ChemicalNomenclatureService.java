@@ -60,7 +60,7 @@ public class ChemicalNomenclatureService {
             Map.entry("Fe", Map.of(2, "ferroso", 3, "férrico")),
             Map.entry("Cu", Map.of(1, "cuproso", 2, "cúprico")),
             Map.entry("Hg", Map.of(1, "mercurioso", 2, "mercúrico")),
-            Map.entry("Sn", Map.of(2, "estañoso", 4, "estánnico")),
+            Map.entry("Sn", Map.of(2, "estañoso", 4, "estáñico")),
             Map.entry("Pb", Map.of(2, "plumboso", 4, "plúmbico")),
             Map.entry("Au", Map.of(1, "auroso", 3, "áurico")),
             Map.entry("Co", Map.of(2, "cobaltoso", 3, "cobáltico")),
