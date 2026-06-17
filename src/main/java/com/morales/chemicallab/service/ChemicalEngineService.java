@@ -6,6 +6,7 @@ import com.morales.chemicallab.dto.BinaryAnionResponse;
 import com.morales.chemicallab.dto.CompoundResponse;
 import com.morales.chemicallab.dto.ElementCompoundRequest;
 import com.morales.chemicallab.dto.MetalResponse;
+import com.morales.chemicallab.dto.NomenclatureResponse;
 import com.morales.chemicallab.dto.OxisaltRequest;
 import com.morales.chemicallab.dto.OxoanionResponse;
 import com.morales.chemicallab.dto.SaltRequest;
@@ -24,7 +25,9 @@ import java.util.Set;
  * incoherente o no está soportada, lanza {@link IllegalArgumentException} con un
  * mensaje claro que el frontend muestra al estudiante.
  *
- * No resuelve nomenclatura tradicional/sistemática/Stock: usa nombres base.
+ * La nomenclatura tradicional/sistemática/Stock se delega en el
+ * {@link ChemicalNomenclatureService}; aquí solo se arma la fórmula y se reúnen
+ * los datos del catálogo que esa traducción necesita.
  */
 @Service
 public class ChemicalEngineService {
@@ -33,9 +36,12 @@ public class ChemicalEngineService {
     private static final Set<String> NOBLE_GASES = Set.of("He", "Ne", "Ar", "Kr", "Xe", "Rn");
 
     private final ChemistryCatalogService catalog;
+    private final ChemicalNomenclatureService nomenclature;
 
-    public ChemicalEngineService(ChemistryCatalogService catalog) {
+    public ChemicalEngineService(ChemistryCatalogService catalog,
+                                 ChemicalNomenclatureService nomenclature) {
         this.catalog = catalog;
+        this.nomenclature = nomenclature;
     }
 
     // ===== Óxidos =====
@@ -60,7 +66,11 @@ public class ChemicalEngineService {
                 + request.valence()
                 + ".";
 
-        return new CompoundResponse(true, "Óxido", formula, "óxido de " + request.elementName(), explanation);
+        NomenclatureResponse names = nomenclature.forOxide(
+                request.elementSymbol(), request.elementName(), request.valence());
+
+        return new CompoundResponse(true, "Óxido", formula,
+                "óxido de " + request.elementName(), explanation, names);
     }
 
     // ===== Hidróxidos =====
@@ -82,7 +92,10 @@ public class ChemicalEngineService {
                 + request.valence()
                 + ".";
 
-        return new CompoundResponse(true, "Hidróxido", formula, "hidróxido de " + metal.name(), explanation);
+        NomenclatureResponse names = nomenclature.forHydroxide(metal, request.valence());
+
+        return new CompoundResponse(true, "Hidróxido", formula,
+                "hidróxido de " + metal.name(), explanation, names);
     }
 
     // ===== Ácidos =====
@@ -116,7 +129,10 @@ public class ChemicalEngineService {
                 + nonMetal.charge()
                 + ".";
 
-        return new CompoundResponse(true, "Ácido", formula, "hidrácido (" + nonMetal.name() + ")", explanation);
+        NomenclatureResponse names = nomenclature.forHydracid(nonMetal);
+
+        return new CompoundResponse(true, "Ácido", formula,
+                "hidrácido (" + nonMetal.name() + ")", explanation, names);
     }
 
     private CompoundResponse generateOxoacid(AcidRequest request) {
@@ -135,7 +151,10 @@ public class ChemicalEngineService {
                 + "). El hidrógeno trabaja con carga +1 y el grupo con carga -"
                 + group.charge() + ".";
 
-        return new CompoundResponse(true, "Ácido", formula, "oxácido (" + group.name() + ")", explanation);
+        NomenclatureResponse names = nomenclature.forOxoacid(group);
+
+        return new CompoundResponse(true, "Ácido", formula,
+                "oxácido (" + group.name() + ")", explanation, names);
     }
 
     // ===== Sales binarias =====
@@ -169,7 +188,9 @@ public class ChemicalEngineService {
                 + " y el anión con carga -" + anion.charge()
                 + ". El sistema cruza las cargas para equilibrar la fórmula.";
 
-        return new CompoundResponse(true, "Sal binaria", formula, name, explanation);
+        NomenclatureResponse names = nomenclature.forBinarySalt(metal, request.metalValence(), anion);
+
+        return new CompoundResponse(true, "Sal binaria", formula, name, explanation, names);
     }
 
     /**
@@ -228,7 +249,9 @@ public class ChemicalEngineService {
                 + " y el grupo químico con carga -" + group.charge()
                 + ". El sistema cruza las cargas para obtener una fórmula eléctricamente neutra.";
 
-        return new CompoundResponse(true, "Oxisal", formula, name, explanation);
+        NomenclatureResponse names = nomenclature.forOxisalt(metal, request.metalValence(), group);
+
+        return new CompoundResponse(true, "Oxisal", formula, name, explanation, names);
     }
 
     // ===== Utilidad genérica de fórmula =====

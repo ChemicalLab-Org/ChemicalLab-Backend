@@ -22,7 +22,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class ChemicalEngineServiceTest {
 
-    private final ChemicalEngineService service = new ChemicalEngineService(new ChemistryCatalogService());
+    private final ChemistryCatalogService catalog = new ChemistryCatalogService();
+    private final ChemicalEngineService service =
+            new ChemicalEngineService(catalog, new ChemicalNomenclatureService(catalog));
 
     private ElementCompoundRequest element(String symbol, String name, int valence) {
         return new ElementCompoundRequest(symbol, name, valence);
@@ -227,5 +229,68 @@ class ChemicalEngineServiceTest {
         assertThatThrownBy(() -> service.generateSalt(salt("Xx", 1, "Cl")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("no está en el catálogo");
+    }
+
+    @Test
+    void rechazaHidrogenoComoAnionDeSalBinaria() {
+        assertThatThrownBy(() -> service.generateSalt(salt("Na", 1, "H")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("hidrógeno");
+    }
+
+    // ===== Cobertura ampliada de fórmulas (validación integral 19.2) =====
+
+    @Test
+    void formaOxidosMetalicosYNoMetalicos() {
+        assertThat(service.generateOxide(element("Fe", "hierro", 2)).formula()).isEqualTo("FeO");
+        assertThat(service.generateOxide(element("Fe", "hierro", 3)).formula()).isEqualTo("Fe2O3");
+        assertThat(service.generateOxide(element("P", "fósforo", 3)).formula()).isEqualTo("P2O3");
+        assertThat(service.generateOxide(element("P", "fósforo", 5)).formula()).isEqualTo("P2O5");
+        assertThat(service.generateOxide(element("S", "azufre", 4)).formula()).isEqualTo("SO2");
+        assertThat(service.generateOxide(element("S", "azufre", 6)).formula()).isEqualTo("SO3");
+    }
+
+    @Test
+    void formaHidroxidosDeHierroYEstano() {
+        assertThat(service.generateHydroxide(element("Fe", "hierro", 2)).formula()).isEqualTo("Fe(OH)2");
+        assertThat(service.generateHydroxide(element("Fe", "hierro", 3)).formula()).isEqualTo("Fe(OH)3");
+        assertThat(service.generateHydroxide(element("Sn", "estaño", 2)).formula()).isEqualTo("Sn(OH)2");
+        assertThat(service.generateHydroxide(element("Sn", "estaño", 4)).formula()).isEqualTo("Sn(OH)4");
+    }
+
+    @Test
+    void formaHidracidosDeHalogenosYAnfigenos() {
+        assertThat(service.generateAcid(new AcidRequest(AcidType.HYDRACID, "F", null)).formula()).isEqualTo("HF");
+        assertThat(service.generateAcid(new AcidRequest(AcidType.HYDRACID, "I", null)).formula()).isEqualTo("HI");
+        assertThat(service.generateAcid(new AcidRequest(AcidType.HYDRACID, "Se", null)).formula()).isEqualTo("H2Se");
+        assertThat(service.generateAcid(new AcidRequest(AcidType.HYDRACID, "Te", null)).formula()).isEqualTo("H2Te");
+    }
+
+    @Test
+    void formaOxacidosSegunElOxoanion() {
+        assertThat(service.generateAcid(new AcidRequest(AcidType.OXOACID, null, "sulfito")).formula()).isEqualTo("H2SO3");
+        assertThat(service.generateAcid(new AcidRequest(AcidType.OXOACID, null, "nitrito")).formula()).isEqualTo("HNO2");
+        assertThat(service.generateAcid(new AcidRequest(AcidType.OXOACID, null, "fosfito")).formula()).isEqualTo("H3PO3");
+        assertThat(service.generateAcid(new AcidRequest(AcidType.OXOACID, null, "clorato")).formula()).isEqualTo("HClO3");
+        assertThat(service.generateAcid(new AcidRequest(AcidType.OXOACID, null, "hipoclorito")).formula()).isEqualTo("HClO");
+        assertThat(service.generateAcid(new AcidRequest(AcidType.OXOACID, null, "perclorato")).formula()).isEqualTo("HClO4");
+    }
+
+    @Test
+    void formaSalesBinariasDeCobreEstanoYZinc() {
+        assertThat(service.generateSalt(salt("Cu", 1, "Br")).formula()).isEqualTo("CuBr");
+        assertThat(service.generateSalt(salt("Cu", 2, "Br")).formula()).isEqualTo("CuBr2");
+        assertThat(service.generateSalt(salt("Sn", 2, "Cl")).formula()).isEqualTo("SnCl2");
+        assertThat(service.generateSalt(salt("Sn", 4, "Cl")).formula()).isEqualTo("SnCl4");
+        assertThat(service.generateSalt(salt("Sn", 4, "N")).formula()).isEqualTo("Sn3N4");
+    }
+
+    @Test
+    void formaOxisalesConYSinParentesis() {
+        assertThat(service.generateOxisalt(oxisalt("Na", 1, "nitrato")).formula()).isEqualTo("NaNO3");
+        assertThat(service.generateOxisalt(oxisalt("K", 1, "carbonato")).formula()).isEqualTo("K2CO3");
+        assertThat(service.generateOxisalt(oxisalt("Ca", 2, "carbonato")).formula()).isEqualTo("CaCO3");
+        assertThat(service.generateOxisalt(oxisalt("Cu", 2, "sulfato")).formula()).isEqualTo("CuSO4");
+        assertThat(service.generateOxisalt(oxisalt("Sn", 4, "sulfato")).formula()).isEqualTo("Sn(SO4)2");
     }
 }
