@@ -34,6 +34,7 @@ public class SecurityConfig {
     // Nombres de roles sin prefijo ROLE_ — Spring Security lo agrega automáticamente al usar hasRole(...)
     private static final String ADMIN = Role.ADMINISTRADOR.name();
     private static final String DOCENTE = Role.DOCENTE.name();
+    private static final String ESTUDIANTE = Role.ESTUDIANTE.name();
 
     private final CustomUserDetailsService userDetailsService;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -84,6 +85,11 @@ public class SecurityConfig {
 
                         // Motor químico — cualquier usuario autenticado
                         .requestMatchers("/api/chemistry/**").authenticated()
+
+                        // Contenidos conceptuales — acceso segmentado por rol
+                        .requestMatchers("/api/concepts/teacher/**").hasRole(DOCENTE)
+                        .requestMatchers("/api/concepts/student/**").hasRole(ESTUDIANTE)
+                        .requestMatchers("/api/concepts/admin/**").hasRole(ADMIN)
 
                         // Cualquier otro endpoint requiere autenticación
                         .anyRequest().authenticated()
