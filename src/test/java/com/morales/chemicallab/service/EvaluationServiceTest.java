@@ -148,7 +148,8 @@ class EvaluationServiceTest {
         EvaluationQuestion q = question(20L, eval, 1);
         // Primera consulta (replaceOptions): sin alternativas previas. Segunda (mapeo): las creadas.
         when(optionRepository.findByQuestionAndActiveTrueOrderByOrderIndexAsc(any()))
-                .thenReturn(List.of(), List.of(option(31L, q, false), option(32L, q, true)));
+                .thenReturn(List.of())
+                .thenReturn(List.of(option(31L, q, false), option(32L, q, true)));
 
         var request = new CreateQuestionRequest(
                 "¿Cuál es la fórmula del óxido de calcio?", QuestionType.MULTIPLE_CHOICE, 1, 0, null,
