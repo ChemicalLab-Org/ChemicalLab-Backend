@@ -91,6 +91,11 @@ public class SecurityConfig {
                         .requestMatchers("/api/concepts/student/**").hasRole(ESTUDIANTE)
                         .requestMatchers("/api/concepts/admin/**").hasRole(ADMIN)
 
+                        // Evaluaciones — acceso segmentado por rol
+                        .requestMatchers("/api/evaluations/teacher/**").hasRole(DOCENTE)
+                        .requestMatchers("/api/evaluations/student/**").hasRole(ESTUDIANTE)
+                        .requestMatchers("/api/evaluations/admin/**").hasRole(ADMIN)
+
                         // Cualquier otro endpoint requiere autenticación
                         .anyRequest().authenticated()
                 )
