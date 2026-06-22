@@ -30,6 +30,7 @@ public class AuthService {
     private final UserAccountRepository userAccountRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final AuditLogService auditLogService;
 
     @Transactional
     public PasswordChangeResponse changeTemporaryPassword(ChangePasswordRequest request) {
@@ -76,19 +77,26 @@ public class AuthService {
             userOpt = userAccountRepository.findByEmail(identifier);
         }
 
-        UserAccount user = userOpt.orElseThrow(
-                () -> new BadCredentialsException("El usuario o correo no está registrado.")
-        );
+        if (userOpt.isEmpty()) {
+            auditLogService.recordLoginFailed(identifier, "Usuario o correo no registrado.");
+            throw new BadCredentialsException("El usuario o correo no está registrado.");
+        }
+
+        UserAccount user = userOpt.get();
 
         if (Boolean.FALSE.equals(user.getActive())) {
+            auditLogService.recordLoginFailed(identifier, "La cuenta se encuentra inactiva.");
             throw new DisabledException("La cuenta se encuentra inactiva. Contacte al administrador.");
         }
 
         if (!passwordEncoder.matches(request.password(), user.getPassword())) {
+            auditLogService.recordLoginFailed(identifier, "Contraseña incorrecta.");
             throw new BadCredentialsException("La contraseña es incorrecta.");
         }
 
         String token = jwtService.generateToken(user);
+
+        auditLogService.recordLoginSuccess(user);
 
         return new AuthResponse(
                 token,

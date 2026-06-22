@@ -49,6 +49,8 @@ class EvaluationServiceTest {
     private TeacherProfileRepository teacherProfileRepository;
     @Mock
     private StudentProfileRepository studentProfileRepository;
+    @Mock
+    private AuditLogService auditLogService;
 
     @InjectMocks
     private EvaluationService service;
