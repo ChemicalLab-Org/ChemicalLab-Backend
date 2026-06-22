@@ -237,7 +237,23 @@ public class UserManagementService {
         UserAccount user = userAccountRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado."));
 
+        // Un administrador no puede desactivar su propia cuenta: evita quedar sin acceso.
+        UserAccount current = findAuthenticatedUser();
+        if (current != null && current.getId().equals(user.getId())) {
+            throw new IllegalArgumentException("No puede desactivar su propia cuenta de administrador.");
+        }
+
         user.setActive(false);
+        userAccountRepository.save(user);
+
+        return toUserResponse(user);
+    }
+
+    public UserResponse activateUser(Long userId) {
+        UserAccount user = userAccountRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado."));
+
+        user.setActive(true);
         userAccountRepository.save(user);
 
         return toUserResponse(user);
@@ -333,6 +349,19 @@ public class UserManagementService {
         if (!authenticatedUser.getId().equals(teacherUserId)) {
             throw new IllegalArgumentException("No puede restablecer contraseñas de estudiantes de otro docente.");
         }
+    }
+
+    /**
+     * Devuelve el usuario autenticado a partir del contexto de seguridad, o {@code null}
+     * si no es posible identificarlo. No lanza excepción para no romper escenarios sin
+     * contexto (por ejemplo, pruebas que no configuran autenticación).
+     */
+    private UserAccount findAuthenticatedUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || authentication.getName() == null) {
+            return null;
+        }
+        return userAccountRepository.findByUsername(authentication.getName()).orElse(null);
     }
 
     private String generateStudentCode() {

@@ -17,6 +17,9 @@ public interface EvaluationAttemptRepository extends JpaRepository<EvaluationAtt
     // Cuenta de intentos de un estudiante en una evaluación (control de maxAttempts).
     long countByEvaluationAndStudent(Evaluation evaluation, StudentProfile student);
 
+    // Métrica administrativa: intentos en los estados indicados (p. ej. enviados/calificados).
+    long countByStatusIn(Collection<AttemptStatus> statuses);
+
     // Intento en un estado concreto (se usa para impedir más de uno IN_PROGRESS).
     Optional<EvaluationAttempt> findByEvaluationAndStudentAndStatus(Evaluation evaluation,
                                                                     StudentProfile student,

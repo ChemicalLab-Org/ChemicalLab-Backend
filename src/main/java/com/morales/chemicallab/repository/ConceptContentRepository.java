@@ -17,6 +17,11 @@ public interface ConceptContentRepository extends JpaRepository<ConceptContent, 
     // Contenidos de un docente, más recientes primero.
     List<ConceptContent> findByCreatedByTeacherOrderByCreatedAtDesc(TeacherProfile teacher);
 
+    // Métricas administrativas: conteo por estado y últimos contenidos creados.
+    long countByStatus(ConceptStatus status);
+
+    List<ConceptContent> findTop5ByOrderByCreatedAtDesc();
+
     // Búsqueda de un contenido propio del docente (control de pertenencia).
     Optional<ConceptContent> findByIdAndCreatedByTeacher(Long id, TeacherProfile teacher);
 

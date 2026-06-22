@@ -80,8 +80,12 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PUT, "/api/users/teachers/*/students/*").hasRole(DOCENTE)
                         .requestMatchers(HttpMethod.PATCH, "/api/users/teachers/*/students/*/deactivate").hasRole(DOCENTE)
 
-                        // Desactivación general de usuarios — solo ADMINISTRADOR
+                        // Activación/desactivación general de usuarios — solo ADMINISTRADOR
                         .requestMatchers(HttpMethod.PATCH, "/api/users/*/deactivate").hasRole(ADMIN)
+                        .requestMatchers(HttpMethod.PATCH, "/api/users/*/activate").hasRole(ADMIN)
+
+                        // Panel administrativo (resumen, usuarios y actividad) — solo ADMINISTRADOR
+                        .requestMatchers("/api/admin/**").hasRole(ADMIN)
 
                         // Motor químico — cualquier usuario autenticado
                         .requestMatchers("/api/chemistry/**").authenticated()
