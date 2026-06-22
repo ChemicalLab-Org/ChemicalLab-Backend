@@ -1,21 +1,27 @@
 package com.morales.chemicallab.service;
 
 import com.morales.chemicallab.dto.AdminActivityResponse;
+import com.morales.chemicallab.dto.AdminPasswordResetResponse;
 import com.morales.chemicallab.dto.AdminSummaryResponse;
 import com.morales.chemicallab.dto.AdminUserResponse;
 import com.morales.chemicallab.entity.*;
 import com.morales.chemicallab.repository.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -38,6 +44,8 @@ class AdminServiceTest {
     private EvaluationRepository evaluationRepository;
     @Mock
     private EvaluationAttemptRepository evaluationAttemptRepository;
+    @Mock
+    private PasswordEncoder passwordEncoder;
 
     @InjectMocks
     private AdminService service;
@@ -170,5 +178,31 @@ class AdminServiceTest {
         assertThat(activity.recentConcepts()).hasSize(1);
         assertThat(activity.recentConcepts().get(0).title()).isEqualTo("Nomenclatura de ácidos");
         assertThat(activity.recentConcepts().get(0).subtitle()).isEqualTo("Laura Quispe");
+    }
+
+    // =========================================================================
+    // RESTABLECIMIENTO DE CONTRASEÑA
+    // =========================================================================
+
+    @Test
+    void resetUserPassword_funcionaParaEstudianteSinCorreo() {
+        // Estudiante creado por un docente: sin correo registrado.
+        UserAccount studentAccount = account(7L, "EST0007", Role.ESTUDIANTE, true);
+        studentAccount.setEmail(null);
+        studentAccount.setTemporaryPassword(false);
+
+        when(userAccountRepository.findById(7L)).thenReturn(Optional.of(studentAccount));
+        when(passwordEncoder.encode(anyString())).thenReturn("HASH");
+
+        AdminPasswordResetResponse response = service.resetUserPassword(7L);
+
+        assertThat(response.temporaryPassword()).isNotBlank();
+        assertThat(response.message()).contains("restablecida");
+
+        // La cuenta queda con la contraseña cifrada y marcada como temporal.
+        ArgumentCaptor<UserAccount> saved = ArgumentCaptor.forClass(UserAccount.class);
+        verify(userAccountRepository).save(saved.capture());
+        assertThat(saved.getValue().getPassword()).isEqualTo("HASH");
+        assertThat(saved.getValue().getTemporaryPassword()).isTrue();
     }
 }

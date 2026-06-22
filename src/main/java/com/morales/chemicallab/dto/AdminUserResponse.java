@@ -9,7 +9,9 @@ import java.time.LocalDateTime;
  * registro los datos básicos de cualquier rol (administrador, docente o estudiante)
  * sin exponer la contraseña.
  *
- * @param code código de estudiante cuando el usuario es ESTUDIANTE; {@code null} en otros roles.
+ * @param code             código de estudiante cuando el usuario es ESTUDIANTE; {@code null} en otros roles.
+ * @param protectedAccount {@code true} para la cuenta del propio administrador autenticado,
+ *                         que no admite acciones peligrosas (p. ej. desactivarse a sí mismo).
  */
 public record AdminUserResponse(
         Long userId,
@@ -20,5 +22,6 @@ public record AdminUserResponse(
         Role role,
         Boolean active,
         Boolean temporaryPassword,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        boolean protectedAccount
 ) {}
