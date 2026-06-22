@@ -92,4 +92,9 @@ public class UserManagementController {
     public UserResponse desactivarUsuario(@PathVariable Long userId) {
         return userManagementService.deactivateUser(userId);
     }
+
+    @PatchMapping("/{userId}/activate")
+    public UserResponse activarUsuario(@PathVariable Long userId) {
+        return userManagementService.activateUser(userId);
+    }
 }
