@@ -5,11 +5,12 @@ Módulo del backend que permite a los docentes crear evaluaciones de alternativa
 asignarlas a los grados y secciones que tienen a cargo. Los estudiantes resuelven
 únicamente las evaluaciones publicadas que corresponden a su grado y sección.
 
-> Nota de alcance: esta entrega cubre solo el backend. La pantalla del frontend de
-> evaluaciones y la vista de **resultados / calificaciones** (con reportes y
-> análisis) se implementarán en sesiones posteriores. Al enviar un intento ya se
-> calcula un puntaje básico interno y se guarda, pero la calificación definitiva
-> (estado `GRADED`) y su visualización quedan fuera de alcance por ahora.
+> Estado actual: además de crear, publicar y rendir evaluaciones, el módulo ya
+> **califica automáticamente** cada intento al enviarse (estado `GRADED`) y expone los
+> **resultados/calificaciones** tanto para el docente (resultados de su evaluación y
+> detalle de cada intento) como para el estudiante (sus calificaciones). Quedan fuera
+> de alcance la exportación a Excel/PDF, las estadísticas avanzadas, la edición manual
+> de notas y los comentarios del docente.
 
 ## Propósito del módulo
 
@@ -91,7 +92,8 @@ Intento de un estudiante sobre una evaluación.
 | `attemptNumber` | Número de intento |
 | `status` | Estado (`AttemptStatus`: `IN_PROGRESS`, `SUBMITTED`, `GRADED`) |
 | `startedAt` / `submittedAt` | Fechas de inicio y envío |
-| `score` / `maxScore` | Puntaje obtenido y máximo (al enviar) |
+| `gradedAt` | Fecha de calificación (coincide con el envío en alternativa única) |
+| `score` / `maxScore` | Puntaje obtenido y máximo (al enviar/calificar) |
 | `active` | Marca de actividad |
 
 ### EvaluationAnswer
@@ -124,7 +126,8 @@ Respuesta de un estudiante a una pregunta dentro de un intento.
 2. Ver el detalle de una evaluación asignada (sin las respuestas correctas).
 3. Iniciar un intento.
 4. Guardar respuestas de forma incremental.
-5. Enviar el intento (se calcula un puntaje básico y queda en `SUBMITTED`).
+5. Enviar el intento (se califica automáticamente y queda en `GRADED`).
+6. Consultar sus resultados/calificaciones y el detalle de un intento propio.
 
 ## Endpoints principales
 
@@ -144,6 +147,9 @@ Base: `/api/evaluations`
 | PATCH | `/teacher/{evaluationId}/archive` | Archivar evaluación |
 | POST | `/teacher/{evaluationId}/assignments` | Asignar a grado/sección |
 | PATCH | `/teacher/{evaluationId}/assignments/{assignmentId}/deactivate` | Desactivar asignación |
+| GET | `/teacher/{evaluationId}/results` | Resultados de la evaluación (agregados + intentos) |
+| GET | `/teacher/{evaluationId}/results/summary` | Solo los agregados de resultados |
+| GET | `/teacher/attempts/{attemptId}/result` | Detalle del resultado de un intento (con alternativa correcta) |
 
 ### Estudiante (`/student`)
 | Método | Ruta | Acción |
@@ -154,6 +160,8 @@ Base: `/api/evaluations`
 | GET | `/student/attempts/{attemptId}` | Ver intento |
 | POST | `/student/attempts/{attemptId}/answers` | Guardar/actualizar una respuesta |
 | POST | `/student/attempts/{attemptId}/submit` | Enviar intento |
+| GET | `/student/results` | Listar sus resultados/calificaciones |
+| GET | `/student/attempts/{attemptId}/result` | Detalle del resultado de un intento propio |
 
 ### Administrador (`/admin`)
 | Método | Ruta | Acción |
@@ -189,11 +197,57 @@ Base: `/api/evaluations`
 - No responder preguntas ajenas a la evaluación ni elegir alternativas ajenas a la pregunta.
 - No enviar un intento ya enviado.
 
-## Calificación automática (alcance actual)
+## Calificación automática
 
-Al enviar un intento, el servicio calcula un puntaje básico encapsulado en
-`EvaluationService.gradeAttempt`: por cada pregunta de alternativa única otorga sus
-puntos si la alternativa elegida es la correcta. Registra `correct` y
-`pointsAwarded` en cada respuesta y `score`/`maxScore` en el intento, dejándolo en
-estado `SUBMITTED`. El estado `GRADED`, la vista de resultados, los reportes y el
-análisis estadístico se abordarán en la **sesión de resultados/calificaciones**.
+Al enviar un intento, el servicio ejecuta la calificación automática encapsulada en
+`EvaluationService.gradeAttempt`, con estas reglas para preguntas de alternativa única:
+
+- Si la alternativa elegida es la correcta: `pointsAwarded = points` de la pregunta y
+  `correct = true`.
+- Si la alternativa elegida es incorrecta: `pointsAwarded = 0` y `correct = false`.
+- Si la pregunta no se respondió: cuenta como no respondida (`pointsAwarded = 0`).
+- `score` = suma de `pointsAwarded`; `maxScore` = suma de `points` de las **preguntas
+  activas** (las inactivas no se cuentan); nunca se otorga puntaje negativo.
+- `percentage` = `score / maxScore * 100` (0 si `maxScore` es 0), redondeado a un decimal.
+
+Como la corrección de alternativa única es automática y completa, el intento pasa
+directamente a estado `GRADED` y se registra `gradedAt`. Si por compatibilidad
+existiera un intento terminal antiguo sin `score`, al consultar su resultado se
+recalcula de forma segura (`ensureScored`) sin duplicar respuestas ni tocar intentos
+en progreso.
+
+## Resultados y retroalimentación
+
+**Qué ve el docente**
+- Lista de resultados de su evaluación: por cada intento terminal, el estudiante
+  (código, nombre, grado/sección), número de intento, estado, `score`/`maxScore`,
+  porcentaje y fechas de envío/calificación.
+- Agregados de la evaluación: total de intentos, promedio de puntaje, porcentaje
+  promedio, mayor y menor puntaje, y conteo de aprobados/desaprobados (umbral de
+  aprobación: 60 %, usado solo para esos contadores).
+- Detalle de un intento: corrección pregunta a pregunta con la **alternativa
+  seleccionada, la alternativa correcta**, si fue correcta, puntaje obtenido/máximo y
+  la explicación.
+
+**Qué ve el estudiante**
+- Siempre: título, `score`, `maxScore`, porcentaje, número de intento, estado y fecha
+  de envío de sus propios intentos.
+- Detalle por pregunta: su respuesta, si fue correcta y el puntaje obtenido.
+
+**Criterio de retroalimentación con más de un intento**
+
+Para no facilitar la trampa entre intentos, la **alternativa correcta** y la
+**explicación** solo se muestran al estudiante (`canViewDetailedFeedback = true`)
+cuando ya **no le quedan intentos disponibles** (`attemptsUsed >= maxAttempts`) o la
+evaluación está **archivada**. Mientras le queden intentos, ve su calificación y
+porcentaje pero no las respuestas correctas. El docente siempre ve todo.
+
+## Seguridad de los resultados
+
+- `/api/evaluations/teacher/**` → `DOCENTE`; `/api/evaluations/student/**` →
+  `ESTUDIANTE` (segmentación existente en `SecurityConfig`, sin cambios).
+- Un docente solo accede a los resultados de **sus propias** evaluaciones y al detalle
+  de intentos que pertenezcan a ellas.
+- Un estudiante solo accede a **sus propios** intentos; no puede consultar resultados
+  de otro estudiante ni recibir la alternativa correcta si aún tiene intentos.
+- Un intento `IN_PROGRESS` no se puede consultar como resultado final.

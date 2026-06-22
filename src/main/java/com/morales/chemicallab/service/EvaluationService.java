@@ -9,7 +9,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Lógica de negocio del módulo de evaluaciones.
@@ -23,10 +25,13 @@ import java.util.List;
  * identificadores enviados por el frontend), de modo que nadie pueda operar sobre
  * evaluaciones o intentos ajenos.</p>
  *
- * <p><b>Alcance:</b> al enviar un intento se calcula un puntaje básico (alternativa
- * única) y el intento queda en estado SUBMITTED. La calificación definitiva
- * (estado GRADED) y la vista de resultados/reportes se implementarán en la sesión de
- * resultados; aquí solo se deja la estructura preparada.</p>
+ * <p><b>Calificación y resultados:</b> al enviar un intento se ejecuta la
+ * calificación automática de alternativa única y el intento queda en estado GRADED
+ * con su {@code score}, {@code maxScore} y {@code gradedAt}. El docente consulta los
+ * resultados de sus evaluaciones y el detalle de cada intento; el estudiante consulta
+ * sus propias calificaciones. La retroalimentación detallada (alternativa correcta)
+ * se le muestra al estudiante solo cuando ya no le quedan intentos disponibles o la
+ * evaluación está archivada, para no facilitar la trampa.</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -42,6 +47,13 @@ public class EvaluationService {
     private final UserAccountRepository userAccountRepository;
     private final TeacherProfileRepository teacherProfileRepository;
     private final StudentProfileRepository studentProfileRepository;
+
+    // Estados de un intento que ya representa un resultado consultable.
+    private static final Set<AttemptStatus> RESULT_STATUSES =
+            EnumSet.of(AttemptStatus.SUBMITTED, AttemptStatus.GRADED);
+
+    // Umbral de aprobación (en %) usado solo para los contadores aprobados/desaprobados.
+    private static final double APPROVAL_PERCENTAGE = 60.0;
 
     // =========================================================================
     // DOCENTE — evaluaciones
@@ -319,8 +331,12 @@ public class EvaluationService {
 
         gradeAttempt(attempt);
 
-        attempt.setStatus(AttemptStatus.SUBMITTED);
-        attempt.setSubmittedAt(LocalDateTime.now());
+        // La calificación de alternativa única es automática y completa, por lo que el
+        // intento queda directamente GRADED (no en un SUBMITTED a la espera de revisión).
+        LocalDateTime now = LocalDateTime.now();
+        attempt.setStatus(AttemptStatus.GRADED);
+        attempt.setSubmittedAt(now);
+        attempt.setGradedAt(now);
         attemptRepository.save(attempt);
         return toAttemptResponse(attempt);
     }
@@ -345,16 +361,300 @@ public class EvaluationService {
     }
 
     // =========================================================================
-    // CALIFICACIÓN AUTOMÁTICA (básica, encapsulada)
+    // RESULTADOS — DOCENTE
+    // =========================================================================
+
+    /**
+     * Resultados de una evaluación propia: agregados generales y la lista de intentos
+     * calificados de los estudiantes. Solo considera intentos en estados terminales.
+     * No es de solo lectura porque, por seguridad, recalcula el puntaje de intentos
+     * antiguos que pudieran haberse enviado sin {@code score} (ver {@link #ensureScored}).
+     */
+    public TeacherEvaluationResultsResponse getTeacherEvaluationResults(String username, Long evaluationId) {
+        TeacherProfile teacher = requireTeacher(username);
+        Evaluation evaluation = requireOwnedEvaluation(evaluationId, teacher);
+
+        List<TeacherStudentResultResponse> results = terminalAttemptsOf(evaluation).stream()
+                .map(this::toTeacherStudentResult)
+                .toList();
+
+        return buildTeacherResults(evaluation, results);
+    }
+
+    /** Igual que {@link #getTeacherEvaluationResults} pero sin la lista de intentos. */
+    public TeacherEvaluationResultsSummaryResponse getTeacherEvaluationResultsSummary(String username,
+                                                                                      Long evaluationId) {
+        TeacherProfile teacher = requireTeacher(username);
+        Evaluation evaluation = requireOwnedEvaluation(evaluationId, teacher);
+
+        List<TeacherStudentResultResponse> results = terminalAttemptsOf(evaluation).stream()
+                .map(this::toTeacherStudentResult)
+                .toList();
+        TeacherEvaluationResultsResponse full = buildTeacherResults(evaluation, results);
+
+        return new TeacherEvaluationResultsSummaryResponse(
+                full.evaluationId(), full.title(), full.topic(), full.maxScore(),
+                full.totalAttempts(), full.averageScore(), full.averagePercentage(),
+                full.highestScore(), full.lowestScore(), full.approvedCount(), full.failedCount());
+    }
+
+    /**
+     * Detalle del resultado de un intento, solo si pertenece a una evaluación del
+     * docente autenticado. Muestra la corrección pregunta a pregunta con la alternativa
+     * correcta visible.
+     */
+    public TeacherAttemptResultDetailResponse getTeacherAttemptResult(String username, Long attemptId) {
+        TeacherProfile teacher = requireTeacher(username);
+        EvaluationAttempt attempt = attemptRepository.findById(attemptId)
+                .orElseThrow(() -> new EntityNotFoundException("El intento no existe."));
+
+        Evaluation evaluation = attempt.getEvaluation();
+        if (!evaluation.getCreatedByTeacher().getId().equals(teacher.getId())) {
+            throw new IllegalArgumentException("No tienes permiso para ver este intento.");
+        }
+        requireGradedResult(attempt);
+        ensureScored(attempt);
+
+        StudentProfile student = attempt.getStudent();
+        List<TeacherAnswerResultResponse> answers = answerDetailsOf(attempt).stream()
+                .map(d -> new TeacherAnswerResultResponse(
+                        d.question.getId(), d.question.getQuestionText(),
+                        d.selected == null ? null : d.selected.getId(),
+                        d.selected == null ? null : d.selected.getOptionText(),
+                        d.correctOption == null ? null : d.correctOption.getId(),
+                        d.correctOption == null ? null : d.correctOption.getOptionText(),
+                        d.isCorrect, d.question.getPoints(), d.pointsAwarded, d.question.getExplanation()))
+                .toList();
+
+        return new TeacherAttemptResultDetailResponse(
+                attempt.getId(), evaluation.getId(), evaluation.getTitle(),
+                student.getId(), student.getStudentCode(), fullName(student),
+                student.getGrade(), student.getSection(),
+                attempt.getAttemptNumber(), attempt.getStatus(),
+                attempt.getScore(), attempt.getMaxScore(), percentageOf(attempt),
+                attempt.getStartedAt(), attempt.getSubmittedAt(), attempt.getGradedAt(),
+                answers);
+    }
+
+    // =========================================================================
+    // RESULTADOS — ESTUDIANTE
+    // =========================================================================
+
+    /** Lista las calificaciones de los intentos terminales del estudiante autenticado. */
+    public List<StudentResultSummaryResponse> listStudentResults(String username) {
+        StudentProfile student = requireStudent(username);
+        return attemptRepository
+                .findByStudentAndStatusInOrderBySubmittedAtDesc(student, RESULT_STATUSES)
+                .stream()
+                .map(this::toStudentResultSummary)
+                .toList();
+    }
+
+    /** Detalle del resultado de un intento propio del estudiante. */
+    public StudentAttemptResultDetailResponse getStudentAttemptResult(String username, Long attemptId) {
+        StudentProfile student = requireStudent(username);
+        EvaluationAttempt attempt = requireOwnedAttempt(attemptId, student);
+        requireGradedResult(attempt);
+        ensureScored(attempt);
+
+        Evaluation evaluation = attempt.getEvaluation();
+        boolean canView = canViewDetailedFeedback(evaluation, student);
+
+        List<StudentAnswerResultResponse> answers = answerDetailsOf(attempt).stream()
+                .map(d -> new StudentAnswerResultResponse(
+                        d.question.getId(), d.question.getQuestionText(),
+                        d.selected == null ? null : d.selected.getOptionText(),
+                        d.isCorrect, d.question.getPoints(), d.pointsAwarded,
+                        canView && d.correctOption != null ? d.correctOption.getOptionText() : null,
+                        canView ? d.question.getExplanation() : null))
+                .toList();
+
+        return new StudentAttemptResultDetailResponse(
+                attempt.getId(), evaluation.getId(), evaluation.getTitle(), evaluation.getTopic(),
+                attempt.getAttemptNumber(), attempt.getStatus(),
+                attempt.getScore(), attempt.getMaxScore(), percentageOf(attempt),
+                attempt.getSubmittedAt(), canView, answers);
+    }
+
+    // =========================================================================
+    // RESULTADOS — AUXILIARES
+    // =========================================================================
+
+    private List<EvaluationAttempt> terminalAttemptsOf(Evaluation evaluation) {
+        List<EvaluationAttempt> attempts =
+                attemptRepository.findByEvaluationAndStatusInOrderBySubmittedAtDesc(evaluation, RESULT_STATUSES);
+        attempts.forEach(this::ensureScored);
+        return attempts;
+    }
+
+    private TeacherEvaluationResultsResponse buildTeacherResults(Evaluation evaluation,
+                                                                 List<TeacherStudentResultResponse> results) {
+        int maxScore = activeMaxScore(evaluation);
+        int total = results.size();
+
+        Double averageScore = null;
+        Double averagePercentage = null;
+        Integer highest = null;
+        Integer lowest = null;
+        int approved = 0;
+        int failed = 0;
+
+        if (total > 0) {
+            int sumScore = 0;
+            double sumPct = 0;
+            highest = Integer.MIN_VALUE;
+            lowest = Integer.MAX_VALUE;
+            for (TeacherStudentResultResponse r : results) {
+                int score = r.score() == null ? 0 : r.score();
+                double pct = r.percentage() == null ? 0 : r.percentage();
+                sumScore += score;
+                sumPct += pct;
+                highest = Math.max(highest, score);
+                lowest = Math.min(lowest, score);
+                if (pct >= APPROVAL_PERCENTAGE) {
+                    approved++;
+                } else {
+                    failed++;
+                }
+            }
+            averageScore = round1((double) sumScore / total);
+            averagePercentage = round1(sumPct / total);
+        }
+
+        return new TeacherEvaluationResultsResponse(
+                evaluation.getId(), evaluation.getTitle(), evaluation.getTopic(), maxScore,
+                total, averageScore, averagePercentage, highest, lowest, approved, failed, results);
+    }
+
+    private TeacherStudentResultResponse toTeacherStudentResult(EvaluationAttempt attempt) {
+        StudentProfile student = attempt.getStudent();
+        return new TeacherStudentResultResponse(
+                attempt.getId(), student.getId(), student.getStudentCode(), fullName(student),
+                student.getGrade(), student.getSection(),
+                attempt.getAttemptNumber(), attempt.getStatus(),
+                attempt.getScore(), attempt.getMaxScore(), percentageOf(attempt),
+                attempt.getSubmittedAt(), attempt.getGradedAt());
+    }
+
+    private StudentResultSummaryResponse toStudentResultSummary(EvaluationAttempt attempt) {
+        ensureScored(attempt);
+        Evaluation evaluation = attempt.getEvaluation();
+        StudentProfile student = attempt.getStudent();
+        int attemptsUsed = (int) attemptRepository.countByEvaluationAndStudent(evaluation, student);
+        return new StudentResultSummaryResponse(
+                attempt.getId(), evaluation.getId(), evaluation.getTitle(), evaluation.getTopic(),
+                attempt.getAttemptNumber(), attempt.getStatus(),
+                attempt.getScore(), attempt.getMaxScore(), percentageOf(attempt),
+                attempt.getSubmittedAt(), canViewDetailedFeedback(evaluation, student),
+                attemptsUsed, evaluation.getMaxAttempts());
+    }
+
+    /**
+     * Criterio conservador de retroalimentación: el estudiante solo ve la alternativa
+     * correcta cuando ya no le quedan intentos disponibles o la evaluación está
+     * archivada. Así no puede usar un resultado para acertar en un intento posterior.
+     */
+    private boolean canViewDetailedFeedback(Evaluation evaluation, StudentProfile student) {
+        long attemptsUsed = attemptRepository.countByEvaluationAndStudent(evaluation, student);
+        boolean noAttemptsLeft = attemptsUsed >= evaluation.getMaxAttempts();
+        return noAttemptsLeft || evaluation.getStatus() == EvaluationStatus.ARCHIVED;
+    }
+
+    /**
+     * Calcula el desglose de respuestas de un intento recorriendo las preguntas activas
+     * (las inactivas no cuentan). Incluye las preguntas no respondidas para que el
+     * detalle sea completo.
+     */
+    private List<AnswerDetail> answerDetailsOf(EvaluationAttempt attempt) {
+        return questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(attempt.getEvaluation())
+                .stream()
+                .map(question -> {
+                    List<EvaluationOption> options =
+                            optionRepository.findByQuestionAndActiveTrueOrderByOrderIndexAsc(question);
+                    EvaluationOption correctOption = options.stream()
+                            .filter(o -> Boolean.TRUE.equals(o.getCorrect()))
+                            .findFirst().orElse(null);
+                    EvaluationAnswer answer =
+                            answerRepository.findByAttemptAndQuestion(attempt, question).orElse(null);
+                    EvaluationOption selected = answer == null ? null : answer.getSelectedOption();
+                    boolean isCorrect = answer != null && Boolean.TRUE.equals(answer.getCorrect());
+                    int pointsAwarded = answer == null || answer.getPointsAwarded() == null
+                            ? 0 : answer.getPointsAwarded();
+                    return new AnswerDetail(question, selected, correctOption, isCorrect, pointsAwarded);
+                })
+                .toList();
+    }
+
+    /**
+     * Recalcula de forma segura el puntaje de un intento terminal al que le falte
+     * {@code score}/{@code maxScore} (p. ej. intentos antiguos enviados antes de esta
+     * sesión). No altera intentos en progreso ni duplica respuestas.
+     */
+    private void ensureScored(EvaluationAttempt attempt) {
+        if (attempt.getStatus() == AttemptStatus.IN_PROGRESS) {
+            return;
+        }
+        if (attempt.getScore() == null || attempt.getMaxScore() == null) {
+            gradeAttempt(attempt);
+            if (attempt.getGradedAt() == null) {
+                attempt.setGradedAt(attempt.getSubmittedAt() != null
+                        ? attempt.getSubmittedAt() : LocalDateTime.now());
+            }
+            attemptRepository.save(attempt);
+        }
+    }
+
+    /** Un resultado solo existe para intentos enviados/calificados, nunca en progreso. */
+    private void requireGradedResult(EvaluationAttempt attempt) {
+        if (attempt.getStatus() == AttemptStatus.IN_PROGRESS) {
+            throw new IllegalArgumentException("El intento aún está en progreso; todavía no tiene resultado.");
+        }
+    }
+
+    private int activeMaxScore(Evaluation evaluation) {
+        return questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(evaluation)
+                .stream()
+                .mapToInt(EvaluationQuestion::getPoints)
+                .sum();
+    }
+
+    private Double percentageOf(EvaluationAttempt attempt) {
+        Integer score = attempt.getScore();
+        Integer maxScore = attempt.getMaxScore();
+        if (score == null || maxScore == null || maxScore == 0) {
+            return 0.0;
+        }
+        return round1(score * 100.0 / maxScore);
+    }
+
+    private String fullName(StudentProfile student) {
+        return (student.getNames() + " " + student.getLastNames()).trim();
+    }
+
+    private double round1(double value) {
+        return Math.round(value * 10.0) / 10.0;
+    }
+
+    /** Estructura interna para el desglose de una respuesta dentro de un resultado. */
+    private record AnswerDetail(
+            EvaluationQuestion question,
+            EvaluationOption selected,
+            EvaluationOption correctOption,
+            boolean isCorrect,
+            int pointsAwarded
+    ) {}
+
+    // =========================================================================
+    // CALIFICACIÓN AUTOMÁTICA (alternativa única)
     // =========================================================================
 
     /**
      * Calcula un puntaje básico para preguntas de alternativa única: una respuesta es
      * correcta si su alternativa elegida está marcada como correcta, y entonces otorga
      * los puntos de la pregunta. El puntaje máximo es la suma de los puntos de todas
-     * las preguntas activas. Deja {@code correct} y {@code pointsAwarded} en cada
-     * respuesta. La calificación definitiva (estado GRADED) y los reportes son parte
-     * del módulo de resultados, que se implementará después.
+     * las preguntas activas (las inactivas no cuentan) y nunca se otorga puntaje
+     * negativo. Deja {@code correct} y {@code pointsAwarded} en cada respuesta y
+     * {@code score}/{@code maxScore} en el intento.
      */
     private void gradeAttempt(EvaluationAttempt attempt) {
         List<EvaluationQuestion> questions =

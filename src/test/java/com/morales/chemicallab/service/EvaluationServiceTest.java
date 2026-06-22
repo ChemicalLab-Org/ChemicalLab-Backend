@@ -9,12 +9,14 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -97,6 +99,15 @@ class EvaluationServiceTest {
                                             String grade, String section) {
         return EvaluationAssignment.builder()
                 .id(id).evaluation(evaluation).teacher(teacher).grade(grade).section(section).active(true).build();
+    }
+
+    private EvaluationAttempt gradedAttempt(Long id, Evaluation evaluation, StudentProfile student,
+                                            int attemptNumber, Integer score, Integer maxScore) {
+        return EvaluationAttempt.builder()
+                .id(id).evaluation(evaluation).student(student).attemptNumber(attemptNumber)
+                .status(AttemptStatus.GRADED).score(score).maxScore(maxScore)
+                .startedAt(LocalDateTime.now()).submittedAt(LocalDateTime.now()).gradedAt(LocalDateTime.now())
+                .active(true).build();
     }
 
     private void stubTeacher(TeacherProfile teacher) {
@@ -450,7 +461,7 @@ class EvaluationServiceTest {
     }
 
     // =========================================================================
-    // 16. Estudiante envía el intento (se calcula el puntaje básico)
+    // 16. Estudiante envía el intento (se califica y queda GRADED)
     // =========================================================================
 
     @Test
@@ -476,7 +487,7 @@ class EvaluationServiceTest {
         AttemptResponse response = service.submitAttempt(
                 "EST0001", 50L, new SubmitEvaluationAttemptRequest(null));
 
-        assertThat(response.status()).isEqualTo(AttemptStatus.SUBMITTED);
+        assertThat(response.status()).isEqualTo(AttemptStatus.GRADED);
         assertThat(response.score()).isEqualTo(2);
         assertThat(response.maxScore()).isEqualTo(2);
     }
@@ -540,5 +551,234 @@ class EvaluationServiceTest {
         assertThatThrownBy(() -> service.updateEvaluation("docente1", 10L, request))
                 .hasMessageContaining("No tienes permiso");
         verify(evaluationRepository, never()).save(any(Evaluation.class));
+    }
+
+    // =========================================================================
+    // 20. Una respuesta incorrecta otorga 0 puntos al enviar
+    // =========================================================================
+
+    @Test
+    void respuestaIncorrectaOtorgaCero() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
+        EvaluationQuestion q = question(20L, eval, 2);
+        EvaluationOption incorrecta = option(31L, q, false);
+        EvaluationAnswer answer = EvaluationAnswer.builder()
+                .id(60L).attempt(null).question(q).selectedOption(incorrecta).build();
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .status(AttemptStatus.IN_PROGRESS).active(true).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+        when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval)).thenReturn(List.of(q));
+        when(answerRepository.findByAttemptAndQuestion(attempt, q)).thenReturn(Optional.of(answer));
+        when(answerRepository.save(any(EvaluationAnswer.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(attemptRepository.save(any(EvaluationAttempt.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(answerRepository.findByAttemptOrderByAnsweredAtAsc(attempt)).thenReturn(List.of(answer));
+
+        AttemptResponse response = service.submitAttempt(
+                "EST0001", 50L, new SubmitEvaluationAttemptRequest(null));
+
+        assertThat(response.status()).isEqualTo(AttemptStatus.GRADED);
+        assertThat(response.score()).isZero();
+        assertThat(response.maxScore()).isEqualTo(2);
+        assertThat(answer.getCorrect()).isFalse();
+        assertThat(answer.getPointsAwarded()).isZero();
+    }
+
+    // =========================================================================
+    // 21. Docente lista los resultados de su evaluación (agregados y porcentaje)
+    // =========================================================================
+
+    @Test
+    void docenteListaResultadosDeSuEvaluacion() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        stubTeacher(docente);
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        EvaluationQuestion q = question(20L, eval, 2);
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        EvaluationAttempt at = gradedAttempt(50L, eval, alumno, 1, 2, 2);
+        when(evaluationRepository.findById(10L)).thenReturn(Optional.of(eval));
+        when(attemptRepository.findByEvaluationAndStatusInOrderBySubmittedAtDesc(eq(eval), any()))
+                .thenReturn(List.of(at));
+        when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval)).thenReturn(List.of(q));
+
+        TeacherEvaluationResultsResponse res = service.getTeacherEvaluationResults("docente1", 10L);
+
+        assertThat(res.totalAttempts()).isEqualTo(1);
+        assertThat(res.maxScore()).isEqualTo(2);
+        assertThat(res.results()).hasSize(1);
+        assertThat(res.results().get(0).studentCode()).isEqualTo("EST0001");
+        assertThat(res.results().get(0).percentage()).isEqualTo(100.0);
+        assertThat(res.approvedCount()).isEqualTo(1);
+        assertThat(res.failedCount()).isZero();
+    }
+
+    // =========================================================================
+    // 22. Un docente no ve los resultados de la evaluación de otro docente
+    // =========================================================================
+
+    @Test
+    void docenteNoVeResultadosDeOtroDocente() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        TeacherProfile otro = teacher(2L, "docente2");
+        stubTeacher(docente);
+        when(evaluationRepository.findById(10L))
+                .thenReturn(Optional.of(evaluation(10L, otro, EvaluationStatus.PUBLISHED, 1)));
+
+        assertThatThrownBy(() -> service.getTeacherEvaluationResults("docente1", 10L))
+                .hasMessageContaining("No tienes permiso");
+    }
+
+    // =========================================================================
+    // 23. Estudiante ve la lista de sus resultados
+    // =========================================================================
+
+    @Test
+    void estudianteVeSusResultados() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        EvaluationAttempt at = gradedAttempt(50L, eval, alumno, 1, 2, 2);
+        when(attemptRepository.findByStudentAndStatusInOrderBySubmittedAtDesc(eq(alumno), any()))
+                .thenReturn(List.of(at));
+        when(attemptRepository.countByEvaluationAndStudent(eval, alumno)).thenReturn(1L);
+
+        List<StudentResultSummaryResponse> res = service.listStudentResults("EST0001");
+
+        assertThat(res).hasSize(1);
+        assertThat(res.get(0).score()).isEqualTo(2);
+        assertThat(res.get(0).percentage()).isEqualTo(100.0);
+        // maxAttempts 1 y attemptsUsed 1 → ya no quedan intentos: puede ver el detalle.
+        assertThat(res.get(0).canViewDetailedFeedback()).isTrue();
+    }
+
+    // =========================================================================
+    // 24. Estudiante no ve el resultado de un intento de otro estudiante
+    // =========================================================================
+
+    @Test
+    void estudianteNoVeResultadoDeOtroEstudiante() {
+        StudentProfile alumno = student(6L, "EST0002", "3", "B");
+        stubStudent(alumno);
+        StudentProfile otro = student(5L, "EST0001", "3", "A");
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        EvaluationAttempt at = gradedAttempt(50L, eval, otro, 1, 2, 2);
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(at));
+
+        assertThatThrownBy(() -> service.getStudentAttemptResult("EST0002", 50L))
+                .hasMessageContaining("No tienes permiso");
+    }
+
+    // =========================================================================
+    // 25. Estudiante con intentos restantes no recibe la alternativa correcta
+    // =========================================================================
+
+    @Test
+    void estudianteConIntentosRestantesNoRecibeAlternativaCorrecta() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
+        EvaluationQuestion q = question(20L, eval, 2);
+        EvaluationOption incorrecta = option(31L, q, false);
+        EvaluationOption correcta = option(32L, q, true);
+        EvaluationAttempt at = gradedAttempt(50L, eval, alumno, 1, 2, 2);
+        EvaluationAnswer ans = EvaluationAnswer.builder()
+                .id(60L).attempt(at).question(q).selectedOption(correcta).correct(true).pointsAwarded(2).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(at));
+        when(attemptRepository.countByEvaluationAndStudent(eval, alumno)).thenReturn(1L);
+        when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval)).thenReturn(List.of(q));
+        when(optionRepository.findByQuestionAndActiveTrueOrderByOrderIndexAsc(q))
+                .thenReturn(List.of(incorrecta, correcta));
+        when(answerRepository.findByAttemptAndQuestion(at, q)).thenReturn(Optional.of(ans));
+
+        StudentAttemptResultDetailResponse res = service.getStudentAttemptResult("EST0001", 50L);
+
+        assertThat(res.canViewDetailedFeedback()).isFalse();
+        assertThat(res.answers()).hasSize(1);
+        assertThat(res.answers().get(0).correct()).isTrue();
+        assertThat(res.answers().get(0).correctOptionText()).isNull();
+    }
+
+    // =========================================================================
+    // 26. Estudiante sin intentos restantes sí recibe la alternativa correcta
+    // =========================================================================
+
+    @Test
+    void estudianteSinIntentosRestantesRecibeAlternativaCorrecta() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        EvaluationQuestion q = question(20L, eval, 2);
+        EvaluationOption incorrecta = option(31L, q, false);
+        EvaluationOption correcta = option(32L, q, true);
+        EvaluationAttempt at = gradedAttempt(50L, eval, alumno, 1, 2, 2);
+        EvaluationAnswer ans = EvaluationAnswer.builder()
+                .id(60L).attempt(at).question(q).selectedOption(correcta).correct(true).pointsAwarded(2).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(at));
+        when(attemptRepository.countByEvaluationAndStudent(eval, alumno)).thenReturn(1L);
+        when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval)).thenReturn(List.of(q));
+        when(optionRepository.findByQuestionAndActiveTrueOrderByOrderIndexAsc(q))
+                .thenReturn(List.of(incorrecta, correcta));
+        when(answerRepository.findByAttemptAndQuestion(at, q)).thenReturn(Optional.of(ans));
+
+        StudentAttemptResultDetailResponse res = service.getStudentAttemptResult("EST0001", 50L);
+
+        assertThat(res.canViewDetailedFeedback()).isTrue();
+        assertThat(res.answers().get(0).correctOptionText()).isEqualTo("CaO");
+    }
+
+    // =========================================================================
+    // 27. El docente sí ve la alternativa correcta en el detalle del intento
+    // =========================================================================
+
+    @Test
+    void docenteVeAlternativaCorrectaEnDetalle() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        stubTeacher(docente);
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
+        EvaluationQuestion q = question(20L, eval, 2);
+        EvaluationOption incorrecta = option(31L, q, false);
+        EvaluationOption correcta = option(32L, q, true);
+        EvaluationAttempt at = gradedAttempt(50L, eval, alumno, 1, 2, 2);
+        EvaluationAnswer ans = EvaluationAnswer.builder()
+                .id(60L).attempt(at).question(q).selectedOption(correcta).correct(true).pointsAwarded(2).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(at));
+        when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval)).thenReturn(List.of(q));
+        when(optionRepository.findByQuestionAndActiveTrueOrderByOrderIndexAsc(q))
+                .thenReturn(List.of(incorrecta, correcta));
+        when(answerRepository.findByAttemptAndQuestion(at, q)).thenReturn(Optional.of(ans));
+
+        TeacherAttemptResultDetailResponse res = service.getTeacherAttemptResult("docente1", 50L);
+
+        assertThat(res.studentName()).isEqualTo("Luis Torres");
+        assertThat(res.percentage()).isEqualTo(100.0);
+        assertThat(res.answers().get(0).correctOptionId()).isEqualTo(32L);
+        assertThat(res.answers().get(0).correctOptionText()).isEqualTo("CaO");
+    }
+
+    // =========================================================================
+    // 28. No se consulta como resultado un intento en progreso
+    // =========================================================================
+
+    @Test
+    void noSeConsultaResultadoDeIntentoEnProgreso() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        EvaluationAttempt at = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .status(AttemptStatus.IN_PROGRESS).active(true).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(at));
+
+        assertThatThrownBy(() -> service.getStudentAttemptResult("EST0001", 50L))
+                .hasMessageContaining("en progreso");
     }
 }

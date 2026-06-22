@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -27,4 +28,14 @@ public interface EvaluationAttemptRepository extends JpaRepository<EvaluationAtt
     // Último intento del estudiante en la evaluación (para informar su estado al listar).
     Optional<EvaluationAttempt> findFirstByEvaluationAndStudentOrderByAttemptNumberDesc(Evaluation evaluation,
                                                                                         StudentProfile student);
+
+    // Intentos de una evaluación en estados terminales (resultados del docente),
+    // del más reciente al más antiguo por fecha de envío.
+    List<EvaluationAttempt> findByEvaluationAndStatusInOrderBySubmittedAtDesc(Evaluation evaluation,
+                                                                              Collection<AttemptStatus> statuses);
+
+    // Intentos de un estudiante en estados terminales (sus resultados/calificaciones),
+    // del más reciente al más antiguo por fecha de envío.
+    List<EvaluationAttempt> findByStudentAndStatusInOrderBySubmittedAtDesc(StudentProfile student,
+                                                                           Collection<AttemptStatus> statuses);
 }
