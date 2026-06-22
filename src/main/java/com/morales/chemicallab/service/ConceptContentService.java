@@ -32,6 +32,9 @@ public class ConceptContentService {
     private final UserAccountRepository userAccountRepository;
     private final TeacherProfileRepository teacherProfileRepository;
     private final StudentProfileRepository studentProfileRepository;
+    private final AuditLogService auditLogService;
+
+    private static final String TARGET_CONCEPT = "ConceptContent";
 
     // =========================================================================
     // DOCENTE
@@ -54,6 +57,12 @@ public class ConceptContentService {
                 .build();
 
         conceptContentRepository.save(content);
+
+        auditLogService.recordInfo(LogEventType.CONCEPT_CREATED, TARGET_CONCEPT, content.getId(),
+                content.getTitle(), "Crear contenido",
+                "Se creó el contenido conceptual «" + content.getTitle() + "».",
+                "category=" + content.getCategory());
+
         return toConceptContentResponse(content);
     }
 
@@ -98,6 +107,11 @@ public class ConceptContentService {
 
         content.setStatus(ConceptStatus.PUBLISHED);
         conceptContentRepository.save(content);
+
+        auditLogService.recordInfo(LogEventType.CONCEPT_PUBLISHED, TARGET_CONCEPT, content.getId(),
+                content.getTitle(), "Publicar contenido",
+                "Se publicó el contenido conceptual «" + content.getTitle() + "».", null);
+
         return toConceptContentResponse(content);
     }
 
@@ -134,6 +148,12 @@ public class ConceptContentService {
                 .build();
 
         conceptAssignmentRepository.save(assignment);
+
+        auditLogService.recordInfo(LogEventType.CONCEPT_ASSIGNED, TARGET_CONCEPT, content.getId(),
+                content.getTitle(), "Asignar contenido",
+                "Se asignó el contenido «" + content.getTitle() + "» a " + grade + "° " + section + ".",
+                "grade=" + grade + ";section=" + section);
+
         return toAssignmentResponse(assignment);
     }
 

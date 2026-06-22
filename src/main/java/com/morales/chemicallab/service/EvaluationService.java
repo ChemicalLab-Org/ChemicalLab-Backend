@@ -47,6 +47,9 @@ public class EvaluationService {
     private final UserAccountRepository userAccountRepository;
     private final TeacherProfileRepository teacherProfileRepository;
     private final StudentProfileRepository studentProfileRepository;
+    private final AuditLogService auditLogService;
+
+    private static final String TARGET_EVALUATION = "Evaluation";
 
     // Estados de un intento que ya representa un resultado consultable.
     private static final Set<AttemptStatus> RESULT_STATUSES =
@@ -75,6 +78,11 @@ public class EvaluationService {
                 .build();
 
         evaluationRepository.save(evaluation);
+
+        auditLogService.recordInfo(LogEventType.EVALUATION_CREATED, TARGET_EVALUATION, evaluation.getId(),
+                evaluation.getTitle(), "Crear evaluación",
+                "Se creó la evaluación «" + evaluation.getTitle() + "».", null);
+
         return toEvaluationResponse(evaluation);
     }
 
@@ -138,6 +146,11 @@ public class EvaluationService {
 
         evaluation.setStatus(EvaluationStatus.PUBLISHED);
         evaluationRepository.save(evaluation);
+
+        auditLogService.recordInfo(LogEventType.EVALUATION_PUBLISHED, TARGET_EVALUATION, evaluation.getId(),
+                evaluation.getTitle(), "Publicar evaluación",
+                "Se publicó la evaluación «" + evaluation.getTitle() + "».", null);
+
         return toEvaluationDetailResponse(evaluation);
     }
 
@@ -231,6 +244,12 @@ public class EvaluationService {
                 .build();
 
         assignmentRepository.save(assignment);
+
+        auditLogService.recordInfo(LogEventType.EVALUATION_ASSIGNED, TARGET_EVALUATION, evaluation.getId(),
+                evaluation.getTitle(), "Asignar evaluación",
+                "Se asignó la evaluación «" + evaluation.getTitle() + "» a " + grade + "° " + section + ".",
+                "grade=" + grade + ";section=" + section);
+
         return toAssignmentResponse(assignment);
     }
 
@@ -338,6 +357,14 @@ public class EvaluationService {
         attempt.setSubmittedAt(now);
         attempt.setGradedAt(now);
         attemptRepository.save(attempt);
+
+        // Solo se registra el envío del intento; nunca las respuestas individuales.
+        Evaluation evaluation = attempt.getEvaluation();
+        auditLogService.recordInfo(LogEventType.EVALUATION_ATTEMPT_SUBMITTED, TARGET_EVALUATION,
+                evaluation.getId(), evaluation.getTitle(), "Enviar intento",
+                "Se envió un intento de la evaluación «" + evaluation.getTitle() + "».",
+                "attemptId=" + attempt.getId());
+
         return toAttemptResponse(attempt);
     }
 

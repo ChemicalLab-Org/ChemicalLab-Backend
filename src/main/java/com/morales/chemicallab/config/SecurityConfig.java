@@ -84,6 +84,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PATCH, "/api/users/*/deactivate").hasRole(ADMIN)
                         .requestMatchers(HttpMethod.PATCH, "/api/users/*/activate").hasRole(ADMIN)
 
+                        // Logs / trazabilidad del sistema — solo ADMINISTRADOR
+                        // (queda cubierto por /api/admin/** pero se declara explícito por claridad)
+                        .requestMatchers("/api/admin/logs/**").hasRole(ADMIN)
+
                         // Panel administrativo (resumen, usuarios y actividad) — solo ADMINISTRADOR
                         .requestMatchers("/api/admin/**").hasRole(ADMIN)
 

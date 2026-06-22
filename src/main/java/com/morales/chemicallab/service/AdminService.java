@@ -40,6 +40,7 @@ public class AdminService {
     private final EvaluationRepository evaluationRepository;
     private final EvaluationAttemptRepository evaluationAttemptRepository;
     private final PasswordEncoder passwordEncoder;
+    private final AuditLogService auditLogService;
 
     // Alfabeto sin caracteres ambiguos (0/O, 1/l/I) para contraseñas temporales legibles.
     private static final String TEMP_PASSWORD_ALPHABET =
@@ -122,6 +123,12 @@ public class AdminService {
         user.setPassword(passwordEncoder.encode(temporaryPassword));
         user.setTemporaryPassword(true);
         userAccountRepository.save(user);
+
+        // Importante: nunca se registra la contraseña temporal generada.
+        auditLogService.recordWarning(LogEventType.PASSWORD_RESET, "UserAccount", user.getId(),
+                user.getUsername(), "Restablecer contraseña",
+                "Se restableció la contraseña del usuario " + user.getUsername() + ".",
+                "role=" + user.getRole());
 
         return new AdminPasswordResetResponse(
                 "Contraseña restablecida correctamente.", temporaryPassword);

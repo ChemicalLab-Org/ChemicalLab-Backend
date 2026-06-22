@@ -21,6 +21,10 @@ public class UserManagementService {
     private final TeacherProfileRepository teacherProfileRepository;
     private final StudentProfileRepository studentProfileRepository;
     private final PasswordEncoder passwordEncoder;
+    private final AuditLogService auditLogService;
+
+    // Tipo de recurso afectado en los eventos de trazabilidad de este módulo.
+    private static final String TARGET_USER = "UserAccount";
 
     // =========================================================================
     // DOCENTES
@@ -55,6 +59,10 @@ public class UserManagementService {
 
         teacherProfileRepository.save(teacher);
 
+        auditLogService.recordInfo(LogEventType.USER_CREATED, TARGET_USER, user.getId(),
+                teacher.getNames() + " " + teacher.getLastNames(), "Registrar docente",
+                "Se registró un nuevo docente (" + user.getUsername() + ").", "role=DOCENTE");
+
         return toTeacherResponse(teacher);
     }
 
@@ -80,6 +88,10 @@ public class UserManagementService {
         TeacherProfile teacher = teacherProfileRepository.findByUser(user)
                 .orElseThrow(() -> new IllegalArgumentException("Docente no encontrado."));
 
+        auditLogService.recordWarning(LogEventType.USER_DEACTIVATED, TARGET_USER, user.getId(),
+                teacher.getNames() + " " + teacher.getLastNames(), "Desactivar docente",
+                "Se desactivó el docente " + user.getUsername() + ".", "role=DOCENTE");
+
         return toTeacherResponse(teacher);
     }
 
@@ -101,6 +113,11 @@ public class UserManagementService {
         user.setPassword(passwordEncoder.encode(request.newTemporaryPassword()));
         user.setTemporaryPassword(true);
         userAccountRepository.save(user);
+
+        // Importante: nunca se registra la contraseña temporal generada.
+        auditLogService.recordWarning(LogEventType.PASSWORD_RESET, TARGET_USER, user.getId(),
+                user.getUsername(), "Restablecer contraseña",
+                "Se restableció la contraseña del docente " + user.getUsername() + ".", "role=DOCENTE");
 
         return new PasswordChangeResponse("Contraseña restablecida correctamente", true);
     }
@@ -147,6 +164,10 @@ public class UserManagementService {
                 .build();
 
         studentProfileRepository.save(student);
+
+        auditLogService.recordInfo(LogEventType.USER_CREATED, TARGET_USER, user.getId(),
+                student.getNames() + " " + student.getLastNames(), "Registrar estudiante",
+                "Se registró un nuevo estudiante (" + studentCode + ").", "role=ESTUDIANTE");
 
         return toStudentResponse(student);
     }
@@ -202,6 +223,10 @@ public class UserManagementService {
         student.getUser().setActive(false);
         userAccountRepository.save(student.getUser());
 
+        auditLogService.recordWarning(LogEventType.USER_DEACTIVATED, TARGET_USER, student.getUser().getId(),
+                student.getNames() + " " + student.getLastNames(), "Desactivar estudiante",
+                "Se desactivó el estudiante " + student.getStudentCode() + ".", "role=ESTUDIANTE");
+
         return toStudentResponse(student);
     }
 
@@ -226,6 +251,12 @@ public class UserManagementService {
         account.setTemporaryPassword(true);
         userAccountRepository.save(account);
 
+        // Importante: nunca se registra la contraseña temporal generada.
+        auditLogService.recordWarning(LogEventType.PASSWORD_RESET, TARGET_USER, account.getId(),
+                student.getStudentCode(), "Restablecer contraseña",
+                "Se restableció la contraseña del estudiante " + student.getStudentCode() + ".",
+                "role=ESTUDIANTE");
+
         return new PasswordChangeResponse("Contraseña restablecida correctamente", true);
     }
 
@@ -246,6 +277,10 @@ public class UserManagementService {
         user.setActive(false);
         userAccountRepository.save(user);
 
+        auditLogService.recordWarning(LogEventType.USER_DEACTIVATED, TARGET_USER, user.getId(),
+                user.getUsername(), "Desactivar usuario",
+                "Se desactivó el usuario " + user.getUsername() + ".", "role=" + user.getRole());
+
         return toUserResponse(user);
     }
 
@@ -255,6 +290,10 @@ public class UserManagementService {
 
         user.setActive(true);
         userAccountRepository.save(user);
+
+        auditLogService.recordInfo(LogEventType.USER_REACTIVATED, TARGET_USER, user.getId(),
+                user.getUsername(), "Reactivar usuario",
+                "Se reactivó el usuario " + user.getUsername() + ".", "role=" + user.getRole());
 
         return toUserResponse(user);
     }

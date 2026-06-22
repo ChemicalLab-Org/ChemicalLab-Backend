@@ -46,6 +46,8 @@ class AdminServiceTest {
     private EvaluationAttemptRepository evaluationAttemptRepository;
     @Mock
     private PasswordEncoder passwordEncoder;
+    @Mock
+    private AuditLogService auditLogService;
 
     @InjectMocks
     private AdminService service;
