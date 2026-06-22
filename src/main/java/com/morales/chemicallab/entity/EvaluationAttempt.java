@@ -7,9 +7,10 @@ import java.time.LocalDateTime;
 
 /**
  * Intento de un estudiante sobre una evaluación. Registra el orden del intento, su
- * estado y, una vez enviado, el puntaje calculado. La calificación definitiva y la
- * vista de resultados se abordan en una sesión posterior; aquí se deja la estructura
- * lista ({@code score}, {@code maxScore}, estado {@link AttemptStatus#GRADED}).
+ * estado y, una vez enviado, el puntaje calculado. Como las preguntas son de
+ * alternativa única, la calificación automática se ejecuta al enviar: el intento
+ * queda en {@link AttemptStatus#GRADED} con su {@code score}, {@code maxScore} y
+ * {@code gradedAt}.
  */
 @Entity
 @Table(name = "evaluation_attempts")
@@ -49,6 +50,10 @@ public class EvaluationAttempt {
     private LocalDateTime startedAt;
 
     private LocalDateTime submittedAt;
+
+    // Fecha en que el intento quedó calificado. Para evaluaciones de alternativa única
+    // coincide con el envío, porque la calificación automática se ejecuta al enviar.
+    private LocalDateTime gradedAt;
 
     // Puntaje obtenido y puntaje máximo. Se calculan al enviar el intento.
     private Integer score;

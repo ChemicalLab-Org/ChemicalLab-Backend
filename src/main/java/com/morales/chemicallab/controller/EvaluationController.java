@@ -114,6 +114,31 @@ public class EvaluationController {
     }
 
     // =========================================================================
+    // DOCENTE — resultados
+    // =========================================================================
+
+    @GetMapping("/teacher/{evaluationId}/results")
+    public TeacherEvaluationResultsResponse verResultadosEvaluacion(
+            Authentication authentication,
+            @PathVariable Long evaluationId) {
+        return evaluationService.getTeacherEvaluationResults(authentication.getName(), evaluationId);
+    }
+
+    @GetMapping("/teacher/{evaluationId}/results/summary")
+    public TeacherEvaluationResultsSummaryResponse verResumenResultadosEvaluacion(
+            Authentication authentication,
+            @PathVariable Long evaluationId) {
+        return evaluationService.getTeacherEvaluationResultsSummary(authentication.getName(), evaluationId);
+    }
+
+    @GetMapping("/teacher/attempts/{attemptId}/result")
+    public TeacherAttemptResultDetailResponse verResultadoIntentoDocente(
+            Authentication authentication,
+            @PathVariable Long attemptId) {
+        return evaluationService.getTeacherAttemptResult(authentication.getName(), attemptId);
+    }
+
+    // =========================================================================
     // ESTUDIANTE
     // =========================================================================
 
@@ -159,6 +184,22 @@ public class EvaluationController {
             @PathVariable Long attemptId,
             @RequestBody(required = false) @Valid SubmitEvaluationAttemptRequest request) {
         return evaluationService.submitAttempt(authentication.getName(), attemptId, request);
+    }
+
+    // =========================================================================
+    // ESTUDIANTE — resultados
+    // =========================================================================
+
+    @GetMapping("/student/results")
+    public List<StudentResultSummaryResponse> listarResultadosEstudiante(Authentication authentication) {
+        return evaluationService.listStudentResults(authentication.getName());
+    }
+
+    @GetMapping("/student/attempts/{attemptId}/result")
+    public StudentAttemptResultDetailResponse verResultadoIntentoEstudiante(
+            Authentication authentication,
+            @PathVariable Long attemptId) {
+        return evaluationService.getStudentAttemptResult(authentication.getName(), attemptId);
     }
 
     // =========================================================================
