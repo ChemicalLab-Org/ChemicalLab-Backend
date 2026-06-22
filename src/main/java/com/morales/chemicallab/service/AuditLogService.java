@@ -10,17 +10,21 @@ import com.morales.chemicallab.entity.SystemLog;
 import com.morales.chemicallab.entity.UserAccount;
 import com.morales.chemicallab.repository.SystemLogRepository;
 import com.morales.chemicallab.repository.UserAccountRepository;
+import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Servicio central de trazabilidad. Registra eventos importantes del sistema y permite
@@ -127,10 +131,53 @@ public class AuditLogService {
     public Page<AuditLogResponse> listLogs(LogCategory category, LogEventType eventType,
                                            LogSeverity severity, Role actorRole, String search,
                                            LocalDateTime from, LocalDateTime to, Pageable pageable) {
-        String normalizedSearch = (search != null && !search.isBlank()) ? search.trim() : null;
-        return systemLogRepository
-                .search(category, eventType, severity, actorRole, normalizedSearch, from, to, pageable)
-                .map(this::toResponse);
+        Specification<SystemLog> spec =
+                buildFilterSpecification(category, eventType, severity, actorRole, search, from, to);
+        return systemLogRepository.findAll(spec, pageable).map(this::toResponse);
+    }
+
+    /**
+     * Construye el filtro de forma dinámica: cada criterio se agrega como predicado solo
+     * cuando tiene valor. Así la consulta nunca envía parámetros nulos sin tipo y se evita
+     * el error de PostgreSQL «could not determine data type of parameter». Si no hay
+     * filtros, devuelve todos los registros (lista vacía si aún no hay logs).
+     */
+    private Specification<SystemLog> buildFilterSpecification(LogCategory category, LogEventType eventType,
+                                                              LogSeverity severity, Role actorRole, String search,
+                                                              LocalDateTime from, LocalDateTime to) {
+        String normalizedSearch = (search != null && !search.isBlank()) ? search.trim().toLowerCase() : null;
+
+        return (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            if (category != null) {
+                predicates.add(cb.equal(root.get("category"), category));
+            }
+            if (eventType != null) {
+                predicates.add(cb.equal(root.get("eventType"), eventType));
+            }
+            if (severity != null) {
+                predicates.add(cb.equal(root.get("severity"), severity));
+            }
+            if (actorRole != null) {
+                predicates.add(cb.equal(root.get("actorRole"), actorRole));
+            }
+            if (from != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), from));
+            }
+            if (to != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("createdAt"), to));
+            }
+            if (normalizedSearch != null) {
+                String pattern = "%" + normalizedSearch + "%";
+                Predicate byActor = cb.like(cb.lower(cb.coalesce(root.<String>get("actorUsername"), "")), pattern);
+                Predicate byTarget = cb.like(cb.lower(cb.coalesce(root.<String>get("targetLabel"), "")), pattern);
+                Predicate byDescription = cb.like(cb.lower(cb.coalesce(root.<String>get("description"), "")), pattern);
+                predicates.add(cb.or(byActor, byTarget, byDescription));
+            }
+
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
     }
 
     public AuditLogResponse getLogById(Long id) {

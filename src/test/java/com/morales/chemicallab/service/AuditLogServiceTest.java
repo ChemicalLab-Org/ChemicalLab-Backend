@@ -18,6 +18,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -26,7 +27,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -111,47 +111,46 @@ class AuditLogServiceTest {
     // CONSULTA
     // =========================================================================
 
+    @SuppressWarnings("unchecked")
     @Test
-    void listLogs_devuelvePaginaMapeada() {
+    void listLogs_sinFiltros_noFalla() {
         Pageable pageable = PageRequest.of(0, 20);
         Page<SystemLog> page = new PageImpl<>(List.of(sampleLog()), pageable, 1);
-        when(systemLogRepository.search(isNull(), isNull(), isNull(), isNull(), isNull(),
-                isNull(), isNull(), eq(pageable))).thenReturn(page);
+        when(systemLogRepository.findAll(any(Specification.class), eq(pageable))).thenReturn(page);
 
         Page<AuditLogResponse> result = service.listLogs(null, null, null, null, null, null, null, pageable);
 
         assertThat(result.getTotalElements()).isEqualTo(1);
         assertThat(result.getContent().get(0).eventType()).isEqualTo(LogEventType.LOGIN_SUCCESS);
+        // El filtrado es dinámico: sin filtros igualmente se consulta con una Specification.
+        verify(systemLogRepository).findAll(any(Specification.class), eq(pageable));
     }
 
+    @SuppressWarnings("unchecked")
     @Test
-    void listLogs_filtraPorCategoria() {
+    void listLogs_sinLogs_retornaPaginaVacia() {
         Pageable pageable = PageRequest.of(0, 20);
-        Page<SystemLog> page = new PageImpl<>(List.of(sampleLog()), pageable, 1);
-        when(systemLogRepository.search(eq(LogCategory.AUTH), isNull(), isNull(), isNull(),
-                isNull(), isNull(), isNull(), eq(pageable))).thenReturn(page);
+        Page<SystemLog> emptyPage = new PageImpl<>(List.of(), pageable, 0);
+        when(systemLogRepository.findAll(any(Specification.class), eq(pageable))).thenReturn(emptyPage);
 
-        Page<AuditLogResponse> result =
-                service.listLogs(LogCategory.AUTH, null, null, null, null, null, null, pageable);
+        Page<AuditLogResponse> result = service.listLogs(null, null, null, null, null, null, null, pageable);
 
-        assertThat(result.getContent()).hasSize(1);
-        verify(systemLogRepository).search(eq(LogCategory.AUTH), isNull(), isNull(), isNull(),
-                isNull(), isNull(), isNull(), eq(pageable));
+        assertThat(result.getContent()).isEmpty();
+        assertThat(result.getTotalElements()).isZero();
     }
 
+    @SuppressWarnings("unchecked")
     @Test
-    void listLogs_filtraPorSeveridad() {
+    void listLogs_conCategorySystem_noFalla() {
         Pageable pageable = PageRequest.of(0, 20);
-        Page<SystemLog> page = new PageImpl<>(List.of(sampleLog()), pageable, 1);
-        when(systemLogRepository.search(isNull(), isNull(), eq(LogSeverity.WARNING), isNull(),
-                isNull(), isNull(), isNull(), eq(pageable))).thenReturn(page);
+        Page<SystemLog> emptyPage = new PageImpl<>(List.of(), pageable, 0);
+        when(systemLogRepository.findAll(any(Specification.class), eq(pageable))).thenReturn(emptyPage);
 
         Page<AuditLogResponse> result =
-                service.listLogs(null, null, LogSeverity.WARNING, null, null, null, null, pageable);
+                service.listLogs(LogCategory.SYSTEM, null, null, null, null, null, null, pageable);
 
-        assertThat(result.getContent()).hasSize(1);
-        verify(systemLogRepository).search(isNull(), isNull(), eq(LogSeverity.WARNING), isNull(),
-                isNull(), isNull(), isNull(), eq(pageable));
+        assertThat(result.getContent()).isEmpty();
+        verify(systemLogRepository).findAll(any(Specification.class), eq(pageable));
     }
 
     @Test
@@ -175,6 +174,56 @@ class AuditLogServiceTest {
         assertThat(summary.userEvents()).isEqualTo(5L);
         assertThat(summary.evaluationEvents()).isEqualTo(4L);
         assertThat(summary.conceptEvents()).isEqualTo(3L);
+    }
+
+    @Test
+    void summary_sinLogs_retornaCeros() {
+        // Sin logs todos los conteos son 0 (los mocks devuelven 0L por defecto).
+        AuditLogSummaryResponse summary = service.getSummary();
+
+        assertThat(summary.totalLogs()).isZero();
+        assertThat(summary.infoCount()).isZero();
+        assertThat(summary.warningCount()).isZero();
+        assertThat(summary.errorCount()).isZero();
+        assertThat(summary.authEvents()).isZero();
+        assertThat(summary.userEvents()).isZero();
+        assertThat(summary.evaluationEvents()).isZero();
+        assertThat(summary.conceptEvents()).isZero();
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void mapper_conCamposNull_noFalla() {
+        // Un log con actor/target/metadata nulos (p. ej. login fallido) no debe romper el mapeo.
+        Pageable pageable = PageRequest.of(0, 20);
+        SystemLog withNulls = SystemLog.builder()
+                .id(7L)
+                .eventType(LogEventType.LOGIN_FAILED)
+                .category(LogCategory.AUTH)
+                .severity(LogSeverity.WARNING)
+                .actorUserId(null)
+                .actorUsername(null)
+                .actorRole(null)
+                .targetType(null)
+                .targetId(null)
+                .targetLabel(null)
+                .metadata(null)
+                .description("Contraseña incorrecta.")
+                .createdAt(LocalDateTime.now())
+                .build();
+        Page<SystemLog> page = new PageImpl<>(List.of(withNulls), pageable, 1);
+        when(systemLogRepository.findAll(any(Specification.class), eq(pageable))).thenReturn(page);
+
+        Page<AuditLogResponse> result = service.listLogs(null, null, null, null, null, null, null, pageable);
+
+        AuditLogResponse mapped = result.getContent().get(0);
+        assertThat(mapped.id()).isEqualTo(7L);
+        assertThat(mapped.actorUserId()).isNull();
+        assertThat(mapped.actorUsername()).isNull();
+        assertThat(mapped.actorRole()).isNull();
+        assertThat(mapped.targetLabel()).isNull();
+        assertThat(mapped.metadata()).isNull();
+        assertThat(mapped.eventType()).isEqualTo(LogEventType.LOGIN_FAILED);
     }
 
     // =========================================================================
