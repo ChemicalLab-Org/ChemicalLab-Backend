@@ -320,6 +320,53 @@ class AdminServiceTest {
     }
 
     @Test
+    void createUser_estudiante_gradoFueraDeRango_lanzaError() {
+        CreateUserRequest request = new CreateUserRequest(
+                Role.ESTUDIANTE, "Mario", "Soto", null, null, "7", "A", null, 2L);
+
+        assertThatThrownBy(() -> service.createUser(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("del 1 al 6");
+        verify(studentProfileRepository, never()).save(any());
+    }
+
+    @Test
+    void createUser_estudiante_seccionCompuesta_lanzaError() {
+        CreateUserRequest request = new CreateUserRequest(
+                Role.ESTUDIANTE, "Mario", "Soto", null, null, "3", "3 C", null, 2L);
+
+        assertThatThrownBy(() -> service.createUser(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("una sola letra");
+        verify(studentProfileRepository, never()).save(any());
+    }
+
+    @Test
+    void createUser_estudiante_normalizaSeccionAMayuscula() {
+        UserAccount teacherUser = account(2L, "doc2", Role.DOCENTE, true);
+        TeacherProfile teacherProfile = TeacherProfile.builder()
+                .id(2L).user(teacherUser).names("Laura").lastNames("Quispe").build();
+
+        when(userAccountRepository.findById(2L)).thenReturn(Optional.of(teacherUser));
+        when(teacherProfileRepository.findByUser(teacherUser)).thenReturn(Optional.of(teacherProfile));
+        when(studentProfileRepository.existsByStudentCode("EST0010")).thenReturn(false);
+        when(userAccountRepository.existsByUsername("EST0010")).thenReturn(false);
+        when(passwordEncoder.encode(anyString())).thenReturn("HASH");
+        when(studentProfileRepository.findByUser_Id(any()))
+                .thenReturn(Optional.of(student(3L, "EST0010", "Mario", "Soto")));
+
+        CreateUserRequest request = new CreateUserRequest(
+                Role.ESTUDIANTE, "Mario", "Soto", null, null, "3", "c", "EST0010", 2L);
+
+        service.createUser(request);
+
+        ArgumentCaptor<StudentProfile> saved = ArgumentCaptor.forClass(StudentProfile.class);
+        verify(studentProfileRepository).save(saved.capture());
+        assertThat(saved.getValue().getSection()).isEqualTo("C");
+        assertThat(saved.getValue().getGrade()).isEqualTo("3");
+    }
+
+    @Test
     void createUser_estudiante_sinDocente_lanzaError() {
         CreateUserRequest request = new CreateUserRequest(
                 Role.ESTUDIANTE, "Mario", "Soto", null, null, "5", "A", null, null);

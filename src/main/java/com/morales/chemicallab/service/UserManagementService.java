@@ -129,6 +129,9 @@ public class UserManagementService {
     public StudentResponse createStudent(Long teacherUserId, CreateStudentRequest request) {
         TeacherProfile teacher = findTeacherProfileByUserId(teacherUserId);
 
+        String grade = StudentValidation.normalizedGrade(request.grade());
+        String section = StudentValidation.normalizedSection(request.section());
+
         String studentCode;
         if (request.studentCode() == null || request.studentCode().isBlank()) {
             studentCode = generateStudentCode();
@@ -159,8 +162,8 @@ public class UserManagementService {
                 .studentCode(studentCode)
                 .names(request.names())
                 .lastNames(request.lastNames())
-                .grade(request.grade())
-                .section(request.section())
+                .grade(grade)
+                .section(section)
                 .build();
 
         studentProfileRepository.save(student);
@@ -191,8 +194,8 @@ public class UserManagementService {
 
         student.setNames(request.names());
         student.setLastNames(request.lastNames());
-        student.setGrade(request.grade());
-        student.setSection(request.section());
+        student.setGrade(StudentValidation.normalizedGrade(request.grade()));
+        student.setSection(StudentValidation.normalizedSection(request.section()));
         student.getUser().setActive(request.active());
 
         if (request.studentCode() != null && !request.studentCode().isBlank()) {

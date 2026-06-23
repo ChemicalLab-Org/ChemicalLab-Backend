@@ -229,8 +229,8 @@ public class AdminService {
     private UserAccount createStudent(CreateUserRequest request, String encodedPassword) {
         String names = requireText(request.names(), "El nombre es obligatorio.");
         String lastNames = requireText(request.lastNames(), "Los apellidos son obligatorios.");
-        String grade = requireText(request.grade(), "El grado es obligatorio.");
-        String section = requireText(request.section(), "La sección es obligatoria.");
+        String grade = StudentValidation.normalizedGrade(request.grade());
+        String section = StudentValidation.normalizedSection(request.section());
         TeacherProfile teacher = resolveActiveTeacher(request.teacherUserId());
 
         String studentCode;
@@ -295,8 +295,8 @@ public class AdminService {
             case ESTUDIANTE -> {
                 String names = requireText(request.names(), "El nombre es obligatorio.");
                 String lastNames = requireText(request.lastNames(), "Los apellidos son obligatorios.");
-                String grade = requireText(request.grade(), "El grado es obligatorio.");
-                String section = requireText(request.section(), "La sección es obligatoria.");
+                String grade = StudentValidation.normalizedGrade(request.grade());
+                String section = StudentValidation.normalizedSection(request.section());
                 StudentProfile student = studentProfileRepository.findByUser_Id(user.getId())
                         .orElseThrow(() -> new IllegalArgumentException("Perfil de estudiante no encontrado."));
                 student.setNames(names);
