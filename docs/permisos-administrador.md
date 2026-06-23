@@ -44,10 +44,12 @@ consulta, sin escritura.
 | Login | Cambio de contraseña temporal | Sí | Sí | Sí | `PATCH /api/auth/change-temporary-password`, requiere sesión. |
 | Dashboard admin | Acceder al panel `/admin-dashboard` | Sí | No | No | Métricas de solo lectura vía `GET /api/admin/summary`. |
 | Usuarios | Ver todos los usuarios del sistema | Sí | No | No | `GET /api/admin/users` lista cuentas de todos los roles, incluidos estudiantes creados por docentes. Nunca expone contraseñas. |
-| Usuarios | Crear docentes | Sí | No | No | `POST /api/users/teachers`. |
-| Usuarios | Crear estudiantes | Parcial | Sí | No | Hoy solo el docente los crea (`POST /api/users/teachers/{id}/students`), por la relación grado/sección/docente. Pendiente para admin (ver sección final). |
-| Usuarios | Restablecer contraseña de usuarios gestionables | Sí | Parcial | No | `PATCH /api/admin/users/{id}/password/reset` opera sobre cualquier cuenta (no requiere correo). El docente solo restablece a sus estudiantes. El admin no puede restablecer su propia cuenta ni la de otro admin. |
-| Usuarios | Activar / desactivar usuarios | Sí | Parcial | No | `PATCH /api/users/{id}/activate` y `/deactivate` (admin). El admin no puede autodesactivarse (cuenta «Protegida»). El docente solo desactiva a sus estudiantes. |
+| Usuarios | Crear administradores | Sí | No | No | `POST /api/admin/users` con `role=ADMINISTRADOR`. El backend genera una contraseña temporal y la devuelve una sola vez. |
+| Usuarios | Crear docentes | Sí | No | No | `POST /api/admin/users` con `role=DOCENTE` (crea `UserAccount` + `TeacherProfile`). Se mantiene el endpoint previo `POST /api/users/teachers`. |
+| Usuarios | Crear estudiantes | Sí | Sí | No | El admin los crea con `POST /api/admin/users` (`role=ESTUDIANTE`), seleccionando un docente responsable **activo** (`GET /api/admin/users/teacher-options`). El docente conserva su flujo (`POST /api/users/teachers/{id}/students`). El modelo exige docente responsable; no se rompe la relación grado/sección/docente. |
+| Usuarios | Editar datos básicos | Sí | Parcial | No | `PATCH /api/admin/users/{id}` actualiza nombres/apellidos, correo y, en estudiantes, grado/sección/docente responsable. No cambia usuario/código, rol ni contraseña. El docente edita a sus estudiantes por su propio flujo. |
+| Usuarios | Restablecer contraseña de usuarios gestionables | Sí | Parcial | No | `PATCH /api/admin/users/{id}/password/reset` opera sobre cualquier cuenta (no requiere correo). El docente solo restablece a sus estudiantes. El admin no puede restablecer su propia cuenta. |
+| Usuarios | Activar / desactivar usuarios | Sí | Parcial | No | `PATCH /api/admin/users/{id}/activate` y `/deactivate` (admin). El admin no puede autodesactivarse (cuenta «Protegida») ni desactivar al **último administrador activo**. No hay eliminación física. El docente solo desactiva a sus estudiantes. |
 | Usuarios | Ver o registrar contraseñas / contraseñas temporales | No | No | No | El sistema solo expone un indicador booleano de «contraseña temporal pendiente», nunca el valor. |
 | Docentes | Supervisar la existencia de docentes | Sí | — | — | Listado y gestión desde `/admin/teachers` y `/admin/users`. |
 | Estudiantes | Supervisar la existencia de estudiantes | Sí | Sí | — | El admin los ve en el listado unificado; el docente gestiona los suyos. |
@@ -68,8 +70,12 @@ consulta, sin escritura.
 
 ### Backend — reglas vigentes (`SecurityConfig`)
 
-- `/api/admin/**` (resumen, usuarios, actividad, restablecimiento de contraseña) y
-  `/api/admin/logs/**`: solo `ADMINISTRADOR`.
+- `/api/admin/**` (resumen, actividad, y gestión completa de usuarios: listar,
+  crear, editar, activar/desactivar, restablecer contraseña y opciones de docentes) y
+  `/api/admin/logs/**`: solo `ADMINISTRADOR`. La gestión de usuarios usa
+  `GET/POST /api/admin/users`, `PATCH /api/admin/users/{id}`,
+  `PATCH /api/admin/users/{id}/activate|deactivate`,
+  `PATCH /api/admin/users/{id}/password/reset` y `GET /api/admin/users/teacher-options`.
 - `POST`/`GET` `/api/users/teachers`, `PATCH /api/users/teachers/*/deactivate` y
   `/reset-password`: solo `ADMINISTRADOR`.
 - `PATCH /api/users/*/activate` y `/deactivate`: solo `ADMINISTRADOR`.
@@ -83,10 +89,20 @@ consulta, sin escritura.
 - `/api/health` y `POST /api/auth/login`: públicos. Cualquier otra ruta requiere
   autenticación.
 
-El `AdminService` es de solo lectura para métricas, listado de usuarios y actividad
-reciente; la única operación de escritura (restablecer contraseña) genera una clave
-temporal cifrada con BCrypt, devuelve el texto plano una sola vez y **no lo registra**
-en los logs.
+El `AdminService` concentra la gestión administrativa de usuarios. Para métricas,
+listado y actividad reciente es de solo lectura. En las operaciones de escritura
+(crear, editar, activar/desactivar y restablecer contraseña) aplica las validaciones
+de seguridad en el servicio, no solo en el frontend:
+
+- No permite nombre de usuario ni correo duplicados.
+- Exige los campos obligatorios según el rol (p. ej. grado, sección y docente
+  responsable **activo** para estudiantes).
+- Impide desactivar la propia cuenta autenticada y al último administrador activo.
+- No realiza eliminación física: desactivar conserva la información y el historial.
+- Al crear o restablecer, la contraseña temporal se genera, se cifra con BCrypt y se
+  devuelve en texto plano **una sola vez**; nunca se persiste en claro ni se registra
+  en los logs de auditoría (los eventos `USER_CREATED`, `USER_UPDATED`,
+  `USER_DEACTIVATED`, `USER_REACTIVATED` y `PASSWORD_RESET` no incluyen datos sensibles).
 
 ### Frontend — rutas y navegación
 
@@ -100,28 +116,40 @@ en los logs.
   `admin/system-status`, junto con `admin-dashboard`, consumen la misma fuente de
   navegación, evitando divergencias entre pantallas.
 
+## Gestión completa de usuarios desde admin
+
+A partir de esta sesión, el administrador gestiona usuarios de forma completa desde
+`/admin/users`:
+
+- **Crear** docentes, estudiantes y otros administradores con un formulario único de
+  campos dinámicos por rol. Como el rol `ADMINISTRADOR` no tiene perfil con nombres,
+  un administrador se crea solo con usuario y correo opcional.
+- **Editar** datos básicos (nombres, apellidos, correo y, en estudiantes,
+  grado/sección/docente responsable). No se permite cambiar usuario/código, rol ni
+  contraseña desde la edición.
+- **Activar / desactivar** usuarios, con las protecciones descritas (no autodesactivarse,
+  no desactivar al último administrador activo, sin eliminación física).
+- **Restablecer** la contraseña temporal de cualquier usuario gestionable.
+
+La contraseña temporal generada al crear o restablecer se muestra una sola vez en un
+modal copiable; el frontend no la guarda en `localStorage`/`sessionStorage`, no la
+imprime en consola ni la envía por rutas o parámetros de consulta. **No se recomienda
+cambiar el rol** de usuarios existentes: queda fuera de alcance para preservar la
+consistencia con los perfiles.
+
 ## Resultado de la auditoría
 
-El modelo de permisos del administrador ya se encuentra correctamente implementado
-y alineado entre backend y frontend. No se detectaron rutas administrativas
-desprotegidas, accesos cruzados entre roles, enlaces de menú rotos ni acciones de
-edición académica expuestas al administrador. Tampoco se hallaron fugas de
-contraseñas, contraseñas temporales ni tokens en respuestas o logs.
+El modelo de permisos del administrador se encuentra correctamente implementado y
+alineado entre backend y frontend, incluida la gestión completa de usuarios. No se
+detectaron rutas administrativas desprotegidas, accesos cruzados entre roles, enlaces
+de menú rotos ni acciones de edición académica expuestas al administrador. Tampoco se
+hallaron fugas de contraseñas, contraseñas temporales ni tokens en respuestas o logs.
 
 ## Pendientes para próximas sesiones
 
-Estos puntos quedan documentados como base mínima para la sesión de **gestión
-completa de usuarios desde admin** y la de **supervisión académica**:
-
-1. **Creación de estudiantes desde el admin.** Requiere definir cómo se resuelven
-   grado, sección y docente responsable cuando el creador no es un docente. Hoy se
-   mantiene el flujo seguro existente (solo el docente los crea).
-2. **Edición de datos básicos de usuarios desde el admin.** Actualmente la edición
-   de estudiantes pertenece al docente; falta definir un endpoint de edición básica
-   a nivel administrativo.
-3. **Pantallas de supervisión académica (solo lectura).** Implementado: el panel
+1. **Pantallas de supervisión académica (solo lectura).** Implementado: el panel
    admin cuenta con la pantalla **Supervisión académica** (`/admin/academic-supervision`)
    y los endpoints `GET /api/admin/academic-supervision/**`. Ver
    [supervision-academica-admin.md](supervision-academica-admin.md).
-4. **Resultados agregados institucionales.** Definir una vista de solo lectura para
+2. **Resultados agregados institucionales.** Definir una vista de solo lectura para
    que el admin consulte indicadores generales sin acceder al detalle de intentos.

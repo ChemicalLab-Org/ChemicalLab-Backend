@@ -20,11 +20,11 @@ public record CreateStudentRequest(
         String temporaryPassword,
 
         @NotBlank(message = "El grado es obligatorio")
-        @Size(max = 20, message = "El grado no puede superar 20 caracteres")
+        @Pattern(regexp = "^\\s*[1-6]\\s*$", message = "El grado debe ser un número entero del 1 al 6")
         String grade,
 
         @NotBlank(message = "La sección es obligatoria")
-        @Size(max = 20, message = "La sección no puede superar 20 caracteres")
+        @Pattern(regexp = "^\\s*[A-Za-z]\\s*$", message = "La sección debe ser una sola letra (A-Z)")
         String section
 
 ) {}
