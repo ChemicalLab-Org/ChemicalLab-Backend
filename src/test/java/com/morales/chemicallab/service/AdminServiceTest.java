@@ -28,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -396,6 +397,54 @@ class AdminServiceTest {
 
         assertThat(response.fullName()).isEqualTo("Nuevo Apellido");
         assertThat(teacherProfile.getNames()).isEqualTo("Nuevo");
+    }
+
+    @Test
+    void updateUser_registraLogDeAuditoriaSinDatosSensibles() {
+        UserAccount user = account(2L, "doc2", Role.DOCENTE, true);
+        TeacherProfile teacherProfile = TeacherProfile.builder()
+                .id(2L).user(user).names("Viejo").lastNames("Apellido").build();
+
+        when(userAccountRepository.findById(2L)).thenReturn(Optional.of(user));
+        when(teacherProfileRepository.findByUser(user)).thenReturn(Optional.of(teacherProfile));
+
+        UpdateUserRequest request = new UpdateUserRequest(
+                "Nuevo", "Apellido", null, null, null, null);
+
+        service.updateUser(2L, request);
+
+        // El administrador edita un docente: debe registrarse un evento USER_UPDATED que
+        // identifique al usuario afectado y al rol, sin exponer ningún dato sensible.
+        ArgumentCaptor<String> description = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> metadata = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).recordInfo(
+                eq(LogEventType.USER_UPDATED), eq("UserAccount"), eq(2L),
+                eq("doc2"), eq("Actualizar usuario"),
+                description.capture(), metadata.capture());
+
+        assertThat(description.getValue()).contains("doc2");
+        // Solo se registran nombres de campos modificados (nombres), no sus valores.
+        assertThat(metadata.getValue()).contains("role=DOCENTE").contains("nombres");
+        String registrado = (description.getValue() + " " + metadata.getValue()).toLowerCase();
+        assertThat(registrado)
+                .doesNotContain("password").doesNotContain("contraseña")
+                .doesNotContain("temporal").doesNotContain("token")
+                .doesNotContain("nuevo").doesNotContain("viejo");
+    }
+
+    @Test
+    void updateUser_usuarioInexistente_noRegistraLog() {
+        when(userAccountRepository.findById(99L)).thenReturn(Optional.empty());
+
+        UpdateUserRequest request = new UpdateUserRequest(
+                "Nuevo", "Apellido", null, null, null, null);
+
+        assertThatThrownBy(() -> service.updateUser(99L, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Usuario no encontrado");
+
+        // Una edición fallida nunca debe registrarse como exitosa.
+        verify(auditLogService, never()).recordInfo(any(), any(), any(), any(), any(), any(), any());
     }
 
     // =========================================================================

@@ -19,9 +19,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -280,16 +282,27 @@ public class AdminService {
         UserAccount user = userAccountRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado."));
 
+        // Solo se registran los nombres de los campos modificados, nunca sus valores.
+        List<String> changedFields = new ArrayList<>();
+
         switch (user.getRole()) {
-            case ADMINISTRADOR -> user.setEmail(applyEmail(request.email(), user));
+            case ADMINISTRADOR -> {
+                String newEmail = applyEmail(request.email(), user);
+                if (!Objects.equals(user.getEmail(), newEmail)) changedFields.add("correo");
+                user.setEmail(newEmail);
+            }
             case DOCENTE -> {
                 String names = requireText(request.names(), "El nombre es obligatorio.");
                 String lastNames = requireText(request.lastNames(), "Los apellidos son obligatorios.");
                 TeacherProfile teacher = teacherProfileRepository.findByUser(user)
                         .orElseThrow(() -> new IllegalArgumentException("Perfil de docente no encontrado."));
+                if (!Objects.equals(teacher.getNames(), names)) changedFields.add("nombres");
+                if (!Objects.equals(teacher.getLastNames(), lastNames)) changedFields.add("apellidos");
                 teacher.setNames(names);
                 teacher.setLastNames(lastNames);
-                user.setEmail(applyEmail(request.email(), user));
+                String newEmail = applyEmail(request.email(), user);
+                if (!Objects.equals(user.getEmail(), newEmail)) changedFields.add("correo");
+                user.setEmail(newEmail);
                 teacherProfileRepository.save(teacher);
             }
             case ESTUDIANTE -> {
@@ -299,26 +312,49 @@ public class AdminService {
                 String section = StudentValidation.normalizedSection(request.section());
                 StudentProfile student = studentProfileRepository.findByUser_Id(user.getId())
                         .orElseThrow(() -> new IllegalArgumentException("Perfil de estudiante no encontrado."));
+                if (!Objects.equals(student.getNames(), names)) changedFields.add("nombres");
+                if (!Objects.equals(student.getLastNames(), lastNames)) changedFields.add("apellidos");
+                if (!Objects.equals(student.getGrade(), grade)) changedFields.add("grado");
+                if (!Objects.equals(student.getSection(), section)) changedFields.add("sección");
                 student.setNames(names);
                 student.setLastNames(lastNames);
                 student.setGrade(grade);
                 student.setSection(section);
                 if (request.teacherUserId() != null) {
+                    Long currentTeacherUserId = student.getTeacher() != null
+                            ? student.getTeacher().getUser().getId() : null;
+                    if (!Objects.equals(currentTeacherUserId, request.teacherUserId())) {
+                        changedFields.add("docente responsable");
+                    }
                     student.setTeacher(resolveActiveTeacher(request.teacherUserId()));
                 }
-                user.setEmail(applyEmail(request.email(), user));
+                String newEmail = applyEmail(request.email(), user);
+                if (!Objects.equals(user.getEmail(), newEmail)) changedFields.add("correo");
+                user.setEmail(newEmail);
                 studentProfileRepository.save(student);
             }
         }
 
         userAccountRepository.save(user);
 
+        // El log se registra solo tras una actualización correcta. El actor (administrador) y su
+        // rol se resuelven en AuditLogService desde el contexto de seguridad. No se guardan
+        // contraseñas, contraseñas temporales, tokens ni los valores de los campos.
         auditLogService.recordInfo(LogEventType.USER_UPDATED, TARGET_USER, user.getId(),
                 user.getUsername(), "Actualizar usuario",
                 "Se actualizaron los datos del usuario " + user.getUsername() + ".",
-                "role=" + user.getRole());
+                buildUpdateMetadata(user.getRole(), changedFields));
 
         return toAdminUserResponse(user);
+    }
+
+    /**
+     * Arma la metadata segura de una edición: rol del usuario afectado y los nombres de los
+     * campos modificados (nunca sus valores). Si no cambió ningún campo, lo indica.
+     */
+    private String buildUpdateMetadata(Role role, List<String> changedFields) {
+        String fields = changedFields.isEmpty() ? "sin cambios" : String.join(", ", changedFields);
+        return "role=" + role + "; campos=" + fields;
     }
 
     /** Reactiva un usuario previamente desactivado. */
