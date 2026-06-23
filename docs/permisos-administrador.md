@@ -54,7 +54,8 @@ consulta, sin escritura.
 | Estudiantes | Reasignar o romper la relación docente-estudiante | No | No | No | No existe acción destructiva de reasignación; fuera de alcance. |
 | Contenidos | Supervisar contenidos (lectura) | Sí | Sí | Sí | Endpoints de lectura: admin `GET /api/concepts/admin`; docente sobre los propios; estudiante sobre los asignados. Aún sin pantalla de supervisión en el panel admin. |
 | Contenidos | Crear / editar / eliminar / reasignar | No | Sí | No | Exclusivo del docente (`/api/concepts/teacher/**`). |
-| Evaluaciones | Supervisar evaluaciones (lectura) | Sí | Sí | Sí | Endpoints de lectura: admin `GET /api/evaluations/admin`; docente sobre las propias; estudiante sobre las asignadas. Aún sin pantalla de supervisión en el panel admin. |
+| Evaluaciones | Supervisar evaluaciones (lectura) | Sí | Sí | Sí | Endpoints de lectura: admin `GET /api/evaluations/admin` y `/admin/{id}`; docente sobre las propias; estudiante sobre las asignadas. El admin ve información general y el contenido de las preguntas, pero **no** la alternativa correcta (ver detalle abajo). Aún sin pantalla de supervisión en el panel admin. |
+| Evaluaciones | Visualizar la clave de respuestas (alternativa correcta) | No | Sí | No | El detalle admin usa un DTO específico (`AdminEvaluationDetailResponse`) que omite la alternativa correcta y la explicación. Solo el docente la ve en su propio detalle. |
 | Evaluaciones | Crear / editar / publicar / archivar / asignar | No | Sí | No | Exclusivo del docente (`/api/evaluations/teacher/**`). |
 | Evaluaciones | Modificar preguntas o alternativas | No | Sí | No | El admin no dispone de endpoints de escritura sobre evaluaciones. |
 | Resultados | Consultar resultados (lectura) | Parcial | Sí | Sí | El docente ve los resultados de sus evaluaciones; el estudiante los propios. La supervisión agregada para admin queda pendiente (ver sección final). |
@@ -75,6 +76,10 @@ consulta, sin escritura.
 - Gestión de estudiantes `/api/users/teachers/*/students/**`: solo `DOCENTE`.
 - Contenidos y evaluaciones segmentados por sufijo de ruta:
   `/teacher/**` (DOCENTE), `/student/**` (ESTUDIANTE), `/admin/**` (ADMINISTRADOR).
+- La supervisión admin del detalle de una evaluación (`GET /api/evaluations/admin/{id}`)
+  responde con `AdminEvaluationDetailResponse`, un DTO de solo lectura que omite la
+  alternativa correcta y la explicación de cada pregunta. El detalle del docente
+  conserva la clave de respuestas para su propio flujo.
 - `/api/health` y `POST /api/auth/login`: públicos. Cualquier otra ruta requiere
   autenticación.
 
@@ -117,10 +122,5 @@ completa de usuarios desde admin** y la de **supervisión académica**:
 3. **Pantallas de supervisión académica (solo lectura).** Los endpoints
    `GET /api/concepts/admin` y `GET /api/evaluations/admin` ya existen, pero el
    panel admin todavía no tiene vistas que los consuman.
-4. **Detalle de evaluación para supervisión.** `GET /api/evaluations/admin/{id}`
-   reutiliza el detalle del docente, que incluye la alternativa correcta. Para la
-   vista de supervisión conviene un DTO específico que muestre solo información
-   general (título, docente, grado/sección, estado, número de preguntas) sin
-   exponer la clave de respuestas.
-5. **Resultados agregados institucionales.** Definir una vista de solo lectura para
+4. **Resultados agregados institucionales.** Definir una vista de solo lectura para
    que el admin consulte indicadores generales sin acceder al detalle de intentos.
