@@ -3,15 +3,21 @@ package com.morales.chemicallab.service;
 import com.morales.chemicallab.dto.AdminActivityResponse;
 import com.morales.chemicallab.dto.AdminPasswordResetResponse;
 import com.morales.chemicallab.dto.AdminSummaryResponse;
+import com.morales.chemicallab.dto.AdminUserCreatedResponse;
 import com.morales.chemicallab.dto.AdminUserResponse;
+import com.morales.chemicallab.dto.CreateUserRequest;
+import com.morales.chemicallab.dto.UpdateUserRequest;
 import com.morales.chemicallab.entity.*;
 import com.morales.chemicallab.repository.*;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.LocalDateTime;
@@ -19,8 +25,10 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -51,6 +59,17 @@ class AdminServiceTest {
 
     @InjectMocks
     private AdminService service;
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
+    private void authenticateAs(String username, UserAccount account) {
+        when(userAccountRepository.findByUsername(username)).thenReturn(Optional.of(account));
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(username, "n/a", List.of()));
+    }
 
     // =========================================================================
     // Datos de apoyo
@@ -206,5 +225,170 @@ class AdminServiceTest {
         verify(userAccountRepository).save(saved.capture());
         assertThat(saved.getValue().getPassword()).isEqualTo("HASH");
         assertThat(saved.getValue().getTemporaryPassword()).isTrue();
+    }
+
+    // =========================================================================
+    // CREACIÓN DE USUARIOS
+    // =========================================================================
+
+    @Test
+    void createUser_administrador_generaContrasenaTemporalYNoExponeHash() {
+        when(userAccountRepository.existsByUsername("nuevo.admin")).thenReturn(false);
+        when(passwordEncoder.encode(anyString())).thenReturn("HASH");
+
+        CreateUserRequest request = new CreateUserRequest(
+                Role.ADMINISTRADOR, null, null, "nuevo.admin", null, null, null, null, null);
+
+        AdminUserCreatedResponse response = service.createUser(request);
+
+        assertThat(response.user().role()).isEqualTo(Role.ADMINISTRADOR);
+        assertThat(response.user().username()).isEqualTo("nuevo.admin");
+        assertThat(response.temporaryPassword()).isNotBlank();
+
+        ArgumentCaptor<UserAccount> saved = ArgumentCaptor.forClass(UserAccount.class);
+        verify(userAccountRepository).save(saved.capture());
+        // La respuesta nunca devuelve el hash y la cuenta nace como temporal.
+        assertThat(saved.getValue().getPassword()).isEqualTo("HASH");
+        assertThat(response.temporaryPassword()).isNotEqualTo("HASH");
+        assertThat(saved.getValue().getTemporaryPassword()).isTrue();
+    }
+
+    @Test
+    void createUser_docente_creaCuentaYPerfil() {
+        when(userAccountRepository.existsByUsername("pedro.m")).thenReturn(false);
+        when(passwordEncoder.encode(anyString())).thenReturn("HASH");
+        when(teacherProfileRepository.findByUser(any()))
+                .thenReturn(Optional.of(teacher(2L, "Pedro", "Martínez")));
+
+        CreateUserRequest request = new CreateUserRequest(
+                Role.DOCENTE, "Pedro", "Martínez", "pedro.m", null, null, null, null, null);
+
+        AdminUserCreatedResponse response = service.createUser(request);
+
+        assertThat(response.user().role()).isEqualTo(Role.DOCENTE);
+        verify(teacherProfileRepository).save(any(TeacherProfile.class));
+    }
+
+    @Test
+    void createUser_usernameDuplicado_lanzaError() {
+        when(userAccountRepository.existsByUsername("repetido")).thenReturn(true);
+
+        CreateUserRequest request = new CreateUserRequest(
+                Role.DOCENTE, "Ana", "López", "repetido", null, null, null, null, null);
+
+        assertThatThrownBy(() -> service.createUser(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("nombre de usuario ya está registrado");
+        verify(userAccountRepository, never()).save(any());
+    }
+
+    @Test
+    void createUser_estudiante_conDocenteActivo_creaCuentaYPerfil() {
+        UserAccount teacherUser = account(2L, "doc2", Role.DOCENTE, true);
+        TeacherProfile teacherProfile = TeacherProfile.builder()
+                .id(2L).user(teacherUser).names("Laura").lastNames("Quispe").build();
+
+        when(userAccountRepository.findById(2L)).thenReturn(Optional.of(teacherUser));
+        when(teacherProfileRepository.findByUser(teacherUser)).thenReturn(Optional.of(teacherProfile));
+        when(studentProfileRepository.existsByStudentCode("EST0009")).thenReturn(false);
+        when(userAccountRepository.existsByUsername("EST0009")).thenReturn(false);
+        when(passwordEncoder.encode(anyString())).thenReturn("HASH");
+        when(studentProfileRepository.findByUser_Id(any()))
+                .thenReturn(Optional.of(student(3L, "EST0009", "Mario", "Soto")));
+
+        CreateUserRequest request = new CreateUserRequest(
+                Role.ESTUDIANTE, "Mario", "Soto", null, null, "5", "A", "EST0009", 2L);
+
+        AdminUserCreatedResponse response = service.createUser(request);
+
+        assertThat(response.user().role()).isEqualTo(Role.ESTUDIANTE);
+        verify(studentProfileRepository).save(any(StudentProfile.class));
+    }
+
+    @Test
+    void createUser_estudiante_conDocenteInactivo_lanzaError() {
+        UserAccount teacherUser = account(2L, "doc2", Role.DOCENTE, false);
+        when(userAccountRepository.findById(2L)).thenReturn(Optional.of(teacherUser));
+
+        CreateUserRequest request = new CreateUserRequest(
+                Role.ESTUDIANTE, "Mario", "Soto", null, null, "5", "A", null, 2L);
+
+        assertThatThrownBy(() -> service.createUser(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("no está activo");
+        verify(studentProfileRepository, never()).save(any());
+    }
+
+    @Test
+    void createUser_estudiante_sinDocente_lanzaError() {
+        CreateUserRequest request = new CreateUserRequest(
+                Role.ESTUDIANTE, "Mario", "Soto", null, null, "5", "A", null, null);
+
+        assertThatThrownBy(() -> service.createUser(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("docente responsable");
+    }
+
+    // =========================================================================
+    // ACTUALIZACIÓN
+    // =========================================================================
+
+    @Test
+    void updateUser_docente_actualizaNombresDelPerfil() {
+        UserAccount user = account(2L, "doc2", Role.DOCENTE, true);
+        TeacherProfile teacherProfile = TeacherProfile.builder()
+                .id(2L).user(user).names("Viejo").lastNames("Nombre").build();
+
+        when(userAccountRepository.findById(2L)).thenReturn(Optional.of(user));
+        when(teacherProfileRepository.findByUser(user)).thenReturn(Optional.of(teacherProfile));
+
+        UpdateUserRequest request = new UpdateUserRequest(
+                "Nuevo", "Apellido", null, null, null, null);
+
+        AdminUserResponse response = service.updateUser(2L, request);
+
+        assertThat(response.fullName()).isEqualTo("Nuevo Apellido");
+        assertThat(teacherProfile.getNames()).isEqualTo("Nuevo");
+    }
+
+    // =========================================================================
+    // ACTIVACIÓN / DESACTIVACIÓN
+    // =========================================================================
+
+    @Test
+    void deactivateUser_propiaCuenta_lanzaError() {
+        UserAccount admin = account(1L, "admin", Role.ADMINISTRADOR, true);
+        when(userAccountRepository.findById(1L)).thenReturn(Optional.of(admin));
+        authenticateAs("admin", admin);
+
+        assertThatThrownBy(() -> service.deactivateUser(1L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("su propia cuenta");
+        verify(userAccountRepository, never()).save(any());
+    }
+
+    @Test
+    void deactivateUser_ultimoAdministradorActivo_lanzaError() {
+        UserAccount admin = account(1L, "admin", Role.ADMINISTRADOR, true);
+        when(userAccountRepository.findById(1L)).thenReturn(Optional.of(admin));
+        when(userAccountRepository.countByRoleAndActive(Role.ADMINISTRADOR, true)).thenReturn(1L);
+
+        assertThatThrownBy(() -> service.deactivateUser(1L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("último administrador activo");
+        verify(userAccountRepository, never()).save(any());
+    }
+
+    @Test
+    void deactivateUser_docente_desactivaCorrectamente() {
+        UserAccount user = account(2L, "doc2", Role.DOCENTE, true);
+        when(userAccountRepository.findById(2L)).thenReturn(Optional.of(user));
+        when(teacherProfileRepository.findByUser(user))
+                .thenReturn(Optional.of(teacher(2L, "Pedro", "Martínez")));
+
+        AdminUserResponse response = service.deactivateUser(2L);
+
+        assertThat(response.active()).isFalse();
+        verify(userAccountRepository).save(user);
     }
 }
