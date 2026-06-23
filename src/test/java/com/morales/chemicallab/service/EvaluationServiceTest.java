@@ -360,6 +360,35 @@ class EvaluationServiceTest {
     }
 
     // =========================================================================
+    // 11b. El administrador supervisa el detalle sin recibir la alternativa correcta
+    // =========================================================================
+
+    @Test
+    void administradorNoRecibeAlternativaCorrectaEnDetalle() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
+        EvaluationQuestion q = question(20L, eval, 2);
+        when(evaluationRepository.findById(10L)).thenReturn(Optional.of(eval));
+        when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval)).thenReturn(List.of(q));
+        when(optionRepository.findByQuestionAndActiveTrueOrderByOrderIndexAsc(q))
+                .thenReturn(List.of(option(31L, q, false), option(32L, q, true)));
+        when(assignmentRepository.findByEvaluationOrderByAssignedAtDesc(eval)).thenReturn(List.of());
+
+        AdminEvaluationDetailResponse response = service.getAdminEvaluationDetail(10L);
+
+        // Información general de supervisión disponible.
+        assertThat(response.title()).isEqualTo("Óxidos y nomenclatura");
+        assertThat(response.createdByTeacher()).isEqualTo("Ana Quispe");
+        assertThat(response.questionCount()).isEqualTo(1);
+        assertThat(response.questions()).hasSize(1);
+        assertThat(response.questions().get(0).options()).hasSize(2);
+        // AdminEvaluationOptionResponse no expone "correct": el tipo lo garantiza en compilación,
+        // de modo que la clave de respuestas nunca viaja en la vista del administrador.
+        AdminEvaluationOptionResponse opt = response.questions().get(0).options().get(0);
+        assertThat(opt.optionText()).isNotBlank();
+    }
+
+    // =========================================================================
     // 12. Estudiante inicia un intento
     // =========================================================================
 

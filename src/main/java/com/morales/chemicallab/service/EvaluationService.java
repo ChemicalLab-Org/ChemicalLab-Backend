@@ -380,11 +380,17 @@ public class EvaluationService {
                 .toList();
     }
 
+    /**
+     * Detalle de una evaluación para la supervisión institucional del administrador.
+     * Es de solo lectura y usa un DTO específico que omite la alternativa correcta de
+     * cada pregunta: el administrador supervisa, pero nunca visualiza la clave de
+     * respuestas (esa información queda reservada al docente).
+     */
     @Transactional(readOnly = true)
-    public EvaluationDetailResponse getAnyEvaluationDetail(Long evaluationId) {
+    public AdminEvaluationDetailResponse getAdminEvaluationDetail(Long evaluationId) {
         Evaluation evaluation = evaluationRepository.findById(evaluationId)
                 .orElseThrow(() -> new EntityNotFoundException("La evaluación no existe."));
-        return toEvaluationDetailResponse(evaluation);
+        return toAdminEvaluationDetailResponse(evaluation);
     }
 
     // =========================================================================
@@ -921,6 +927,64 @@ public class EvaluationService {
                 question.getExplanation(),
                 options
         );
+    }
+
+    private AdminEvaluationDetailResponse toAdminEvaluationDetailResponse(Evaluation evaluation) {
+        List<AdminEvaluationQuestionResponse> questions =
+                questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(evaluation)
+                        .stream()
+                        .map(this::toAdminQuestionResponse)
+                        .toList();
+
+        List<EvaluationAssignmentResponse> assignments =
+                assignmentRepository.findByEvaluationOrderByAssignedAtDesc(evaluation)
+                        .stream()
+                        .map(this::toAssignmentResponse)
+                        .toList();
+
+        return new AdminEvaluationDetailResponse(
+                evaluation.getId(),
+                evaluation.getTitle(),
+                evaluation.getDescription(),
+                evaluation.getInstructions(),
+                evaluation.getTopic(),
+                evaluation.getStatus(),
+                evaluation.getMaxAttempts(),
+                evaluation.getTimeLimitMinutes(),
+                evaluation.getActive(),
+                teacherFullName(evaluation.getCreatedByTeacher()),
+                questions.size(),
+                questions,
+                assignments,
+                evaluation.getCreatedAt(),
+                evaluation.getUpdatedAt()
+        );
+    }
+
+    private AdminEvaluationQuestionResponse toAdminQuestionResponse(EvaluationQuestion question) {
+        // De forma deliberada se omiten el campo "correct" y la explicación: el
+        // administrador supervisa el contenido sin acceder a la clave de respuestas.
+        List<AdminEvaluationOptionResponse> options =
+                optionRepository.findByQuestionAndActiveTrueOrderByOrderIndexAsc(question)
+                        .stream()
+                        .map(o -> new AdminEvaluationOptionResponse(o.getId(), o.getOptionText(), o.getOrderIndex()))
+                        .toList();
+
+        return new AdminEvaluationQuestionResponse(
+                question.getId(),
+                question.getQuestionText(),
+                question.getQuestionType(),
+                question.getPoints(),
+                question.getOrderIndex(),
+                options
+        );
+    }
+
+    private String teacherFullName(TeacherProfile teacher) {
+        if (teacher == null) {
+            return null;
+        }
+        return teacher.getNames() + " " + teacher.getLastNames();
     }
 
     private EvaluationAssignmentResponse toAssignmentResponse(EvaluationAssignment assignment) {

@@ -212,7 +212,7 @@ public class EvaluationController {
     }
 
     @GetMapping("/admin/{evaluationId}")
-    public EvaluationDetailResponse verCualquierEvaluacion(@PathVariable Long evaluationId) {
-        return evaluationService.getAnyEvaluationDetail(evaluationId);
+    public AdminEvaluationDetailResponse verCualquierEvaluacion(@PathVariable Long evaluationId) {
+        return evaluationService.getAdminEvaluationDetail(evaluationId);
     }
 }
