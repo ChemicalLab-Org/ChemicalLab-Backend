@@ -10,7 +10,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -192,10 +194,24 @@ public class UserManagementService {
 
         validateStudentBelongsToTeacher(student, teacher);
 
-        student.setNames(request.names());
-        student.setLastNames(request.lastNames());
-        student.setGrade(StudentValidation.normalizedGrade(request.grade()));
-        student.setSection(StudentValidation.normalizedSection(request.section()));
+        // Se calculan los campos modificados ANTES de aplicar los cambios. Solo se guarda
+        // el nombre del campo, nunca el valor anterior ni el nuevo, para no exponer datos.
+        String newNames = request.names();
+        String newLastNames = request.lastNames();
+        String newGrade = StudentValidation.normalizedGrade(request.grade());
+        String newSection = StudentValidation.normalizedSection(request.section());
+
+        List<String> changedFields = new ArrayList<>();
+        if (!Objects.equals(student.getNames(), newNames)) changedFields.add("nombres");
+        if (!Objects.equals(student.getLastNames(), newLastNames)) changedFields.add("apellidos");
+        if (!Objects.equals(student.getGrade(), newGrade)) changedFields.add("grado");
+        if (!Objects.equals(student.getSection(), newSection)) changedFields.add("sección");
+        if (!Objects.equals(student.getUser().getActive(), request.active())) changedFields.add("estado");
+
+        student.setNames(newNames);
+        student.setLastNames(newLastNames);
+        student.setGrade(newGrade);
+        student.setSection(newSection);
         student.getUser().setActive(request.active());
 
         if (request.studentCode() != null && !request.studentCode().isBlank()) {
@@ -206,13 +222,32 @@ public class UserManagementService {
                 }
                 student.setStudentCode(newCode);
                 student.getUser().setUsername(newCode);
+                changedFields.add("código");
             }
         }
 
         userAccountRepository.save(student.getUser());
         studentProfileRepository.save(student);
 
+        // El log se registra solo tras una actualización correcta. El actor (docente) y su rol
+        // se resuelven en AuditLogService a partir del contexto de seguridad. No se guardan
+        // contraseñas, contraseñas temporales, tokens ni los valores de los campos.
+        auditLogService.recordInfo(LogEventType.USER_UPDATED, TARGET_USER, student.getUser().getId(),
+                student.getStudentCode(), "Actualizar estudiante",
+                "El docente actualizó la información del estudiante " + student.getStudentCode() + ".",
+                buildUpdateMetadata(Role.ESTUDIANTE, changedFields));
+
         return toStudentResponse(student);
+    }
+
+    /**
+     * Arma la metadata segura de una edición de usuario: rol del usuario afectado y los
+     * nombres de los campos modificados (nunca sus valores). Si no cambió ningún campo, lo
+     * indica explícitamente.
+     */
+    private String buildUpdateMetadata(Role role, List<String> changedFields) {
+        String fields = changedFields.isEmpty() ? "sin cambios" : String.join(", ", changedFields);
+        return "role=" + role + "; campos=" + fields;
     }
 
     public StudentResponse deactivateStudent(Long teacherUserId, Long studentId) {

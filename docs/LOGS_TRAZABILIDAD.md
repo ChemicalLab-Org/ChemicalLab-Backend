@@ -55,6 +55,8 @@ Criterios: **actor** = usuario que realiza la acción; **target** = recurso afec
 | `LOGIN_FAILED`                  | WARNING   | `AuthService.login`                     |
 | `USER_CREATED` (docente)        | INFO      | `UserManagementService.createTeacher`   |
 | `USER_CREATED` (estudiante)     | INFO      | `UserManagementService.createStudent`   |
+| `USER_UPDATED` (admin)          | INFO      | `AdminService.updateUser`               |
+| `USER_UPDATED` (docente→estud.) | INFO      | `UserManagementService.updateStudent`   |
 | `USER_DEACTIVATED`              | WARNING   | `UserManagementService` (varios)        |
 | `USER_REACTIVATED`              | INFO      | `UserManagementService.activateUser`    |
 | `PASSWORD_RESET`                | WARNING   | `UserManagementService` / `AdminService`|
@@ -65,6 +67,24 @@ Criterios: **actor** = usuario que realiza la acción; **target** = recurso afec
 | `EVALUATION_PUBLISHED`          | INFO      | `EvaluationService`                     |
 | `EVALUATION_ASSIGNED`           | INFO      | `EvaluationService`                     |
 | `EVALUATION_ATTEMPT_SUBMITTED`  | INFO      | `EvaluationService.submitAttempt`       |
+
+### Edición de usuarios
+
+Se registra un evento `USER_UPDATED` (severidad **Información**) cuando:
+
+- un **administrador** edita los datos básicos de cualquier usuario gestionable
+  (administrador, docente o estudiante), desde `AdminService.updateUser`;
+- un **docente** edita los datos básicos de un estudiante bajo su gestión, desde
+  `UserManagementService.updateStudent`.
+
+El evento se registra **solo si la edición se completó correctamente**; si la operación
+falla por validación (por ejemplo, el estudiante no pertenece al docente o el usuario no
+existe), no se registra ningún log de edición.
+
+La trazabilidad guarda el actor y su rol (resueltos del contexto de seguridad), el usuario
+afectado (id y código/usuario) y una descripción segura. En `metadata` se incluye el rol del
+usuario afectado y, cuando aplica, **solo el nombre de los campos modificados** (por ejemplo
+`role=ESTUDIANTE; campos=nombres, sección`), **nunca sus valores anteriores ni nuevos**.
 
 ## Datos que SÍ se guardan
 
