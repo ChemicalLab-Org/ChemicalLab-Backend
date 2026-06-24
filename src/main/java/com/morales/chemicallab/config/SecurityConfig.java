@@ -88,8 +88,16 @@ public class SecurityConfig {
                         // (queda cubierto por /api/admin/** pero se declara explícito por claridad)
                         .requestMatchers("/api/admin/logs/**").hasRole(ADMIN)
 
+                        // Consulta de métricas de uso — solo ADMINISTRADOR
+                        // (cubierto por /api/admin/** pero se declara explícito por claridad)
+                        .requestMatchers("/api/admin/usage-metrics/**").hasRole(ADMIN)
+
                         // Panel administrativo (resumen, usuarios y actividad) — solo ADMINISTRADOR
                         .requestMatchers("/api/admin/**").hasRole(ADMIN)
+
+                        // Registro de métricas de uso — cualquier usuario autenticado
+                        // registra únicamente sus propias interacciones (el actor se toma del token)
+                        .requestMatchers(HttpMethod.POST, "/api/usage-metrics/events").authenticated()
 
                         // Motor químico — cualquier usuario autenticado
                         .requestMatchers("/api/chemistry/**").authenticated()
