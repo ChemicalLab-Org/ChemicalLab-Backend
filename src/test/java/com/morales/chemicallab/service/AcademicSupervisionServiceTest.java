@@ -58,7 +58,7 @@ class AcademicSupervisionServiceTest {
 
     private ConceptContent concept(Long id, String title, TeacherProfile owner) {
         return ConceptContent.builder()
-                .id(id).title(title).category(ConceptCategory.ACIDOS)
+                .id(id).title(title).category("Ácidos")
                 .explanation("...").status(ConceptStatus.PUBLISHED)
                 .createdByTeacher(owner).active(true)
                 .createdAt(LocalDateTime.now()).updatedAt(LocalDateTime.now())

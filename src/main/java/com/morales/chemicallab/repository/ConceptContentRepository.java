@@ -25,6 +25,14 @@ public interface ConceptContentRepository extends JpaRepository<ConceptContent, 
     // Búsqueda de un contenido propio del docente (control de pertenencia).
     Optional<ConceptContent> findByIdAndCreatedByTeacher(Long id, TeacherProfile teacher);
 
+    // Categorías ya usadas por un docente (para sugerirlas al crear nuevos contenidos).
+    @Query("""
+            select distinct c.category from ConceptContent c
+            where c.createdByTeacher = :teacher
+              and c.category is not null
+            """)
+    List<String> findDistinctCategoriesByTeacher(@Param("teacher") TeacherProfile teacher);
+
     // Contenidos publicados y activos asignados a un grado/sección (vista del estudiante).
     @Query("""
             select distinct c from ConceptAssignment a

@@ -40,6 +40,11 @@ public class ConceptContentController {
         return conceptContentService.listConceptsByTeacher(authentication.getName());
     }
 
+    @GetMapping("/teacher/categories")
+    public List<String> sugerenciasDeCategorias(Authentication authentication) {
+        return conceptContentService.listCategorySuggestions(authentication.getName());
+    }
+
     @GetMapping("/teacher/{conceptId}")
     public ConceptContentResponse verMiContenido(
             Authentication authentication,

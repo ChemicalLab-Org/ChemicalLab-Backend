@@ -66,7 +66,7 @@ class ConceptContentServiceTest {
         return ConceptContent.builder()
                 .id(id)
                 .title("Óxidos básicos")
-                .category(ConceptCategory.OXIDOS)
+                .category("Óxidos")
                 .explanation("Explicación de los óxidos.")
                 .createdByTeacher(owner)
                 .status(status)
@@ -99,17 +99,108 @@ class ConceptContentServiceTest {
         when(conceptContentRepository.save(any(ConceptContent.class))).thenAnswer(inv -> inv.getArgument(0));
 
         var request = new CreateConceptContentRequest(
-                "  Óxidos básicos  ", ConceptCategory.OXIDOS, "Resumen", "Explicación de los óxidos.",
-                List.of("Paso 1", "  ", "Paso 2"), List.of("Clave 1"), List.of());
+                "  Óxidos básicos  ", "Óxidos", "Resumen", "Explicación de los óxidos.",
+                List.of("Paso 1", "  ", "Paso 2"), List.of("Clave 1"), List.of(), "  Resolver la guía 1  ");
 
         ConceptContentResponse response = service.createConceptContent("docente1", request);
 
         assertThat(response.title()).isEqualTo("Óxidos básicos");
+        assertThat(response.category()).isEqualTo("Óxidos");
         assertThat(response.status()).isEqualTo(ConceptStatus.DRAFT);
         assertThat(response.createdByTeacherId()).isEqualTo(1L);
         // La lista se normaliza: se descartan entradas en blanco.
         assertThat(response.formationSteps()).containsExactly("Paso 1", "Paso 2");
+        // El texto opcional se recorta.
+        assertThat(response.suggestedActivity()).isEqualTo("Resolver la guía 1");
         verify(conceptContentRepository).save(any(ConceptContent.class));
+    }
+
+    @Test
+    void docenteCreaContenidoConCategoriaPersonalizada() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        stubTeacher(docente);
+        when(conceptContentRepository.save(any(ConceptContent.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // Categoría libre que no pertenece a las categorías químicas clásicas; además se
+        // normalizan los espacios internos repetidos.
+        var request = new CreateConceptContentRequest(
+                "Enlace iónico", "Enlace   químico", null, "Explicación del enlace.",
+                null, null, null, null);
+
+        ConceptContentResponse response = service.createConceptContent("docente1", request);
+
+        assertThat(response.category()).isEqualTo("Enlace químico");
+        assertThat(response.suggestedActivity()).isNull();
+        verify(conceptContentRepository).save(any(ConceptContent.class));
+    }
+
+    @Test
+    void rechazaCategoriaVacia() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        stubTeacher(docente);
+
+        var request = new CreateConceptContentRequest(
+                "Sin categoría", "   ", null, "Explicación", null, null, null, null);
+
+        assertThatThrownBy(() -> service.createConceptContent("docente1", request))
+                .hasMessageContaining("categoría");
+        verify(conceptContentRepository, never()).save(any(ConceptContent.class));
+    }
+
+    @Test
+    void rechazaCategoriaDemasiadoLarga() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        stubTeacher(docente);
+
+        String categoriaLarga = "x".repeat(101);
+        var request = new CreateConceptContentRequest(
+                "Tema", categoriaLarga, null, "Explicación", null, null, null, null);
+
+        assertThatThrownBy(() -> service.createConceptContent("docente1", request))
+                .hasMessageContaining("100");
+        verify(conceptContentRepository, never()).save(any(ConceptContent.class));
+    }
+
+    @Test
+    void editarContenidoRegistraLogYConservaAsignaciones() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        stubTeacher(docente);
+        ConceptContent c = content(10L, docente, ConceptStatus.PUBLISHED);
+        when(conceptContentRepository.findById(10L)).thenReturn(Optional.of(c));
+        when(conceptContentRepository.save(any(ConceptContent.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        var request = new UpdateConceptContentRequest(
+                "Óxidos (revisado)", "Reacciones químicas", "Nuevo resumen", "Explicación ampliada.",
+                null, null, null, "Práctica de laboratorio");
+
+        ConceptContentResponse response = service.updateConceptContent("docente1", 10L, request);
+
+        assertThat(response.category()).isEqualTo("Reacciones químicas");
+        assertThat(response.suggestedActivity()).isEqualTo("Práctica de laboratorio");
+        // La edición no toca las asignaciones del contenido.
+        verify(conceptAssignmentRepository, never()).deleteById(any());
+        // Se registra el evento de edición con descripción segura (sin volcar el contenido).
+        verify(auditLogService).recordInfo(
+                org.mockito.ArgumentMatchers.eq(LogEventType.CONCEPT_UPDATED),
+                any(), any(), any(), any(),
+                org.mockito.ArgumentMatchers.contains("Se actualizó"),
+                any());
+    }
+
+    @Test
+    void sugerenciasDeCategoriasCombinaDefaultsYUsadas() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        stubTeacher(docente);
+        // El docente ya usó una categoría libre y otra que coincide (sin distinguir
+        // mayúsculas) con una de las del catálogo por defecto.
+        when(conceptContentRepository.findDistinctCategoriesByTeacher(docente))
+                .thenReturn(List.of("Mi tema especial", "óxidos"));
+
+        List<String> suggestions = service.listCategorySuggestions("docente1");
+
+        assertThat(suggestions).contains("Mi tema especial", "Óxidos", "Enlace químico");
+        // No se duplica «Óxidos» pese a venir también del docente en minúsculas.
+        assertThat(suggestions.stream().filter(s -> s.equalsIgnoreCase("óxidos")).count()).isEqualTo(1);
     }
 
     // =========================================================================
@@ -230,7 +321,7 @@ class ConceptContentServiceTest {
         when(conceptContentRepository.findById(10L)).thenReturn(Optional.of(content(10L, otro, ConceptStatus.DRAFT)));
 
         var request = new UpdateConceptContentRequest(
-                "Nuevo", ConceptCategory.GENERAL, null, "Explicación", null, null, null);
+                "Nuevo", "General", null, "Explicación", null, null, null, null);
 
         assertThatThrownBy(() -> service.updateConceptContent("docente1", 10L, request))
                 .hasMessageContaining("No tienes permiso");

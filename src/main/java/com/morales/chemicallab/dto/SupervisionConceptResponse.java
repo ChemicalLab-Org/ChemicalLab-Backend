@@ -1,6 +1,5 @@
 package com.morales.chemicallab.dto;
 
-import com.morales.chemicallab.entity.ConceptCategory;
 import com.morales.chemicallab.entity.ConceptStatus;
 
 import java.time.LocalDateTime;
@@ -15,7 +14,7 @@ import java.util.List;
 public record SupervisionConceptResponse(
         Long id,
         String title,
-        ConceptCategory category,
+        String category,
         ConceptStatus status,
         String createdByTeacher,
         long assignmentCount,
