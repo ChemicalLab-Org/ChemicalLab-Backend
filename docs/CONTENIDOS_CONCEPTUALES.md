@@ -72,6 +72,20 @@ contenido en varias secciones y desactivar la asignación sin borrar el contenid
 | `active` | Si la asignación está vigente |
 | `assignedAt` | Fecha de asignación |
 
+### Migración de esquema (categoría de enum a texto libre)
+
+Cuando la categoría se mapeaba como enumeración, Hibernate generaba una restricción
+CHECK `concept_contents_category_check` que solo admitía los códigos antiguos
+(`OXIDOS`, `HIDROXIDOS`, …). Con `ddl-auto=update`, al cambiar la columna a texto libre
+esa restricción **no** se elimina automáticamente y seguiría rechazando cualquier
+categoría personalizada (e incluso las clásicas escritas de otra forma, como «Óxidos»),
+provocando un error 500 al crear o editar contenidos en bases de datos ya existentes.
+
+El componente `ConceptContentSchemaMigration` (un `ApplicationRunner`) elimina esa
+restricción de forma **idempotente** al arrancar (`DROP CONSTRAINT IF EXISTS`). Es
+seguro ejecutarlo siempre y un fallo nunca interrumpe el arranque. En bases de datos
+nuevas la restricción no llega a crearse, por lo que el inicializador no hace nada.
+
 ### Categoría y catálogo de sugerencias
 
 La categoría dejó de ser una enumeración cerrada. La clase `ConceptCategory` ya no es
@@ -173,3 +187,7 @@ y conserva las asignaciones, listado, publicación, asignación, visibilidad cor
 por sección, ocultamiento de borradores, control de pertenencia entre docentes, no
 duplicación de asignaciones, bloqueo de asignación de contenidos archivados y
 combinación de categorías sugeridas (catálogo por defecto + usadas por el docente).
+
+`ConceptContentPersistenceDbTest` (`@SpringBootTest` contra PostgreSQL) verifica que la
+restricción heredada ya no exista y que se puedan persistir contenidos con categoría
+personalizada y con categoría clásica sin violar restricciones.
