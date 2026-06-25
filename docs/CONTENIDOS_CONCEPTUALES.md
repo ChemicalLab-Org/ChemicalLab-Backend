@@ -15,13 +15,50 @@ de compuestos predefinidos.
 > con las categorías antiguas (`OXIDOS`, `HIDROXIDOS`, `ACIDOS`, `SALES_BINARIAS`,
 > `OXISALES`, `NOMENCLATURA`, `GENERAL`) siguen siendo válidos y se muestran tal cual.
 
-## Contenido textual vs. materiales adjuntos
+## Contenido textual y materiales adjuntos
 
-Este módulo gestiona **contenido conceptual textual**: título, categoría, resumen,
-explicación, pasos/secuencia, puntos clave, ejemplos y una actividad sugerida. **No**
-gestiona la subida de archivos (PDF, diapositivas, imágenes). Los materiales adjuntos
-se abordarán en una sesión futura específica y son independientes de los campos de
-texto descritos aquí.
+Un contenido conceptual combina **texto** (título, categoría, resumen, explicación,
+pasos/secuencia, puntos clave, ejemplos y actividad sugerida) con **materiales de
+apoyo**:
+
+- un **archivo** principal (PDF, diapositivas PPT/PPTX o imagen PNG/JPG), almacenado
+  como bytes en PostgreSQL; y
+- uno o más **enlaces externos** de apoyo (video, simulador, recurso del colegio…).
+
+Un contenido puede guardarse solo con texto, solo con material adjunto, solo con
+enlaces o con cualquier combinación. Lo único siempre obligatorio es el **título** y la
+**categoría**; la explicación pasó a ser opcional. Para **publicar** un contenido debe
+aportar algo útil: texto **o**, al menos, un material de apoyo (no se publican
+contenidos vacíos).
+
+### Almacenamiento (decisión MVP)
+
+Los archivos se guardan como **bytes en la base de datos PostgreSQL** (`bytea`) con un
+**límite estricto de 10 MB por archivo**. Se evita el sistema de archivos local porque
+el despliegue en Render **no garantiza un filesystem persistente** entre reinicios o
+redespliegues. Para una escala mayor podría migrarse a un almacenamiento externo
+(Amazon S3, Cloudinary, Supabase Storage u otro equivalente), pero **no** se implementa
+en esta versión.
+
+Los bytes del archivo **nunca** se devuelven en listados ni en respuestas de metadata:
+los listados usan una proyección JPQL (`ConceptMaterialView`) que no selecciona la
+columna binaria, y los bytes solo se cargan en el endpoint de descarga/visualización.
+
+### Formatos permitidos y tamaño
+
+| Tipo | `Content-Type` | Extensión | Previsualización |
+|------|----------------|-----------|------------------|
+| PDF | `application/pdf` | `.pdf` | En línea (inline) |
+| PowerPoint | `application/vnd.ms-powerpoint` | `.ppt` | Solo descarga |
+| PowerPoint | `application/vnd.openxmlformats-officedocument.presentationml.presentation` | `.pptx` | Solo descarga |
+| Imagen | `image/png` | `.png` | En línea (inline) |
+| Imagen | `image/jpeg` | `.jpg`, `.jpeg` | En línea (inline) |
+
+Cualquier otro tipo se **rechaza** (ejecutables `.exe`/`.bat`/`.cmd`/`.sh`, scripts
+`.js`/`.html`, `.svg`, comprimidos `.zip`/`.rar`/`.7z`, etc.). La validación usa una
+**lista blanca** de `Content-Type` y exige que la **extensión sea coherente** con él
+(no se confía solo en la extensión). Tamaño máximo: **10 MB** (validado en el servicio
+y por `spring.servlet.multipart.max-file-size`).
 
 ## Propósito del módulo
 
@@ -43,7 +80,7 @@ Contenido conceptual creado por un docente.
 | `title` | Título del contenido (obligatorio, máx. 150) |
 | `category` | Categoría como **texto libre** (obligatoria, máx. 100). Se recorta y se colapsan los espacios internos repetidos |
 | `summary` | Resumen breve (opcional, TEXT, máx. 500) |
-| `explanation` | Contenido principal / explicación (obligatorio, TEXT) |
+| `explanation` | Contenido principal / explicación (**opcional**, TEXT) |
 | `formationSteps` | Lista de pasos o secuencia (`@ElementCollection`) |
 | `keyPoints` | Lista de puntos clave (`@ElementCollection`) |
 | `examples` | Lista de ejemplos (`@ElementCollection`) |
@@ -72,6 +109,28 @@ contenido en varias secciones y desactivar la asignación sin borrar el contenid
 | `active` | Si la asignación está vigente |
 | `assignedAt` | Fecha de asignación |
 
+### ConceptMaterial
+Material de apoyo asociado a un `ConceptContent`. Para el MVP se admite **un archivo
+principal** por contenido (subir uno nuevo reemplaza el anterior y lo elimina para no
+dejar bytes huérfanos) y **varios enlaces** externos.
+
+| Campo | Descripción |
+|-------|-------------|
+| `id` | Identificador |
+| `conceptContent` | Contenido al que pertenece |
+| `type` | `MaterialType`: `FILE` o `LINK` |
+| `title` | Título/descripción breve (opcional, máx. 150) |
+| `originalFileName` | Nombre original saneado (solo `FILE`) |
+| `contentType` | Tipo MIME del archivo (solo `FILE`) |
+| `fileSize` | Tamaño en bytes (solo `FILE`) |
+| `fileData` | Bytes del archivo en `bytea` (solo `FILE`, `@Basic LAZY`, nunca en listados) |
+| `url` | URL del enlace externo (solo `LINK`) |
+| `uploadedBy` | Usuario docente que subió/registró el material |
+| `active` | Marca de actividad |
+| `createdAt` / `updatedAt` | Auditoría de fechas |
+
+La tabla es `concept_materials`.
+
 ### Migración de esquema (categoría de enum a texto libre)
 
 Cuando la categoría se mapeaba como enumeración, Hibernate generaba una restricción
@@ -85,6 +144,10 @@ El componente `ConceptContentSchemaMigration` (un `ApplicationRunner`) elimina e
 restricción de forma **idempotente** al arrancar (`DROP CONSTRAINT IF EXISTS`). Es
 seguro ejecutarlo siempre y un fallo nunca interrumpe el arranque. En bases de datos
 nuevas la restricción no llega a crearse, por lo que el inicializador no hace nada.
+
+El mismo componente relaja además el `NOT NULL` de `concept_contents.explanation`
+(`ALTER COLUMN explanation DROP NOT NULL`, también idempotente), ya que la explicación
+dejó de ser obligatoria al permitir contenidos apoyados solo en archivos o enlaces.
 
 ### Categoría y catálogo de sugerencias
 
@@ -135,6 +198,9 @@ Base: `/api/concepts`
 | PATCH | `/teacher/{conceptId}/archive` | Archivar |
 | POST | `/teacher/{conceptId}/assignments` | Asignar a grado/sección |
 | PATCH | `/teacher/{conceptId}/assignments/{assignmentId}/deactivate` | Desactivar asignación |
+| POST | `/teacher/{conceptId}/materials/file` | Subir o reemplazar el archivo (multipart: `file`, `title` opcional) |
+| POST | `/teacher/{conceptId}/materials/link` | Agregar un enlace externo de apoyo |
+| DELETE | `/teacher/{conceptId}/materials/{materialId}` | Retirar un material (archivo o enlace) |
 
 ### Estudiante (`ROLE ESTUDIANTE`)
 | Método | Ruta | Acción |
@@ -148,21 +214,55 @@ Base: `/api/concepts`
 | GET | `/admin` | Listar todos los contenidos |
 | GET | `/admin/{conceptId}` | Ver cualquier contenido |
 
+### Descarga / visualización de archivos (autenticado, control por rol)
+| Método | Ruta | Acción |
+|--------|------|--------|
+| GET | `/{conceptId}/materials/{materialId}/download` | Descargar/visualizar un archivo |
+
+Esta ruta **no** lleva el prefijo `teacher`/`student`/`admin`: requiere usuario
+autenticado y el control de acceso fino se aplica en el servicio según el rol:
+
+- **Docente**: solo sobre sus propios contenidos.
+- **Estudiante**: solo si el contenido está publicado y asignado a su grado/sección.
+- **Administrador**: en solo lectura, sobre cualquier contenido.
+
+La respuesta usa el `Content-Type` real del archivo y un `Content-Disposition`
+**`inline`** para PDF e imágenes (previsualización en el navegador) o **`attachment`**
+para diapositivas PPT/PPTX (descarga). Los **enlaces no se descargan** por aquí: el
+cliente los abre directamente desde su `url`.
+
+La metadata de materiales (`materialId`, `type`, `title`, `originalFileName`,
+`contentType`, `fileSize`, `url`, `previewAvailable`, `downloadUrl`) se incluye en el
+detalle del docente, en el del estudiante y, de forma agregada (`materialCount`,
+`hasAttachment`), en la supervisión administrativa. **Nunca** se exponen los bytes ni
+rutas internas del servidor.
+
 ## Reglas de validación y seguridad
 
-- Título, categoría y explicación (contenido principal) son obligatorios.
+- Título y categoría son obligatorios; la explicación es opcional.
 - La categoría se valida también en el servicio: se recorta, se colapsan espacios,
   no puede quedar vacía y no puede superar 100 caracteres (defensa adicional a la
   validación de los DTOs).
 - El resumen admite hasta 500 caracteres y la actividad sugerida hasta 2000.
+- **Publicación**: solo se publica un contenido que aporte algo útil (texto o, al
+  menos, un material de apoyo). No se publican contenidos vacíos.
 - Un docente no puede editar, publicar, archivar ni asignar contenidos de otro
-  docente.
+  docente, ni agregar/retirar materiales en ellos.
 - La edición **conserva las asignaciones existentes** (no se tocan al actualizar el
   contenido) y **no cambia el docente autor**.
 - No se puede asignar ni publicar un contenido archivado.
 - No se permite una segunda asignación activa para el mismo grado/sección.
 - El estudiante solo recibe contenidos publicados y asignados a su sección.
 - El acceso por rol se configura en `SecurityConfig` para `/api/concepts/**`.
+
+### Validación de materiales
+
+- **Archivos**: archivo requerido y no vacío; tamaño máximo 10 MB; `Content-Type` en
+  la lista blanca; extensión coherente con el `Content-Type`; nombre de archivo
+  saneado (se descartan rutas para evitar *path traversal* y caracteres de control que
+  permitirían inyectar cabeceras). Los bytes nunca viajan en listados.
+- **Enlaces**: URL requerida; solo `http://` o `https://`; se rechazan `javascript:`,
+  `data:` y `file:`; longitud máxima 2048; título opcional (máx. 150).
 
 ## Trazabilidad
 
@@ -174,9 +274,16 @@ sensibles, solo metadatos como la categoría) para:
 - `CONCEPT_PUBLISHED` — publicación.
 - `CONCEPT_ARCHIVED` — archivado (cambio de estado).
 - `CONCEPT_ASSIGNED` — asignación a grado/sección.
+- `CONCEPT_MATERIAL_ADDED` — archivo agregado a un contenido.
+- `CONCEPT_MATERIAL_REPLACED` — archivo reemplazado.
+- `CONCEPT_MATERIAL_REMOVED` — material retirado.
+- `CONCEPT_LINK_ADDED` — enlace de apoyo agregado.
+- `CONCEPT_LINK_REMOVED` — enlace de apoyo retirado.
 
 Ejemplos de descripción segura: «Se actualizó el contenido conceptual ‘Enlace
-químico’.», «Se asignó el contenido ‘Valencias’ a 3° A.».
+químico’.», «Se asignó el contenido ‘Valencias’ a 3° A.», «Se agregó un archivo de
+apoyo en el contenido ‘Óxidos’.». Los logs **no** registran los bytes del archivo, su
+contenido, rutas internas ni la URL completa de los enlaces.
 
 ## Pruebas
 
@@ -187,6 +294,13 @@ y conserva las asignaciones, listado, publicación, asignación, visibilidad cor
 por sección, ocultamiento de borradores, control de pertenencia entre docentes, no
 duplicación de asignaciones, bloqueo de asignación de contenidos archivados y
 combinación de categorías sugeridas (catálogo por defecto + usadas por el docente).
+
+`ConceptMaterialServiceTest` cubre los materiales: subida de PDF válido, de PPTX como
+descarga, reemplazo de archivo sin dejar huérfanos, rechazo de tipo no permitido, de
+archivo vacío, de archivo mayor a 10 MB y de extensión incoherente con el tipo, control
+de pertenencia del docente, aceptación de URL `https` válida, rechazo de URL
+`javascript:`, descarga de un estudiante de contenido asignado y bloqueo de descarga de
+contenido no asignado.
 
 `ConceptContentPersistenceDbTest` (`@SpringBootTest` contra PostgreSQL) verifica que la
 restricción heredada ya no exista y que se puedan persistir contenidos con categoría

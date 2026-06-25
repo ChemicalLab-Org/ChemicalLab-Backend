@@ -37,6 +37,8 @@ class AcademicSupervisionServiceTest {
     @Mock
     private ConceptAssignmentRepository conceptAssignmentRepository;
     @Mock
+    private ConceptMaterialRepository conceptMaterialRepository;
+    @Mock
     private EvaluationRepository evaluationRepository;
     @Mock
     private EvaluationAssignmentRepository evaluationAssignmentRepository;

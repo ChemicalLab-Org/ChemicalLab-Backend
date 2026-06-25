@@ -31,6 +31,7 @@ public class ConceptContentService {
 
     private final ConceptContentRepository conceptContentRepository;
     private final ConceptAssignmentRepository conceptAssignmentRepository;
+    private final ConceptMaterialRepository conceptMaterialRepository;
     private final UserAccountRepository userAccountRepository;
     private final TeacherProfileRepository teacherProfileRepository;
     private final StudentProfileRepository studentProfileRepository;
@@ -49,8 +50,8 @@ public class ConceptContentService {
         ConceptContent content = ConceptContent.builder()
                 .title(request.title().trim())
                 .category(normalizeCategory(request.category()))
-                .summary(request.summary())
-                .explanation(request.explanation())
+                .summary(cleanText(request.summary()))
+                .explanation(cleanText(request.explanation()))
                 .formationSteps(sanitizeList(request.formationSteps()))
                 .keyPoints(sanitizeList(request.keyPoints()))
                 .examples(sanitizeList(request.examples()))
@@ -91,8 +92,8 @@ public class ConceptContentService {
 
         content.setTitle(request.title().trim());
         content.setCategory(normalizeCategory(request.category()));
-        content.setSummary(request.summary());
-        content.setExplanation(request.explanation());
+        content.setSummary(cleanText(request.summary()));
+        content.setExplanation(cleanText(request.explanation()));
         content.setFormationSteps(sanitizeList(request.formationSteps()));
         content.setKeyPoints(sanitizeList(request.keyPoints()));
         content.setExamples(sanitizeList(request.examples()));
@@ -116,6 +117,13 @@ public class ConceptContentService {
 
         if (content.getStatus() == ConceptStatus.ARCHIVED) {
             throw new IllegalArgumentException("No se puede publicar un contenido archivado.");
+        }
+
+        // Un contenido debe aportar algo útil antes de publicarse: texto explicativo o, al
+        // menos, un material de apoyo (archivo o enlace). Así se evita publicar contenidos vacíos.
+        if (!hasUsefulContent(content)) {
+            throw new IllegalArgumentException(
+                    "No se puede publicar un contenido vacío: agrega texto, un archivo o un enlace de apoyo.");
         }
 
         content.setStatus(ConceptStatus.PUBLISHED);
@@ -314,6 +322,27 @@ public class ConceptContentService {
     }
 
     /**
+     * Indica si un contenido aporta información útil: tiene texto (explicación, resumen,
+     * pasos, puntos clave, ejemplos o actividad) o, al menos, un material de apoyo activo.
+     */
+    private boolean hasUsefulContent(ConceptContent content) {
+        boolean hasText = isNotBlank(content.getExplanation())
+                || isNotBlank(content.getSummary())
+                || isNotBlank(content.getSuggestedActivity())
+                || !content.getFormationSteps().isEmpty()
+                || !content.getKeyPoints().isEmpty()
+                || !content.getExamples().isEmpty();
+        if (hasText) {
+            return true;
+        }
+        return conceptMaterialRepository.existsByConceptContentIdAndActiveTrue(content.getId());
+    }
+
+    private boolean isNotBlank(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    /**
      * Normaliza un texto opcional: recorta espacios y convierte el vacío en {@code null}.
      */
     private String cleanText(String value) {
@@ -367,9 +396,20 @@ public class ConceptContentService {
                 teacher.getId(),
                 teacherName,
                 assignments,
+                listMaterials(content.getId()),
                 content.getCreatedAt(),
                 content.getUpdatedAt()
         );
+    }
+
+    /**
+     * Metadata de los materiales de apoyo de un contenido. Usa una proyección que no carga
+     * los bytes de los archivos, de modo que nunca viajen en los listados ni en el detalle.
+     */
+    private List<ConceptMaterialResponse> listMaterials(Long conceptId) {
+        return conceptMaterialRepository.findMetadataByConcept(conceptId).stream()
+                .map(view -> ConceptMaterialResponse.fromView(conceptId, view))
+                .toList();
     }
 
     private ConceptAssignmentResponse toAssignmentResponse(ConceptAssignment assignment) {
@@ -392,7 +432,8 @@ public class ConceptContentService {
                 List.copyOf(content.getFormationSteps()),
                 List.copyOf(content.getKeyPoints()),
                 List.copyOf(content.getExamples()),
-                content.getSuggestedActivity()
+                content.getSuggestedActivity(),
+                listMaterials(content.getId())
         );
     }
 }

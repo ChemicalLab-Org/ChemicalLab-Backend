@@ -16,5 +16,6 @@ public record StudentConceptContentResponse(
         List<String> formationSteps,
         List<String> keyPoints,
         List<String> examples,
-        String suggestedActivity
+        String suggestedActivity,
+        List<ConceptMaterialResponse> materials
 ) {}

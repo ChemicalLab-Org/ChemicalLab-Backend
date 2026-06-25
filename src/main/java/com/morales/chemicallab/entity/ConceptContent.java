@@ -42,7 +42,10 @@ public class ConceptContent {
     @Column(columnDefinition = "TEXT")
     private String summary;
 
-    @Column(columnDefinition = "TEXT", nullable = false)
+    // La explicación es opcional: un contenido puede apoyarse solo en un archivo o en
+    // enlaces externos. La regla de «contenido no vacío» se valida al publicar (debe haber
+    // texto o, al menos, un material de apoyo).
+    @Column(columnDefinition = "TEXT")
     private String explanation;
 
     // Indicaciones o actividad sugerida para trabajar el tema en clase. Opcional.

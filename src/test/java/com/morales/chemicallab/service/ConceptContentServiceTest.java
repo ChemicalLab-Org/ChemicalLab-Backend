@@ -32,6 +32,8 @@ class ConceptContentServiceTest {
     @Mock
     private ConceptAssignmentRepository conceptAssignmentRepository;
     @Mock
+    private ConceptMaterialRepository conceptMaterialRepository;
+    @Mock
     private UserAccountRepository userAccountRepository;
     @Mock
     private TeacherProfileRepository teacherProfileRepository;

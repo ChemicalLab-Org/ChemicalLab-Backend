@@ -17,7 +17,9 @@ public record UpdateConceptContentRequest(
         @Size(max = 500, message = "El resumen no puede superar 500 caracteres")
         String summary,
 
-        @NotBlank(message = "La explicación es obligatoria")
+        // Opcional: el contenido puede apoyarse únicamente en un archivo o en enlaces.
+        // La regla de «contenido no vacío» se verifica al publicar.
+        @Size(max = 20000, message = "La explicación no puede superar 20000 caracteres")
         String explanation,
 
         List<String> formationSteps,

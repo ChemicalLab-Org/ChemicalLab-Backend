@@ -25,6 +25,7 @@ public record ConceptContentResponse(
         Long createdByTeacherId,
         String createdByTeacherName,
         List<ConceptAssignmentResponse> assignments,
+        List<ConceptMaterialResponse> materials,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {}
