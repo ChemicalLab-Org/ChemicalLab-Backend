@@ -183,7 +183,7 @@ class AdminServiceTest {
         when(evaluationRepository.findTop5ByOrderByCreatedAtDesc()).thenReturn(List.of(evaluation));
 
         ConceptContent concept = ConceptContent.builder()
-                .id(1L).title("Nomenclatura de ácidos").category(ConceptCategory.ACIDOS)
+                .id(1L).title("Nomenclatura de ácidos").category("Ácidos")
                 .explanation("...").createdByTeacher(owner).createdAt(LocalDateTime.now()).build();
         when(conceptContentRepository.findTop5ByOrderByCreatedAtDesc()).thenReturn(List.of(concept));
 

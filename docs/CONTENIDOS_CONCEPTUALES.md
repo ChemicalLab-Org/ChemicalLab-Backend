@@ -1,13 +1,27 @@
 # Contenidos conceptuales
 
-Módulo del backend que permite a los docentes crear material conceptual de química
-(óxidos, ácidos, nomenclatura, etc.) y asignarlo a los grados y secciones que
-tienen a cargo. Los estudiantes consultan únicamente el material publicado que
-corresponde a su grado y sección.
+Módulo del backend que permite a los docentes crear material conceptual y asignarlo
+a los grados y secciones que tienen a cargo. Los estudiantes consultan únicamente el
+material publicado que corresponde a su grado y sección.
 
-> Nota: la pantalla `/concepts` del frontend todavía trabaja con datos locales.
-> La integración con estos endpoints y la pantalla de gestión del docente se
-> realizarán en una etapa posterior. Esta entrega cubre solo el backend.
+La **categoría del contenido es texto libre**: el docente puede usar las categorías
+químicas clásicas (óxidos, hidróxidos, ácidos, sales, oxisales, nomenclatura) o
+registrar cualquier otro tema (enlace químico, reacciones químicas, tabla periódica,
+valencias, laboratorio y seguridad, clase introductoria, actividad práctica, repaso
+de evaluación, etc.). Esto evita que el módulo quede amarrado únicamente a los tipos
+de compuestos predefinidos.
+
+> Compatibilidad: la categoría siempre se almacenó como texto. Los contenidos creados
+> con las categorías antiguas (`OXIDOS`, `HIDROXIDOS`, `ACIDOS`, `SALES_BINARIAS`,
+> `OXISALES`, `NOMENCLATURA`, `GENERAL`) siguen siendo válidos y se muestran tal cual.
+
+## Contenido textual vs. materiales adjuntos
+
+Este módulo gestiona **contenido conceptual textual**: título, categoría, resumen,
+explicación, pasos/secuencia, puntos clave, ejemplos y una actividad sugerida. **No**
+gestiona la subida de archivos (PDF, diapositivas, imágenes). Los materiales adjuntos
+se abordarán en una sesión futura específica y son independientes de los campos de
+texto descritos aquí.
 
 ## Propósito del módulo
 
@@ -26,13 +40,14 @@ Contenido conceptual creado por un docente.
 | Campo | Descripción |
 |-------|-------------|
 | `id` | Identificador |
-| `title` | Título del contenido (obligatorio) |
-| `category` | Categoría (`ConceptCategory`, obligatoria) |
-| `summary` | Resumen breve (opcional, TEXT) |
-| `explanation` | Explicación teórica (obligatoria, TEXT) |
-| `formationSteps` | Lista de pasos de formación (`@ElementCollection`) |
+| `title` | Título del contenido (obligatorio, máx. 150) |
+| `category` | Categoría como **texto libre** (obligatoria, máx. 100). Se recorta y se colapsan los espacios internos repetidos |
+| `summary` | Resumen breve (opcional, TEXT, máx. 500) |
+| `explanation` | Contenido principal / explicación (obligatorio, TEXT) |
+| `formationSteps` | Lista de pasos o secuencia (`@ElementCollection`) |
 | `keyPoints` | Lista de puntos clave (`@ElementCollection`) |
 | `examples` | Lista de ejemplos (`@ElementCollection`) |
+| `suggestedActivity` | Indicaciones o actividad sugerida (opcional, TEXT, máx. 2000) |
 | `createdByTeacher` | Docente autor (`TeacherProfile`) |
 | `status` | Estado (`ConceptStatus`: `DRAFT`, `PUBLISHED`, `ARCHIVED`) |
 | `active` | Marca de actividad |
@@ -57,10 +72,29 @@ contenido en varias secciones y desactivar la asignación sin borrar el contenid
 | `active` | Si la asignación está vigente |
 | `assignedAt` | Fecha de asignación |
 
-### Enums
+### Migración de esquema (categoría de enum a texto libre)
 
-- `ConceptCategory`: `OXIDOS`, `HIDROXIDOS`, `ACIDOS`, `SALES_BINARIAS`,
-  `OXISALES`, `NOMENCLATURA`, `GENERAL`.
+Cuando la categoría se mapeaba como enumeración, Hibernate generaba una restricción
+CHECK `concept_contents_category_check` que solo admitía los códigos antiguos
+(`OXIDOS`, `HIDROXIDOS`, …). Con `ddl-auto=update`, al cambiar la columna a texto libre
+esa restricción **no** se elimina automáticamente y seguiría rechazando cualquier
+categoría personalizada (e incluso las clásicas escritas de otra forma, como «Óxidos»),
+provocando un error 500 al crear o editar contenidos en bases de datos ya existentes.
+
+El componente `ConceptContentSchemaMigration` (un `ApplicationRunner`) elimina esa
+restricción de forma **idempotente** al arrancar (`DROP CONSTRAINT IF EXISTS`). Es
+seguro ejecutarlo siempre y un fallo nunca interrumpe el arranque. En bases de datos
+nuevas la restricción no llega a crearse, por lo que el inicializador no hace nada.
+
+### Categoría y catálogo de sugerencias
+
+La categoría dejó de ser una enumeración cerrada. La clase `ConceptCategory` ya no es
+un `enum`: solo expone una lista `DEFAULTS` de categorías sugeridas (las clásicas de
+química más temas generales habituales) que el endpoint de sugerencias combina con las
+categorías que el docente ya ha usado. No restringe los valores admitidos.
+
+### Enum de estado
+
 - `ConceptStatus`: `DRAFT`, `PUBLISHED`, `ARCHIVED`.
 
 ## Flujo del docente
@@ -94,6 +128,7 @@ Base: `/api/concepts`
 |--------|------|--------|
 | POST | `/teacher` | Crear contenido |
 | GET | `/teacher` | Listar contenidos propios |
+| GET | `/teacher/categories` | Categorías sugeridas (defaults + usadas por el docente) |
 | GET | `/teacher/{conceptId}` | Ver detalle propio |
 | PUT | `/teacher/{conceptId}` | Editar contenido propio |
 | PATCH | `/teacher/{conceptId}/publish` | Publicar |
@@ -115,17 +150,44 @@ Base: `/api/concepts`
 
 ## Reglas de validación y seguridad
 
-- Título, categoría y explicación son obligatorios.
+- Título, categoría y explicación (contenido principal) son obligatorios.
+- La categoría se valida también en el servicio: se recorta, se colapsan espacios,
+  no puede quedar vacía y no puede superar 100 caracteres (defensa adicional a la
+  validación de los DTOs).
+- El resumen admite hasta 500 caracteres y la actividad sugerida hasta 2000.
 - Un docente no puede editar, publicar, archivar ni asignar contenidos de otro
   docente.
+- La edición **conserva las asignaciones existentes** (no se tocan al actualizar el
+  contenido) y **no cambia el docente autor**.
 - No se puede asignar ni publicar un contenido archivado.
 - No se permite una segunda asignación activa para el mismo grado/sección.
 - El estudiante solo recibe contenidos publicados y asignados a su sección.
 - El acceso por rol se configura en `SecurityConfig` para `/api/concepts/**`.
 
+## Trazabilidad
+
+Se registran eventos de auditoría (sin volcar el contenido completo ni datos
+sensibles, solo metadatos como la categoría) para:
+
+- `CONCEPT_CREATED` — creación.
+- `CONCEPT_UPDATED` — edición.
+- `CONCEPT_PUBLISHED` — publicación.
+- `CONCEPT_ARCHIVED` — archivado (cambio de estado).
+- `CONCEPT_ASSIGNED` — asignación a grado/sección.
+
+Ejemplos de descripción segura: «Se actualizó el contenido conceptual ‘Enlace
+químico’.», «Se asignó el contenido ‘Valencias’ a 3° A.».
+
 ## Pruebas
 
-`ConceptContentServiceTest` cubre los casos principales: creación, listado,
-publicación, asignación, visibilidad correcta por sección, ocultamiento de
-borradores, control de pertenencia entre docentes, no duplicación de
-asignaciones y bloqueo de asignación de contenidos archivados.
+`ConceptContentServiceTest` cubre los casos principales: creación con categoría
+clásica y con categoría personalizada, normalización de espacios en la categoría,
+rechazo de categoría vacía y de categoría demasiado larga, edición que registra log
+y conserva las asignaciones, listado, publicación, asignación, visibilidad correcta
+por sección, ocultamiento de borradores, control de pertenencia entre docentes, no
+duplicación de asignaciones, bloqueo de asignación de contenidos archivados y
+combinación de categorías sugeridas (catálogo por defecto + usadas por el docente).
+
+`ConceptContentPersistenceDbTest` (`@SpringBootTest` contra PostgreSQL) verifica que la
+restricción heredada ya no exista y que se puedan persistir contenidos con categoría
+personalizada y con categoría clásica sin violar restricciones.

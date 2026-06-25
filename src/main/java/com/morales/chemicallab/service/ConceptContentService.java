@@ -9,7 +9,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Lógica de negocio de los contenidos conceptuales de química.
@@ -35,6 +37,7 @@ public class ConceptContentService {
     private final AuditLogService auditLogService;
 
     private static final String TARGET_CONCEPT = "ConceptContent";
+    private static final int CATEGORY_MAX_LENGTH = 100;
 
     // =========================================================================
     // DOCENTE
@@ -45,12 +48,13 @@ public class ConceptContentService {
 
         ConceptContent content = ConceptContent.builder()
                 .title(request.title().trim())
-                .category(request.category())
+                .category(normalizeCategory(request.category()))
                 .summary(request.summary())
                 .explanation(request.explanation())
                 .formationSteps(sanitizeList(request.formationSteps()))
                 .keyPoints(sanitizeList(request.keyPoints()))
                 .examples(sanitizeList(request.examples()))
+                .suggestedActivity(cleanText(request.suggestedActivity()))
                 .createdByTeacher(teacher)
                 .status(ConceptStatus.DRAFT)
                 .active(true)
@@ -86,14 +90,23 @@ public class ConceptContentService {
         ConceptContent content = requireOwnedConcept(conceptId, teacher);
 
         content.setTitle(request.title().trim());
-        content.setCategory(request.category());
+        content.setCategory(normalizeCategory(request.category()));
         content.setSummary(request.summary());
         content.setExplanation(request.explanation());
         content.setFormationSteps(sanitizeList(request.formationSteps()));
         content.setKeyPoints(sanitizeList(request.keyPoints()));
         content.setExamples(sanitizeList(request.examples()));
+        content.setSuggestedActivity(cleanText(request.suggestedActivity()));
 
         conceptContentRepository.save(content);
+
+        // Las asignaciones a grado/sección no se tocan aquí: la edición conserva
+        // intactas las relaciones existentes del contenido.
+        auditLogService.recordInfo(LogEventType.CONCEPT_UPDATED, TARGET_CONCEPT, content.getId(),
+                content.getTitle(), "Editar contenido",
+                "Se actualizó el contenido conceptual «" + content.getTitle() + "».",
+                "category=" + content.getCategory());
+
         return toConceptContentResponse(content);
     }
 
@@ -121,7 +134,37 @@ public class ConceptContentService {
 
         content.setStatus(ConceptStatus.ARCHIVED);
         conceptContentRepository.save(content);
+
+        auditLogService.recordInfo(LogEventType.CONCEPT_ARCHIVED, TARGET_CONCEPT, content.getId(),
+                content.getTitle(), "Archivar contenido",
+                "Se archivó el contenido conceptual «" + content.getTitle() + "».", null);
+
         return toConceptContentResponse(content);
+    }
+
+    /**
+     * Categorías sugeridas para que el docente reutilice etiquetas: combina las
+     * categorías por defecto del catálogo con las que el propio docente ya ha usado,
+     * sin duplicados (comparación sin distinguir mayúsculas) y ordenadas alfabéticamente.
+     */
+    @Transactional(readOnly = true)
+    public List<String> listCategorySuggestions(String username) {
+        TeacherProfile teacher = requireTeacher(username);
+
+        // Clave en minúsculas para deduplicar, conservando la primera grafía vista.
+        Map<String, String> unique = new LinkedHashMap<>();
+        for (String category : ConceptCategory.DEFAULTS) {
+            unique.putIfAbsent(category.toLowerCase(), category);
+        }
+        for (String category : conceptContentRepository.findDistinctCategoriesByTeacher(teacher)) {
+            if (category != null && !category.isBlank()) {
+                unique.putIfAbsent(category.trim().toLowerCase(), category.trim());
+            }
+        }
+
+        return unique.values().stream()
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .toList();
     }
 
     public ConceptAssignmentResponse assignConceptToSection(String username, Long conceptId, AssignConceptContentRequest request) {
@@ -254,6 +297,34 @@ public class ConceptContentService {
     }
 
     /**
+     * Normaliza la categoría de texto libre: recorta los extremos y colapsa los espacios
+     * internos repetidos. Valida que no quede vacía ni exceda el límite admitido, de modo
+     * que la regla se cumpla aunque la petición no pase por la validación de los DTOs.
+     */
+    private String normalizeCategory(String rawCategory) {
+        if (rawCategory == null || rawCategory.isBlank()) {
+            throw new IllegalArgumentException("La categoría es obligatoria.");
+        }
+        String normalized = rawCategory.trim().replaceAll("\\s+", " ");
+        if (normalized.length() > CATEGORY_MAX_LENGTH) {
+            throw new IllegalArgumentException(
+                    "La categoría no puede superar " + CATEGORY_MAX_LENGTH + " caracteres.");
+        }
+        return normalized;
+    }
+
+    /**
+     * Normaliza un texto opcional: recorta espacios y convierte el vacío en {@code null}.
+     */
+    private String cleanText(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    /**
      * Normaliza una lista de texto: tolera null, descarta entradas vacías y recorta
      * espacios. Devuelve una lista mutable apta para @ElementCollection.
      */
@@ -290,6 +361,7 @@ public class ConceptContentService {
                 List.copyOf(content.getFormationSteps()),
                 List.copyOf(content.getKeyPoints()),
                 List.copyOf(content.getExamples()),
+                content.getSuggestedActivity(),
                 content.getStatus(),
                 content.getActive(),
                 teacher.getId(),
@@ -319,7 +391,8 @@ public class ConceptContentService {
                 content.getExplanation(),
                 List.copyOf(content.getFormationSteps()),
                 List.copyOf(content.getKeyPoints()),
-                List.copyOf(content.getExamples())
+                List.copyOf(content.getExamples()),
+                content.getSuggestedActivity()
         );
     }
 }
