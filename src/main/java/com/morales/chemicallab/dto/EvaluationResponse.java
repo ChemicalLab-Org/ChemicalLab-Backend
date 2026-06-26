@@ -1,6 +1,7 @@
 package com.morales.chemicallab.dto;
 
 import com.morales.chemicallab.entity.EvaluationStatus;
+import com.morales.chemicallab.entity.QuestionDisplayMode;
 
 import java.time.LocalDateTime;
 
@@ -17,6 +18,11 @@ public record EvaluationResponse(
         EvaluationStatus status,
         Integer maxAttempts,
         Integer timeLimitMinutes,
+        Boolean allowChemicalCalculator,
+        Boolean allowPeriodicTable,
+        Boolean trackTabExit,
+        QuestionDisplayMode questionDisplayMode,
+        Boolean randomizeQuestions,
         Boolean active,
         long questionCount,
         long assignmentCount,

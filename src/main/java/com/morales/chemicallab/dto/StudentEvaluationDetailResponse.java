@@ -1,5 +1,7 @@
 package com.morales.chemicallab.dto;
 
+import com.morales.chemicallab.entity.QuestionDisplayMode;
+
 import java.util.List;
 
 /**
@@ -13,6 +15,11 @@ public record StudentEvaluationDetailResponse(
         String instructions,
         String topic,
         Integer timeLimitMinutes,
+        Boolean allowChemicalCalculator,
+        Boolean allowPeriodicTable,
+        Boolean trackTabExit,
+        QuestionDisplayMode questionDisplayMode,
+        Boolean randomizeQuestions,
         List<StudentQuestionResponse> questions,
         Long assignmentId
 ) {}
