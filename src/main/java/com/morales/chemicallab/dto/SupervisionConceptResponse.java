@@ -18,6 +18,8 @@ public record SupervisionConceptResponse(
         ConceptStatus status,
         String createdByTeacher,
         long assignmentCount,
+        long materialCount,
+        boolean hasAttachment,
         List<SupervisionSectionRef> sections,
         LocalDateTime createdAt,
         LocalDateTime updatedAt

@@ -12,9 +12,11 @@ import com.morales.chemicallab.entity.ConceptStatus;
 import com.morales.chemicallab.entity.Evaluation;
 import com.morales.chemicallab.entity.EvaluationAssignment;
 import com.morales.chemicallab.entity.EvaluationStatus;
+import com.morales.chemicallab.entity.MaterialType;
 import com.morales.chemicallab.entity.TeacherProfile;
 import com.morales.chemicallab.repository.ConceptAssignmentRepository;
 import com.morales.chemicallab.repository.ConceptContentRepository;
+import com.morales.chemicallab.repository.ConceptMaterialRepository;
 import com.morales.chemicallab.repository.EvaluationAssignmentRepository;
 import com.morales.chemicallab.repository.EvaluationAttemptRepository;
 import com.morales.chemicallab.repository.EvaluationQuestionRepository;
@@ -49,6 +51,7 @@ public class AcademicSupervisionService {
 
     private final ConceptContentRepository conceptContentRepository;
     private final ConceptAssignmentRepository conceptAssignmentRepository;
+    private final ConceptMaterialRepository conceptMaterialRepository;
     private final EvaluationRepository evaluationRepository;
     private final EvaluationAssignmentRepository evaluationAssignmentRepository;
     private final EvaluationQuestionRepository evaluationQuestionRepository;
@@ -100,6 +103,12 @@ public class AcademicSupervisionService {
                 .map(a -> new SupervisionSectionRef(a.getGrade(), a.getSection(), a.getActive(), a.getAssignedAt()))
                 .toList();
 
+        // Conteos de materiales (sin cargar los bytes) para que la supervisión muestre si el
+        // contenido tiene adjuntos/enlaces. Es solo lectura: el administrador no los edita.
+        long materialCount = conceptMaterialRepository.countByConceptContentIdAndActiveTrue(concept.getId());
+        boolean hasAttachment = conceptMaterialRepository
+                .countByConceptContentIdAndTypeAndActiveTrue(concept.getId(), MaterialType.FILE) > 0;
+
         return new SupervisionConceptResponse(
                 concept.getId(),
                 concept.getTitle(),
@@ -107,6 +116,8 @@ public class AcademicSupervisionService {
                 concept.getStatus(),
                 teacherFullName(concept.getCreatedByTeacher()),
                 sections.size(),
+                materialCount,
+                hasAttachment,
                 sections,
                 concept.getCreatedAt(),
                 concept.getUpdatedAt());
