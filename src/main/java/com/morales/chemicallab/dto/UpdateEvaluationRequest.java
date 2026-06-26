@@ -1,5 +1,6 @@
 package com.morales.chemicallab.dto;
 
+import com.morales.chemicallab.entity.QuestionDisplayMode;
 import jakarta.validation.constraints.*;
 
 public record UpdateEvaluationRequest(
@@ -19,9 +20,19 @@ public record UpdateEvaluationRequest(
 
         @NotNull(message = "El número máximo de intentos es obligatorio")
         @Min(value = 1, message = "El número máximo de intentos debe ser al menos 1")
+        @Max(value = 10, message = "El número máximo de intentos no puede superar 10")
         Integer maxAttempts,
 
         @Positive(message = "El límite de tiempo debe ser positivo")
-        Integer timeLimitMinutes
+        @Max(value = 240, message = "El límite de tiempo no puede superar 240 minutos")
+        Integer timeLimitMinutes,
+
+        // Configuración avanzada. Si llegan null, el servicio aplica los valores por
+        // defecto seguros (calculadora y detección desactivadas, preguntas todas juntas).
+        Boolean allowChemicalCalculator,
+
+        Boolean trackTabExit,
+
+        QuestionDisplayMode questionDisplayMode
 
 ) {}

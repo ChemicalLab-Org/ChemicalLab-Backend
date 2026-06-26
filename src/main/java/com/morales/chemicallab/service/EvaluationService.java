@@ -43,6 +43,7 @@ public class EvaluationService {
     private final EvaluationOptionRepository optionRepository;
     private final EvaluationAssignmentRepository assignmentRepository;
     private final EvaluationAttemptRepository attemptRepository;
+    private final EvaluationAttemptEventRepository attemptEventRepository;
     private final EvaluationAnswerRepository answerRepository;
     private final UserAccountRepository userAccountRepository;
     private final TeacherProfileRepository teacherProfileRepository;
@@ -58,6 +59,20 @@ public class EvaluationService {
     // Umbral de aprobación (en %) usado solo para los contadores aprobados/desaprobados.
     private static final double APPROVAL_PERCENTAGE = 60.0;
 
+    // Margen de gracia (segundos) sobre el límite de tiempo, para tolerar latencia de red
+    // y desfase de reloj en el envío automático del frontend. Pasado este margen, el
+    // backend deja de aceptar respuestas nuevas: el tiempo deja de protegerse solo en el
+    // frontend.
+    private static final long SUBMIT_GRACE_SECONDS = 60;
+
+    // Ventana mínima (segundos) entre incidencias de foco idénticas. Evita registrar
+    // ráfagas de eventos duplicados (control simple de throttling).
+    private static final long EVENT_THROTTLE_SECONDS = 2;
+
+    // Tipos de incidencia que se consideran una "salida" de la evaluación.
+    private static final Set<AttemptEventType> EXIT_EVENT_TYPES =
+            EnumSet.of(AttemptEventType.TAB_HIDDEN, AttemptEventType.WINDOW_BLUR);
+
     // =========================================================================
     // DOCENTE — evaluaciones
     // =========================================================================
@@ -72,6 +87,10 @@ public class EvaluationService {
                 .topic(trimOrNull(request.topic()))
                 .maxAttempts(request.maxAttempts())
                 .timeLimitMinutes(request.timeLimitMinutes())
+                .allowChemicalCalculator(Boolean.TRUE.equals(request.allowChemicalCalculator()))
+                .trackTabExit(Boolean.TRUE.equals(request.trackTabExit()))
+                .questionDisplayMode(request.questionDisplayMode() == null
+                        ? QuestionDisplayMode.ALL_AT_ONCE : request.questionDisplayMode())
                 .createdByTeacher(teacher)
                 .status(EvaluationStatus.DRAFT)
                 .active(true)
@@ -105,14 +124,36 @@ public class EvaluationService {
         TeacherProfile teacher = requireTeacher(username);
         Evaluation evaluation = requireOwnedEvaluation(evaluationId, teacher);
 
+        // Configuración avanzada previa, para detectar si cambió y registrar el log.
+        boolean trackTabExitBefore = Boolean.TRUE.equals(evaluation.getTrackTabExit());
+
         evaluation.setTitle(request.title().trim());
         evaluation.setDescription(trimOrNull(request.description()));
         evaluation.setInstructions(trimOrNull(request.instructions()));
         evaluation.setTopic(trimOrNull(request.topic()));
         evaluation.setMaxAttempts(request.maxAttempts());
         evaluation.setTimeLimitMinutes(request.timeLimitMinutes());
+        evaluation.setAllowChemicalCalculator(Boolean.TRUE.equals(request.allowChemicalCalculator()));
+        evaluation.setTrackTabExit(Boolean.TRUE.equals(request.trackTabExit()));
+        evaluation.setQuestionDisplayMode(request.questionDisplayMode() == null
+                ? QuestionDisplayMode.ALL_AT_ONCE : request.questionDisplayMode());
 
         evaluationRepository.save(evaluation);
+
+        // Trazabilidad de la edición de configuración avanzada. Descripción segura: solo
+        // nombra la evaluación, nunca preguntas, claves ni respuestas.
+        auditLogService.recordInfo(LogEventType.EVALUATION_CONFIG_UPDATED, TARGET_EVALUATION,
+                evaluation.getId(), evaluation.getTitle(), "Actualizar configuración de evaluación",
+                "Se actualizó la configuración de la evaluación «" + evaluation.getTitle() + "».", null);
+
+        // Cuando se activa por primera vez la detección de salida de pestaña, se deja
+        // constancia explícita (sigue siendo una descripción segura y agregada).
+        if (!trackTabExitBefore && Boolean.TRUE.equals(evaluation.getTrackTabExit())) {
+            auditLogService.recordInfo(LogEventType.EVALUATION_CONFIG_UPDATED, TARGET_EVALUATION,
+                    evaluation.getId(), evaluation.getTitle(), "Activar detección de salida de pestaña",
+                    "Se habilitó la detección de salida de pestaña en una evaluación.", null);
+        }
+
         return toEvaluationResponse(evaluation);
     }
 
@@ -332,6 +373,12 @@ public class EvaluationService {
         EvaluationAttempt attempt = requireOwnedAttempt(attemptId, student);
         requireInProgress(attempt);
 
+        // El tiempo se protege en el backend, no solo en el frontend: una vez vencido el
+        // límite (con su margen de gracia) ya no se aceptan respuestas nuevas.
+        if (isPastTimeLimit(attempt)) {
+            throw new IllegalArgumentException("El tiempo de la evaluación ya finalizó.");
+        }
+
         upsertAnswer(attempt, request);
         return toAttemptResponse(attempt);
     }
@@ -341,8 +388,13 @@ public class EvaluationService {
         EvaluationAttempt attempt = requireOwnedAttempt(attemptId, student);
         requireInProgress(attempt);
 
-        // Persistimos las respuestas que lleguen en el envío (si se enviaron).
-        if (request != null && request.answers() != null) {
+        // Si el envío llega fuera de tiempo (más allá del margen de gracia) se ignoran las
+        // respuestas que vengan en el cuerpo: solo se califican las guardadas a tiempo. El
+        // intento se cierra igualmente para no dejarlo abierto indefinidamente.
+        boolean pastTimeLimit = isPastTimeLimit(attempt);
+
+        // Persistimos las respuestas que lleguen en el envío (si se enviaron y a tiempo).
+        if (!pastTimeLimit && request != null && request.answers() != null) {
             for (SubmitEvaluationAnswerRequest answer : request.answers()) {
                 upsertAnswer(attempt, answer);
             }
@@ -363,9 +415,48 @@ public class EvaluationService {
         auditLogService.recordInfo(LogEventType.EVALUATION_ATTEMPT_SUBMITTED, TARGET_EVALUATION,
                 evaluation.getId(), evaluation.getTitle(), "Enviar intento",
                 "Se envió un intento de la evaluación «" + evaluation.getTitle() + "».",
-                "attemptId=" + attempt.getId());
+                "attemptId=" + attempt.getId() + (pastTimeLimit ? ";outOfTime=true" : ""));
 
         return toAttemptResponse(attempt);
+    }
+
+    /**
+     * Registra una incidencia de foco (salida/retorno de pestaña o ventana) durante un
+     * intento. Solo procede si la evaluación tiene activada la detección de salida de
+     * pestaña, el intento pertenece al estudiante autenticado y sigue en progreso.
+     *
+     * <p>Aplica un control simple de duplicados: descarta el evento si es idéntico al
+     * último registrado dentro de una ventana corta de tiempo. No guarda contenido de
+     * otras pestañas, capturas ni datos sensibles: solo el tipo de evento, el momento y
+     * una descripción breve. Es trazabilidad del intento, no un log global de auditoría.</p>
+     */
+    public AttemptEventSummaryResponse registerAttemptEvent(String username, Long attemptId,
+                                                            RegisterAttemptEventRequest request) {
+        StudentProfile student = requireStudent(username);
+        EvaluationAttempt attempt = requireOwnedAttempt(attemptId, student);
+        requireInProgress(attempt);
+
+        Evaluation evaluation = attempt.getEvaluation();
+        if (!Boolean.TRUE.equals(evaluation.getTrackTabExit())) {
+            throw new IllegalArgumentException(
+                    "La detección de salida de pestaña no está activada para esta evaluación.");
+        }
+
+        boolean recorded = false;
+        if (!isDuplicateEvent(attempt, request.eventType())) {
+            EvaluationAttemptEvent event = EvaluationAttemptEvent.builder()
+                    .attempt(attempt)
+                    .eventType(request.eventType())
+                    .description(trimOrNull(request.description()))
+                    .build();
+            attemptEventRepository.save(event);
+            recorded = true;
+        }
+
+        return new AttemptEventSummaryResponse(
+                attempt.getId(), recorded,
+                attemptEventRepository.countByAttempt(attempt),
+                attemptEventRepository.countByAttemptAndEventTypeIn(attempt, EXIT_EVENT_TYPES));
     }
 
     // =========================================================================
@@ -466,7 +557,7 @@ public class EvaluationService {
                 attempt.getAttemptNumber(), attempt.getStatus(),
                 attempt.getScore(), attempt.getMaxScore(), percentageOf(attempt),
                 attempt.getStartedAt(), attempt.getSubmittedAt(), attempt.getGradedAt(),
-                answers);
+                tabExitCountOf(attempt), answers);
     }
 
     // =========================================================================
@@ -566,7 +657,7 @@ public class EvaluationService {
                 student.getGrade(), student.getSection(),
                 attempt.getAttemptNumber(), attempt.getStatus(),
                 attempt.getScore(), attempt.getMaxScore(), percentageOf(attempt),
-                attempt.getSubmittedAt(), attempt.getGradedAt());
+                attempt.getSubmittedAt(), attempt.getGradedAt(), tabExitCountOf(attempt));
     }
 
     private StudentResultSummaryResponse toStudentResultSummary(EvaluationAttempt attempt) {
@@ -649,6 +740,11 @@ public class EvaluationService {
                 .stream()
                 .mapToInt(EvaluationQuestion::getPoints)
                 .sum();
+    }
+
+    /** Cantidad de "salidas" (pestaña oculta o ventana sin foco) registradas en el intento. */
+    private long tabExitCountOf(EvaluationAttempt attempt) {
+        return attemptEventRepository.countByAttemptAndEventTypeIn(attempt, EXIT_EVENT_TYPES);
     }
 
     private Double percentageOf(EvaluationAttempt attempt) {
@@ -787,6 +883,35 @@ public class EvaluationService {
     }
 
     /**
+     * Indica si un intento superó el límite de tiempo de su evaluación, contando un
+     * margen de gracia para tolerar latencia de red y desfase de reloj. Si la evaluación
+     * no define límite o el intento no tiene inicio registrado, nunca está fuera de tiempo.
+     */
+    private boolean isPastTimeLimit(EvaluationAttempt attempt) {
+        Integer limitMinutes = attempt.getEvaluation().getTimeLimitMinutes();
+        if (limitMinutes == null || limitMinutes <= 0 || attempt.getStartedAt() == null) {
+            return false;
+        }
+        LocalDateTime deadline = attempt.getStartedAt()
+                .plusMinutes(limitMinutes)
+                .plusSeconds(SUBMIT_GRACE_SECONDS);
+        return LocalDateTime.now().isAfter(deadline);
+    }
+
+    /**
+     * Control simple de duplicados: considera duplicada una incidencia si coincide en
+     * tipo con la última registrada del intento y ocurrió dentro de la ventana de
+     * throttling. Evita registrar ráfagas de eventos idénticos.
+     */
+    private boolean isDuplicateEvent(EvaluationAttempt attempt, AttemptEventType eventType) {
+        return attemptEventRepository.findFirstByAttemptOrderByOccurredAtDesc(attempt)
+                .filter(last -> last.getEventType() == eventType)
+                .filter(last -> last.getOccurredAt() != null
+                        && last.getOccurredAt().isAfter(LocalDateTime.now().minusSeconds(EVENT_THROTTLE_SECONDS)))
+                .isPresent();
+    }
+
+    /**
      * Crea o actualiza la respuesta de una pregunta dentro de un intento, validando que
      * la pregunta pertenezca a la evaluación y que la alternativa pertenezca a la pregunta.
      */
@@ -873,6 +998,9 @@ public class EvaluationService {
                 evaluation.getStatus(),
                 evaluation.getMaxAttempts(),
                 evaluation.getTimeLimitMinutes(),
+                evaluation.getAllowChemicalCalculator(),
+                evaluation.getTrackTabExit(),
+                evaluation.getQuestionDisplayMode(),
                 evaluation.getActive(),
                 questionCount,
                 assignmentCount,
@@ -903,6 +1031,9 @@ public class EvaluationService {
                 evaluation.getStatus(),
                 evaluation.getMaxAttempts(),
                 evaluation.getTimeLimitMinutes(),
+                evaluation.getAllowChemicalCalculator(),
+                evaluation.getTrackTabExit(),
+                evaluation.getQuestionDisplayMode(),
                 evaluation.getActive(),
                 questions,
                 assignments,
@@ -1016,6 +1147,9 @@ public class EvaluationService {
                 evaluation.getTopic(),
                 evaluation.getTimeLimitMinutes(),
                 evaluation.getMaxAttempts(),
+                evaluation.getAllowChemicalCalculator(),
+                evaluation.getTrackTabExit(),
+                evaluation.getQuestionDisplayMode(),
                 questionCount,
                 assignment.getId(),
                 assignment.getStartAt(),
@@ -1039,6 +1173,9 @@ public class EvaluationService {
                 evaluation.getInstructions(),
                 evaluation.getTopic(),
                 evaluation.getTimeLimitMinutes(),
+                evaluation.getAllowChemicalCalculator(),
+                evaluation.getTrackTabExit(),
+                evaluation.getQuestionDisplayMode(),
                 questions,
                 assignmentId
         );

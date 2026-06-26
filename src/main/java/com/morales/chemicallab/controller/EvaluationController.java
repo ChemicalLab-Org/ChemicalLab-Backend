@@ -186,6 +186,19 @@ public class EvaluationController {
         return evaluationService.submitAttempt(authentication.getName(), attemptId, request);
     }
 
+    /**
+     * Registra una incidencia de foco (salida/retorno de pestaña o ventana) del propio
+     * intento del estudiante. Solo aplica si la evaluación tiene activada la detección de
+     * salida de pestaña; el backend valida la propiedad del intento y descarta duplicados.
+     */
+    @PostMapping("/student/attempts/{attemptId}/events")
+    public AttemptEventSummaryResponse registrarEventoIntento(
+            Authentication authentication,
+            @PathVariable Long attemptId,
+            @Valid @RequestBody RegisterAttemptEventRequest request) {
+        return evaluationService.registerAttemptEvent(authentication.getName(), attemptId, request);
+    }
+
     // =========================================================================
     // ESTUDIANTE — resultados
     // =========================================================================

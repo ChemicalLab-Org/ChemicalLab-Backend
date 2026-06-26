@@ -27,5 +27,8 @@ public record TeacherAttemptResultDetailResponse(
         LocalDateTime startedAt,
         LocalDateTime submittedAt,
         LocalDateTime gradedAt,
+        // Cantidad de salidas de pestaña detectadas en el intento (0 si la evaluación
+        // no tiene activada la detección).
+        long tabExitCount,
         List<TeacherAnswerResultResponse> answers
 ) {}

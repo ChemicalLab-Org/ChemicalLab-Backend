@@ -22,5 +22,8 @@ public record TeacherStudentResultResponse(
         Integer maxScore,
         Double percentage,
         LocalDateTime submittedAt,
-        LocalDateTime gradedAt
+        LocalDateTime gradedAt,
+        // Cantidad de salidas de pestaña detectadas en el intento (0 si la evaluación
+        // no tiene activada la detección). Indicador simple para el docente.
+        long tabExitCount
 ) {}
