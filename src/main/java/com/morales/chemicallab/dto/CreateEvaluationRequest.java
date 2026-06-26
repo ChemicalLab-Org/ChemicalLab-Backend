@@ -33,6 +33,8 @@ public record CreateEvaluationRequest(
 
         Boolean trackTabExit,
 
-        QuestionDisplayMode questionDisplayMode
+        QuestionDisplayMode questionDisplayMode,
+
+        Boolean randomizeQuestions
 
 ) {}

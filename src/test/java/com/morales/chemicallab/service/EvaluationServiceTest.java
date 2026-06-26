@@ -141,7 +141,7 @@ class EvaluationServiceTest {
         when(assignmentRepository.findByEvaluationOrderByAssignedAtDesc(any())).thenReturn(List.of());
 
         var request = new CreateEvaluationRequest("  Óxidos y nomenclatura  ", "Desc", "Instrucciones", "Óxidos",
-                2, 30, false, false, QuestionDisplayMode.ALL_AT_ONCE);
+                2, 30, false, false, QuestionDisplayMode.ALL_AT_ONCE, false);
         EvaluationResponse response = service.createEvaluation("docente1", request);
 
         assertThat(response.title()).isEqualTo("Óxidos y nomenclatura");
@@ -581,7 +581,7 @@ class EvaluationServiceTest {
                 .thenReturn(Optional.of(evaluation(10L, otro, EvaluationStatus.DRAFT, 1)));
 
         var request = new UpdateEvaluationRequest("Nuevo título", null, null, null, 1, null,
-                false, false, QuestionDisplayMode.ALL_AT_ONCE);
+                false, false, QuestionDisplayMode.ALL_AT_ONCE, false);
 
         assertThatThrownBy(() -> service.updateEvaluation("docente1", 10L, request))
                 .hasMessageContaining("No tienes permiso");
@@ -830,7 +830,7 @@ class EvaluationServiceTest {
         when(assignmentRepository.findByEvaluationOrderByAssignedAtDesc(any())).thenReturn(List.of());
 
         var request = new CreateEvaluationRequest("Ácidos", "Desc", "Instrucciones", "Ácidos",
-                3, 45, true, true, QuestionDisplayMode.ONE_BY_ONE);
+                3, 45, true, true, QuestionDisplayMode.ONE_BY_ONE, false);
         EvaluationResponse response = service.createEvaluation("docente1", request);
 
         assertThat(response.allowChemicalCalculator()).isTrue();
@@ -852,7 +852,7 @@ class EvaluationServiceTest {
         when(questionRepository.countByEvaluationAndActiveTrue(any())).thenReturn(0L);
         when(assignmentRepository.findByEvaluationOrderByAssignedAtDesc(any())).thenReturn(List.of());
 
-        var request = new CreateEvaluationRequest("Sales", null, null, null, 1, null, null, null, null);
+        var request = new CreateEvaluationRequest("Sales", null, null, null, 1, null, null, null, null, null);
         EvaluationResponse response = service.createEvaluation("docente1", request);
 
         assertThat(response.allowChemicalCalculator()).isFalse();
@@ -876,7 +876,7 @@ class EvaluationServiceTest {
         when(assignmentRepository.findByEvaluationOrderByAssignedAtDesc(any())).thenReturn(List.of());
 
         var request = new UpdateEvaluationRequest("Óxidos y nomenclatura", null, null, null,
-                2, 60, true, true, QuestionDisplayMode.ONE_BY_ONE);
+                2, 60, true, true, QuestionDisplayMode.ONE_BY_ONE, false);
         EvaluationResponse response = service.updateEvaluation("docente1", 10L, request);
 
         assertThat(response.trackTabExit()).isTrue();
@@ -1037,6 +1037,222 @@ class EvaluationServiceTest {
 
         // El intento se cierra (GRADED) pero la respuesta tardía no se persiste.
         assertThat(response.status()).isEqualTo(AttemptStatus.GRADED);
+        verify(answerRepository, never()).save(any(EvaluationAnswer.class));
+    }
+
+    // =========================================================================
+    // 38. Iniciar intento guarda un orden de preguntas (todos los IDs)
+    // =========================================================================
+
+    @Test
+    void iniciarIntentoGuardaOrdenDePreguntas() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
+        eval.setRandomizeQuestions(true);
+        EvaluationAssignment asig = assignment(40L, eval, docente, "3", "A");
+        EvaluationQuestion q1 = question(20L, eval, 1);
+        EvaluationQuestion q2 = question(21L, eval, 1);
+        EvaluationQuestion q3 = question(22L, eval, 1);
+        when(assignmentRepository.findActiveForSectionByEvaluation(10L, "3", "A", EvaluationStatus.PUBLISHED))
+                .thenReturn(Optional.of(asig));
+        when(attemptRepository.findByEvaluationAndStudentAndStatus(eval, alumno, AttemptStatus.IN_PROGRESS))
+                .thenReturn(Optional.empty());
+        when(attemptRepository.countByEvaluationAndStudent(eval, alumno)).thenReturn(0L);
+        when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval))
+                .thenReturn(List.of(q1, q2, q3));
+        when(attemptRepository.save(any(EvaluationAttempt.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(answerRepository.findByAttemptOrderByAnsweredAtAsc(any())).thenReturn(List.of());
+
+        AttemptResponse response = service.startAttempt("EST0001", 10L, new StartEvaluationAttemptRequest(null));
+
+        // El orden guardado contiene exactamente los IDs de las preguntas activas.
+        assertThat(response.questionOrder()).containsExactlyInAnyOrder(20L, 21L, 22L);
+        assertThat(response.currentQuestionIndex()).isZero();
+    }
+
+    // =========================================================================
+    // 39. Consultar el intento varias veces no cambia el orden guardado
+    // =========================================================================
+
+    @Test
+    void consultarIntentoNoCambiaElOrden() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .status(AttemptStatus.IN_PROGRESS).questionOrder("22,20,21").currentQuestionIndex(0)
+                .startedAt(LocalDateTime.now()).active(true).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+        when(answerRepository.findByAttemptOrderByAnsweredAtAsc(attempt)).thenReturn(List.of());
+
+        AttemptResponse first = service.getAttempt("EST0001", 50L);
+        AttemptResponse second = service.getAttempt("EST0001", 50L);
+
+        assertThat(first.questionOrder()).containsExactly(22L, 20L, 21L);
+        assertThat(second.questionOrder()).containsExactly(22L, 20L, 21L);
+        // No se regenera el orden: nunca se vuelve a guardar el intento por este motivo.
+        verify(attemptRepository, never()).save(any(EvaluationAttempt.class));
+    }
+
+    // =========================================================================
+    // 40. ONE_BY_ONE: guardar la pregunta actual avanza y la bloquea
+    // =========================================================================
+
+    @Test
+    void unaPorUnaGuardaYAvanza() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        eval.setQuestionDisplayMode(QuestionDisplayMode.ONE_BY_ONE);
+        EvaluationQuestion q = question(20L, eval, 1);
+        EvaluationOption opt = option(32L, q, true);
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .status(AttemptStatus.IN_PROGRESS).questionOrder("20,21").currentQuestionIndex(0)
+                .startedAt(LocalDateTime.now()).active(true).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+        when(questionRepository.findById(20L)).thenReturn(Optional.of(q));
+        when(optionRepository.findById(32L)).thenReturn(Optional.of(opt));
+        when(answerRepository.findByAttemptAndQuestion(attempt, q)).thenReturn(Optional.empty());
+        when(answerRepository.save(any(EvaluationAnswer.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(attemptRepository.save(any(EvaluationAttempt.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(answerRepository.findByAttemptOrderByAnsweredAtAsc(attempt)).thenReturn(List.of());
+
+        AttemptResponse response = service.saveAnswer(
+                "EST0001", 50L, new SubmitEvaluationAnswerRequest(20L, 32L));
+
+        assertThat(response.currentQuestionIndex()).isEqualTo(1);
+        verify(answerRepository).save(any(EvaluationAnswer.class));
+    }
+
+    // =========================================================================
+    // 41. ONE_BY_ONE: no se puede volver a una pregunta anterior bloqueada
+    // =========================================================================
+
+    @Test
+    void unaPorUnaNoPermiteRetroceder() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        eval.setQuestionDisplayMode(QuestionDisplayMode.ONE_BY_ONE);
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .status(AttemptStatus.IN_PROGRESS).questionOrder("20,21").currentQuestionIndex(1)
+                .startedAt(LocalDateTime.now()).active(true).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+
+        assertThatThrownBy(() -> service.saveAnswer(
+                "EST0001", 50L, new SubmitEvaluationAnswerRequest(20L, 32L)))
+                .hasMessageContaining("volver a una pregunta anterior");
+        verify(answerRepository, never()).save(any(EvaluationAnswer.class));
+    }
+
+    // =========================================================================
+    // 42. ONE_BY_ONE: no se puede saltar a una pregunta futura
+    // =========================================================================
+
+    @Test
+    void unaPorUnaNoPermiteSaltarAdelante() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        eval.setQuestionDisplayMode(QuestionDisplayMode.ONE_BY_ONE);
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .status(AttemptStatus.IN_PROGRESS).questionOrder("20,21,22").currentQuestionIndex(0)
+                .startedAt(LocalDateTime.now()).active(true).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+
+        assertThatThrownBy(() -> service.saveAnswer(
+                "EST0001", 50L, new SubmitEvaluationAnswerRequest(22L, 99L)))
+                .hasMessageContaining("en orden");
+        verify(answerRepository, never()).save(any(EvaluationAnswer.class));
+    }
+
+    // =========================================================================
+    // 43. ONE_BY_ONE: al recargar, el intento continúa desde la pregunta pendiente
+    // =========================================================================
+
+    @Test
+    void unaPorUnaContinuaDesdePreguntaPendiente() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        eval.setQuestionDisplayMode(QuestionDisplayMode.ONE_BY_ONE);
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .status(AttemptStatus.IN_PROGRESS).questionOrder("20,21,22").currentQuestionIndex(2)
+                .startedAt(LocalDateTime.now()).active(true).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+        when(answerRepository.findByAttemptOrderByAnsweredAtAsc(attempt)).thenReturn(List.of());
+
+        AttemptResponse response = service.getAttempt("EST0001", 50L);
+
+        assertThat(response.currentQuestionIndex()).isEqualTo(2);
+        assertThat(response.questionOrder()).containsExactly(20L, 21L, 22L);
+    }
+
+    // =========================================================================
+    // 44. ALL_AT_ONCE: se puede modificar una respuesta antes de enviar
+    // =========================================================================
+
+    @Test
+    void todasJuntasPermiteModificarRespuesta() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        // questionDisplayMode por defecto ALL_AT_ONCE.
+        EvaluationQuestion q = question(20L, eval, 1);
+        EvaluationOption nueva = option(31L, q, false);
+        EvaluationAnswer previa = EvaluationAnswer.builder()
+                .id(60L).attempt(null).question(q).selectedOption(option(32L, q, true)).build();
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .status(AttemptStatus.IN_PROGRESS).questionOrder("20").currentQuestionIndex(0)
+                .startedAt(LocalDateTime.now()).active(true).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+        when(questionRepository.findById(20L)).thenReturn(Optional.of(q));
+        when(optionRepository.findById(31L)).thenReturn(Optional.of(nueva));
+        when(answerRepository.findByAttemptAndQuestion(attempt, q)).thenReturn(Optional.of(previa));
+        when(answerRepository.save(any(EvaluationAnswer.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(answerRepository.findByAttemptOrderByAnsweredAtAsc(attempt)).thenReturn(List.of(previa));
+
+        service.saveAnswer("EST0001", 50L, new SubmitEvaluationAnswerRequest(20L, 31L));
+
+        // La respuesta se actualiza a la nueva alternativa y no se avanza ningún índice.
+        assertThat(previa.getSelectedOption().getId()).isEqualTo(31L);
+        assertThat(attempt.getCurrentQuestionIndex()).isZero();
+    }
+
+    // =========================================================================
+    // 45. Un estudiante no puede guardar respuestas en un intento ajeno
+    // =========================================================================
+
+    @Test
+    void estudianteNoGuardaEnIntentoAjeno() {
+        StudentProfile alumno = student(6L, "EST0002", "3", "B");
+        stubStudent(alumno);
+        StudentProfile otro = student(5L, "EST0001", "3", "A");
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(otro).attemptNumber(1)
+                .status(AttemptStatus.IN_PROGRESS).questionOrder("20").currentQuestionIndex(0)
+                .startedAt(LocalDateTime.now()).active(true).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+
+        assertThatThrownBy(() -> service.saveAnswer(
+                "EST0002", 50L, new SubmitEvaluationAnswerRequest(20L, 32L)))
+                .hasMessageContaining("No tienes permiso");
         verify(answerRepository, never()).save(any(EvaluationAnswer.class));
     }
 }

@@ -69,6 +69,13 @@ public class Evaluation {
     @Column(nullable = false)
     private QuestionDisplayMode questionDisplayMode = QuestionDisplayMode.ALL_AT_ONCE;
 
+    // Si está activo, el orden de las preguntas se aleatoriza por intento (el orden se
+    // genera y se guarda al iniciar el intento, no cambia entre recargas). Por defecto
+    // false para conservar el orden definido por el docente en evaluaciones existentes.
+    @Builder.Default
+    @Column(nullable = false)
+    private Boolean randomizeQuestions = false;
+
     @ManyToOne(optional = false)
     @JoinColumn(name = "created_by_teacher_id", nullable = false)
     private TeacherProfile createdByTeacher;

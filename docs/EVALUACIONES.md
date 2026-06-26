@@ -38,6 +38,7 @@ Evaluación creada por un docente.
 | `allowChemicalCalculator` | Si el estudiante puede usar la herramienta de apoyo químico durante el intento (por defecto `false`) |
 | `trackTabExit` | Si se detectan y registran salidas de pestaña/pérdida de foco durante el intento (por defecto `false`) |
 | `questionDisplayMode` | Modo de presentación de preguntas (`QuestionDisplayMode`: `ALL_AT_ONCE`, `ONE_BY_ONE`; por defecto `ALL_AT_ONCE`) |
+| `randomizeQuestions` | Si el orden de preguntas se aleatoriza por intento (por defecto `false`) |
 | `createdByTeacher` | Docente autor (`TeacherProfile`) |
 | `active` | Marca de actividad |
 | `createdAt` / `updatedAt` | Auditoría de fechas |
@@ -97,6 +98,8 @@ Intento de un estudiante sobre una evaluación.
 | `startedAt` / `submittedAt` | Fechas de inicio y envío |
 | `gradedAt` | Fecha de calificación (coincide con el envío en alternativa única) |
 | `score` / `maxScore` | Puntaje obtenido y máximo (al enviar/calificar) |
+| `questionOrder` | Orden de preguntas fijado para el intento (IDs separados por comas) |
+| `currentQuestionIndex` | Solo `ONE_BY_ONE`: índice (0-based) de la pregunta actual; las anteriores quedan bloqueadas |
 | `active` | Marca de actividad |
 
 ### EvaluationAttemptEvent
@@ -223,6 +226,8 @@ Base: `/api/evaluations`
 - No guardar ni enviar respuestas una vez vencido el tiempo (con su margen de gracia).
 - Solo registrar incidencias de salida de pestaña de su **propio** intento y únicamente
   si la evaluación tiene `trackTabExit` activo.
+- En `ONE_BY_ONE`, solo responder la pregunta actual del intento: no volver a una
+  anterior ya bloqueada ni saltar a una futura (validado en backend).
 
 ## Trazabilidad y logs
 
@@ -252,9 +257,44 @@ comportamiento histórico**, de modo que las evaluaciones existentes no cambian.
 |---------------|-------|-------------|----------|
 | Calculadora química | `allowChemicalCalculator` | `false` | Habilita el acceso a la herramienta de apoyo químico durante el intento. |
 | Detección de salida de pestaña | `trackTabExit` | `false` | Permite registrar incidencias de pérdida de foco/cambio de pestaña asociadas al intento. |
-| Modo de preguntas | `questionDisplayMode` | `ALL_AT_ONCE` | `ALL_AT_ONCE` muestra todas las preguntas juntas; `ONE_BY_ONE`, una por pantalla. No afecta la calificación. |
+| Modo de preguntas | `questionDisplayMode` | `ALL_AT_ONCE` | `ALL_AT_ONCE` muestra todas las preguntas juntas; `ONE_BY_ONE`, una por pantalla en flujo secuencial sin retroceso. No afecta la calificación. |
+| Orden aleatorio | `randomizeQuestions` | `false` | Si está activo, el orden de preguntas se baraja por intento (fijo para ese intento). |
 | Límite de intentos | `maxAttempts` | `1` | Intentos permitidos por estudiante (1 a 10). |
 | Tiempo máximo | `timeLimitMinutes` | `null` (sin límite) | Minutos para resolver (1 a 240) desde el inicio del intento. |
+
+### Orden de preguntas por intento y flujo secuencial
+
+Al **iniciar** el intento, el backend fija el orden de las preguntas y lo guarda en
+`EvaluationAttempt.questionOrder` (IDs separados por comas). Si `randomizeQuestions` está
+activo, ese orden se baraja; si no, respeta el orden del docente. El orden **no se
+regenera** al consultar el intento ni al recargar: es estable durante todo el intento, y
+es el mismo que usa el frontend para presentar las preguntas. La calificación es por
+pregunta, así que el orden no afecta el puntaje.
+
+En el modo **`ONE_BY_ONE`** el avance es **secuencial y sin retroceso**, validado en el
+backend (no solo en el frontend):
+
+- Solo se puede responder/guardar la **pregunta actual** (`questionOrder[currentQuestionIndex]`).
+- Al guardar esa respuesta, el backend **avanza** `currentQuestionIndex`: la pregunta
+  anterior queda **bloqueada** y un intento de volver a ella se rechaza
+  («No puedes volver a una pregunta anterior…»).
+- No se puede **saltar** a una pregunta futura («Debes responder las preguntas en orden»).
+- Si el estudiante recarga, `getAttempt` devuelve `currentQuestionIndex` y el frontend
+  **continúa desde la pregunta pendiente**, sin perder las respuestas ya registradas.
+- Al enviar, las respuestas ya están guardadas (se grabaron al avanzar), por lo que el
+  envío **no reprocesa** el cuerpo en este modo.
+
+En el modo **`ALL_AT_ONCE`** se mantiene el comportamiento histórico: todas las preguntas
+visibles y respuestas modificables hasta enviar (respetando el orden del intento si
+`randomizeQuestions` está activo).
+
+**Combinaciones:** ALL_AT_ONCE + normal (orden del docente); ALL_AT_ONCE + aleatorio
+(todas juntas en orden barajado fijo); ONE_BY_ONE + normal (una por una sin retroceso);
+ONE_BY_ONE + aleatorio (una por una, orden barajado fijo, sin retroceso).
+
+Los intentos creados antes de esta funcionalidad no tienen orden guardado: se inicializa
+de forma perezosa con el orden natural (sin barajar) la primera vez que se consultan,
+para no alterar un intento en curso.
 
 ### Qué valida el backend y qué maneja el frontend
 

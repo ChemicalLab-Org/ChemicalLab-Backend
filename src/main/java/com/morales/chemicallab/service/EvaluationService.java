@@ -9,9 +9,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Lógica de negocio del módulo de evaluaciones.
@@ -91,6 +94,7 @@ public class EvaluationService {
                 .trackTabExit(Boolean.TRUE.equals(request.trackTabExit()))
                 .questionDisplayMode(request.questionDisplayMode() == null
                         ? QuestionDisplayMode.ALL_AT_ONCE : request.questionDisplayMode())
+                .randomizeQuestions(Boolean.TRUE.equals(request.randomizeQuestions()))
                 .createdByTeacher(teacher)
                 .status(EvaluationStatus.DRAFT)
                 .active(true)
@@ -137,6 +141,7 @@ public class EvaluationService {
         evaluation.setTrackTabExit(Boolean.TRUE.equals(request.trackTabExit()));
         evaluation.setQuestionDisplayMode(request.questionDisplayMode() == null
                 ? QuestionDisplayMode.ALL_AT_ONCE : request.questionDisplayMode());
+        evaluation.setRandomizeQuestions(Boolean.TRUE.equals(request.randomizeQuestions()));
 
         evaluationRepository.save(evaluation);
 
@@ -348,12 +353,18 @@ public class EvaluationService {
             throw new IllegalArgumentException("Ya superaste el número máximo de intentos.");
         }
 
+        // El orden de preguntas se fija aquí (aleatorio si la evaluación lo indica) y se
+        // guarda en el intento, de modo que sea estable entre recargas y consultas.
+        List<Long> order = buildInitialOrder(evaluation);
+
         EvaluationAttempt attempt = EvaluationAttempt.builder()
                 .evaluation(evaluation)
                 .assignment(assignment)
                 .student(student)
                 .attemptNumber((int) used + 1)
                 .status(AttemptStatus.IN_PROGRESS)
+                .questionOrder(serializeOrder(order))
+                .currentQuestionIndex(0)
                 .active(true)
                 .build();
         attemptRepository.save(attempt);
@@ -361,10 +372,11 @@ public class EvaluationService {
         return toAttemptResponse(attempt);
     }
 
-    @Transactional(readOnly = true)
     public AttemptResponse getAttempt(String username, Long attemptId) {
         StudentProfile student = requireStudent(username);
         EvaluationAttempt attempt = requireOwnedAttempt(attemptId, student);
+        // Garantiza el orden de preguntas también para intentos antiguos (sin orden guardado).
+        ensureAttemptOrder(attempt);
         return toAttemptResponse(attempt);
     }
 
@@ -379,7 +391,44 @@ public class EvaluationService {
             throw new IllegalArgumentException("El tiempo de la evaluación ya finalizó.");
         }
 
+        Evaluation evaluation = attempt.getEvaluation();
+        if (evaluation.getQuestionDisplayMode() == QuestionDisplayMode.ONE_BY_ONE) {
+            return saveAnswerSequential(attempt, request);
+        }
+
         upsertAnswer(attempt, request);
+        return toAttemptResponse(attempt);
+    }
+
+    /**
+     * Guarda la respuesta en el flujo secuencial (ONE_BY_ONE): solo se puede responder la
+     * pregunta actual del orden del intento. Las anteriores quedan bloqueadas (sin
+     * retroceso) y no se puede saltar a una futura. Tras guardar, se avanza a la siguiente.
+     * El bloqueo se valida en el backend: el frontend no es la única protección.
+     */
+    private AttemptResponse saveAnswerSequential(EvaluationAttempt attempt,
+                                                 SubmitEvaluationAnswerRequest request) {
+        List<Long> order = ensureAttemptOrder(attempt);
+        int index = attempt.getCurrentQuestionIndex() == null ? 0 : attempt.getCurrentQuestionIndex();
+
+        if (index >= order.size()) {
+            throw new IllegalArgumentException("Ya respondiste todas las preguntas de este intento.");
+        }
+
+        Long expectedId = order.get(index);
+        if (!expectedId.equals(request.questionId())) {
+            int requestedPos = order.indexOf(request.questionId());
+            if (requestedPos >= 0 && requestedPos < index) {
+                throw new IllegalArgumentException(
+                        "No puedes volver a una pregunta anterior en el modo una por una.");
+            }
+            throw new IllegalArgumentException("Debes responder las preguntas en orden.");
+        }
+
+        upsertAnswer(attempt, request);
+        // La pregunta actual queda bloqueada: se avanza a la siguiente.
+        attempt.setCurrentQuestionIndex(index + 1);
+        attemptRepository.save(attempt);
         return toAttemptResponse(attempt);
     }
 
@@ -392,9 +441,13 @@ public class EvaluationService {
         // respuestas que vengan en el cuerpo: solo se califican las guardadas a tiempo. El
         // intento se cierra igualmente para no dejarlo abierto indefinidamente.
         boolean pastTimeLimit = isPastTimeLimit(attempt);
+        // En el modo una por una las respuestas ya se guardaron al avanzar; reprocesar el
+        // cuerpo del envío chocaría con el bloqueo de preguntas anteriores, así que se
+        // ignora. En "todas juntas" sí se persisten las respuestas que lleguen (a tiempo).
+        boolean sequential =
+                attempt.getEvaluation().getQuestionDisplayMode() == QuestionDisplayMode.ONE_BY_ONE;
 
-        // Persistimos las respuestas que lleguen en el envío (si se enviaron y a tiempo).
-        if (!pastTimeLimit && request != null && request.answers() != null) {
+        if (!pastTimeLimit && !sequential && request != null && request.answers() != null) {
             for (SubmitEvaluationAnswerRequest answer : request.answers()) {
                 upsertAnswer(attempt, answer);
             }
@@ -911,6 +964,72 @@ public class EvaluationService {
                 .isPresent();
     }
 
+    // =========================================================================
+    // ORDEN DE PREGUNTAS POR INTENTO
+    // =========================================================================
+
+    /**
+     * Construye el orden inicial de preguntas de un intento a partir de las preguntas
+     * activas. Si la evaluación tiene el orden aleatorio activado, lo baraja; de lo
+     * contrario respeta el orden definido por el docente.
+     */
+    private List<Long> buildInitialOrder(Evaluation evaluation) {
+        List<Long> ids = questionRepository
+                .findByEvaluationAndActiveTrueOrderByOrderIndexAsc(evaluation)
+                .stream()
+                .map(EvaluationQuestion::getId)
+                .collect(Collectors.toCollection(ArrayList::new));
+        if (Boolean.TRUE.equals(evaluation.getRandomizeQuestions())) {
+            Collections.shuffle(ids);
+        }
+        return ids;
+    }
+
+    private String serializeOrder(List<Long> order) {
+        return order.stream().map(String::valueOf).collect(Collectors.joining(","));
+    }
+
+    private List<Long> parseOrder(String csv) {
+        List<Long> ids = new ArrayList<>();
+        if (csv == null || csv.isBlank()) {
+            return ids;
+        }
+        for (String part : csv.split(",")) {
+            String trimmed = part.trim();
+            if (!trimmed.isEmpty()) {
+                ids.add(Long.valueOf(trimmed));
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * Garantiza que el intento tenga un orden de preguntas persistido. Los intentos
+     * creados antes de esta funcionalidad no lo tienen: se inicializa con el orden
+     * natural (sin barajar, para no alterar un intento en curso) y se guarda una vez.
+     */
+    private List<Long> ensureAttemptOrder(EvaluationAttempt attempt) {
+        List<Long> order = parseOrder(attempt.getQuestionOrder());
+        boolean changed = false;
+        if (order.isEmpty()) {
+            order = questionRepository
+                    .findByEvaluationAndActiveTrueOrderByOrderIndexAsc(attempt.getEvaluation())
+                    .stream()
+                    .map(EvaluationQuestion::getId)
+                    .collect(Collectors.toCollection(ArrayList::new));
+            attempt.setQuestionOrder(serializeOrder(order));
+            changed = true;
+        }
+        if (attempt.getCurrentQuestionIndex() == null) {
+            attempt.setCurrentQuestionIndex(0);
+            changed = true;
+        }
+        if (changed) {
+            attemptRepository.save(attempt);
+        }
+        return order;
+    }
+
     /**
      * Crea o actualiza la respuesta de una pregunta dentro de un intento, validando que
      * la pregunta pertenezca a la evaluación y que la alternativa pertenezca a la pregunta.
@@ -1001,6 +1120,7 @@ public class EvaluationService {
                 evaluation.getAllowChemicalCalculator(),
                 evaluation.getTrackTabExit(),
                 evaluation.getQuestionDisplayMode(),
+                evaluation.getRandomizeQuestions(),
                 evaluation.getActive(),
                 questionCount,
                 assignmentCount,
@@ -1034,6 +1154,7 @@ public class EvaluationService {
                 evaluation.getAllowChemicalCalculator(),
                 evaluation.getTrackTabExit(),
                 evaluation.getQuestionDisplayMode(),
+                evaluation.getRandomizeQuestions(),
                 evaluation.getActive(),
                 questions,
                 assignments,
@@ -1150,6 +1271,7 @@ public class EvaluationService {
                 evaluation.getAllowChemicalCalculator(),
                 evaluation.getTrackTabExit(),
                 evaluation.getQuestionDisplayMode(),
+                evaluation.getRandomizeQuestions(),
                 questionCount,
                 assignment.getId(),
                 assignment.getStartAt(),
@@ -1176,6 +1298,7 @@ public class EvaluationService {
                 evaluation.getAllowChemicalCalculator(),
                 evaluation.getTrackTabExit(),
                 evaluation.getQuestionDisplayMode(),
+                evaluation.getRandomizeQuestions(),
                 questions,
                 assignmentId
         );
@@ -1222,6 +1345,8 @@ public class EvaluationService {
                 attempt.getSubmittedAt(),
                 attempt.getScore(),
                 attempt.getMaxScore(),
+                parseOrder(attempt.getQuestionOrder()),
+                attempt.getCurrentQuestionIndex(),
                 answers
         );
     }

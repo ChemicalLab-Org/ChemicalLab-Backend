@@ -21,6 +21,7 @@ public record StudentEvaluationResponse(
         Boolean allowChemicalCalculator,
         Boolean trackTabExit,
         QuestionDisplayMode questionDisplayMode,
+        Boolean randomizeQuestions,
         long questionCount,
         Long assignmentId,
         LocalDateTime startAt,

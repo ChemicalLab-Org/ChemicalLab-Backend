@@ -22,6 +22,7 @@ public record EvaluationDetailResponse(
         Boolean allowChemicalCalculator,
         Boolean trackTabExit,
         QuestionDisplayMode questionDisplayMode,
+        Boolean randomizeQuestions,
         Boolean active,
         List<QuestionResponse> questions,
         List<EvaluationAssignmentResponse> assignments,

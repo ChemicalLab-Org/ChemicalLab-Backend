@@ -51,6 +51,18 @@ public class EvaluationAttempt {
 
     private LocalDateTime submittedAt;
 
+    // Orden de las preguntas para este intento, como lista de IDs separada por comas. Se
+    // fija al iniciar el intento (aleatorio si la evaluación lo indica, o el orden del
+    // docente) y se reutiliza siempre: no se regenera al consultar ni al recargar.
+    @Column(columnDefinition = "TEXT")
+    private String questionOrder;
+
+    // Solo para el modo ONE_BY_ONE: índice (0-based) de la pregunta actual dentro de
+    // questionOrder. Las preguntas con índice menor quedan bloqueadas (sin retroceso).
+    @Builder.Default
+    @Column(nullable = false)
+    private Integer currentQuestionIndex = 0;
+
     // Fecha en que el intento quedó calificado. Para evaluaciones de alternativa única
     // coincide con el envío, porque la calificación automática se ejecuta al enviar.
     private LocalDateTime gradedAt;

@@ -45,6 +45,18 @@ public class EvaluationSchemaMigration implements ApplicationRunner {
             "ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS question_display_mode "
                     + "varchar(20) NOT NULL DEFAULT 'ALL_AT_ONCE'";
 
+    private static final String ADD_RANDOMIZE_QUESTIONS =
+            "ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS randomize_questions "
+                    + "boolean NOT NULL DEFAULT false";
+
+    // Orden de preguntas y avance por intento (modo una por una / orden aleatorio).
+    private static final String ADD_ATTEMPT_QUESTION_ORDER =
+            "ALTER TABLE evaluation_attempts ADD COLUMN IF NOT EXISTS question_order text";
+
+    private static final String ADD_ATTEMPT_CURRENT_INDEX =
+            "ALTER TABLE evaluation_attempts ADD COLUMN IF NOT EXISTS current_question_index "
+                    + "integer NOT NULL DEFAULT 0";
+
     private final JdbcTemplate jdbcTemplate;
 
     @Override
@@ -58,6 +70,15 @@ public class EvaluationSchemaMigration implements ApplicationRunner {
         runQuietly(ADD_QUESTION_DISPLAY_MODE,
                 "Columna question_display_mode de evaluaciones verificada.",
                 "No se pudo agregar evaluations.question_display_mode");
+        runQuietly(ADD_RANDOMIZE_QUESTIONS,
+                "Columna randomize_questions de evaluaciones verificada.",
+                "No se pudo agregar evaluations.randomize_questions");
+        runQuietly(ADD_ATTEMPT_QUESTION_ORDER,
+                "Columna question_order de intentos verificada.",
+                "No se pudo agregar evaluation_attempts.question_order");
+        runQuietly(ADD_ATTEMPT_CURRENT_INDEX,
+                "Columna current_question_index de intentos verificada.",
+                "No se pudo agregar evaluation_attempts.current_question_index");
     }
 
     /** Ejecuta una sentencia DDL idempotente sin interrumpir el arranque si falla. */
