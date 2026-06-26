@@ -19,6 +19,7 @@ public record StudentEvaluationResponse(
         Integer timeLimitMinutes,
         Integer maxAttempts,
         Boolean allowChemicalCalculator,
+        Boolean allowPeriodicTable,
         Boolean trackTabExit,
         QuestionDisplayMode questionDisplayMode,
         Boolean randomizeQuestions,

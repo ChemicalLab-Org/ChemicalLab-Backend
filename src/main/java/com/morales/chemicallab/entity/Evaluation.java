@@ -56,6 +56,12 @@ public class Evaluation {
     @Column(nullable = false)
     private Boolean allowChemicalCalculator = false;
 
+    // Si está activo, el estudiante puede consultar la tabla periódica durante el
+    // intento (panel embebido). Por defecto false.
+    @Builder.Default
+    @Column(nullable = false)
+    private Boolean allowPeriodicTable = false;
+
     // Si está activo, el frontend reporta incidencias de pérdida de foco/salida de
     // pestaña y el backend las registra asociadas al intento. Por defecto false.
     @Builder.Default

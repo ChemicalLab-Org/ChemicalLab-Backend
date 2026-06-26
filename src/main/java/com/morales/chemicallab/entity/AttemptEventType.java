@@ -10,6 +10,9 @@ package com.morales.chemicallab.entity;
  *   <li>TAB_VISIBLE: la pestaña volvió a estar visible (retorno a la evaluación).</li>
  *   <li>WINDOW_BLUR: la ventana perdió el foco. También se considera una "salida".</li>
  *   <li>WINDOW_FOCUS: la ventana recuperó el foco.</li>
+ *   <li>NAVIGATION_BLOCKED: el estudiante intentó navegar a otro módulo durante el
+ *       intento y la aplicación lo impidió. Es navegación interna, no pérdida de foco,
+ *       por lo que no cuenta como "salida de pestaña".</li>
  * </ul>
  *
  * <p>Es una detección básica de pérdida de foco del navegador, no una vigilancia
@@ -20,5 +23,6 @@ public enum AttemptEventType {
     TAB_HIDDEN,
     TAB_VISIBLE,
     WINDOW_BLUR,
-    WINDOW_FOCUS
+    WINDOW_FOCUS,
+    NAVIGATION_BLOCKED
 }

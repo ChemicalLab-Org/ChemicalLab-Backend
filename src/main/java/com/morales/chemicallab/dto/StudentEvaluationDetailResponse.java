@@ -16,6 +16,7 @@ public record StudentEvaluationDetailResponse(
         String topic,
         Integer timeLimitMinutes,
         Boolean allowChemicalCalculator,
+        Boolean allowPeriodicTable,
         Boolean trackTabExit,
         QuestionDisplayMode questionDisplayMode,
         Boolean randomizeQuestions,

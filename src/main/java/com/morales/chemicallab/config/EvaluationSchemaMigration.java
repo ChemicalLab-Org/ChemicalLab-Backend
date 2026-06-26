@@ -49,6 +49,10 @@ public class EvaluationSchemaMigration implements ApplicationRunner {
             "ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS randomize_questions "
                     + "boolean NOT NULL DEFAULT false";
 
+    private static final String ADD_ALLOW_PERIODIC_TABLE =
+            "ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS allow_periodic_table "
+                    + "boolean NOT NULL DEFAULT false";
+
     // Orden de preguntas y avance por intento (modo una por una / orden aleatorio).
     private static final String ADD_ATTEMPT_QUESTION_ORDER =
             "ALTER TABLE evaluation_attempts ADD COLUMN IF NOT EXISTS question_order text";
@@ -73,6 +77,9 @@ public class EvaluationSchemaMigration implements ApplicationRunner {
         runQuietly(ADD_RANDOMIZE_QUESTIONS,
                 "Columna randomize_questions de evaluaciones verificada.",
                 "No se pudo agregar evaluations.randomize_questions");
+        runQuietly(ADD_ALLOW_PERIODIC_TABLE,
+                "Columna allow_periodic_table de evaluaciones verificada.",
+                "No se pudo agregar evaluations.allow_periodic_table");
         runQuietly(ADD_ATTEMPT_QUESTION_ORDER,
                 "Columna question_order de intentos verificada.",
                 "No se pudo agregar evaluation_attempts.question_order");

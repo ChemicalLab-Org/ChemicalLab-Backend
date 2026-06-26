@@ -141,7 +141,7 @@ class EvaluationServiceTest {
         when(assignmentRepository.findByEvaluationOrderByAssignedAtDesc(any())).thenReturn(List.of());
 
         var request = new CreateEvaluationRequest("  Óxidos y nomenclatura  ", "Desc", "Instrucciones", "Óxidos",
-                2, 30, false, false, QuestionDisplayMode.ALL_AT_ONCE, false);
+                2, 30, false, false, QuestionDisplayMode.ALL_AT_ONCE, false, false);
         EvaluationResponse response = service.createEvaluation("docente1", request);
 
         assertThat(response.title()).isEqualTo("Óxidos y nomenclatura");
@@ -581,7 +581,7 @@ class EvaluationServiceTest {
                 .thenReturn(Optional.of(evaluation(10L, otro, EvaluationStatus.DRAFT, 1)));
 
         var request = new UpdateEvaluationRequest("Nuevo título", null, null, null, 1, null,
-                false, false, QuestionDisplayMode.ALL_AT_ONCE, false);
+                false, false, QuestionDisplayMode.ALL_AT_ONCE, false, false);
 
         assertThatThrownBy(() -> service.updateEvaluation("docente1", 10L, request))
                 .hasMessageContaining("No tienes permiso");
@@ -830,10 +830,11 @@ class EvaluationServiceTest {
         when(assignmentRepository.findByEvaluationOrderByAssignedAtDesc(any())).thenReturn(List.of());
 
         var request = new CreateEvaluationRequest("Ácidos", "Desc", "Instrucciones", "Ácidos",
-                3, 45, true, true, QuestionDisplayMode.ONE_BY_ONE, false);
+                3, 45, true, true, QuestionDisplayMode.ONE_BY_ONE, false, true);
         EvaluationResponse response = service.createEvaluation("docente1", request);
 
         assertThat(response.allowChemicalCalculator()).isTrue();
+        assertThat(response.allowPeriodicTable()).isTrue();
         assertThat(response.trackTabExit()).isTrue();
         assertThat(response.questionDisplayMode()).isEqualTo(QuestionDisplayMode.ONE_BY_ONE);
         assertThat(response.maxAttempts()).isEqualTo(3);
@@ -852,10 +853,11 @@ class EvaluationServiceTest {
         when(questionRepository.countByEvaluationAndActiveTrue(any())).thenReturn(0L);
         when(assignmentRepository.findByEvaluationOrderByAssignedAtDesc(any())).thenReturn(List.of());
 
-        var request = new CreateEvaluationRequest("Sales", null, null, null, 1, null, null, null, null, null);
+        var request = new CreateEvaluationRequest("Sales", null, null, null, 1, null, null, null, null, null, null);
         EvaluationResponse response = service.createEvaluation("docente1", request);
 
         assertThat(response.allowChemicalCalculator()).isFalse();
+        assertThat(response.allowPeriodicTable()).isFalse();
         assertThat(response.trackTabExit()).isFalse();
         assertThat(response.questionDisplayMode()).isEqualTo(QuestionDisplayMode.ALL_AT_ONCE);
     }
@@ -876,8 +878,10 @@ class EvaluationServiceTest {
         when(assignmentRepository.findByEvaluationOrderByAssignedAtDesc(any())).thenReturn(List.of());
 
         var request = new UpdateEvaluationRequest("Óxidos y nomenclatura", null, null, null,
-                2, 60, true, true, QuestionDisplayMode.ONE_BY_ONE, false);
+                2, 60, true, true, QuestionDisplayMode.ONE_BY_ONE, false, true);
         EvaluationResponse response = service.updateEvaluation("docente1", 10L, request);
+
+        assertThat(response.allowPeriodicTable()).isTrue();
 
         assertThat(response.trackTabExit()).isTrue();
         // Se registra al menos el log de configuración actualizada (y el de activación).
@@ -1254,5 +1258,32 @@ class EvaluationServiceTest {
                 "EST0002", 50L, new SubmitEvaluationAnswerRequest(20L, 32L)))
                 .hasMessageContaining("No tienes permiso");
         verify(answerRepository, never()).save(any(EvaluationAnswer.class));
+    }
+
+    // =========================================================================
+    // 46. El detalle del estudiante expone los permisos de herramientas del intento
+    // =========================================================================
+
+    @Test
+    void detalleEstudianteExponePermisosDeHerramientas() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        eval.setAllowChemicalCalculator(true);
+        eval.setAllowPeriodicTable(true);
+        EvaluationAssignment asig = assignment(40L, eval, docente, "3", "A");
+        EvaluationQuestion q = question(20L, eval, 1);
+        when(assignmentRepository.findActiveForSectionByEvaluation(10L, "3", "A", EvaluationStatus.PUBLISHED))
+                .thenReturn(Optional.of(asig));
+        when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval)).thenReturn(List.of(q));
+        when(optionRepository.findByQuestionAndActiveTrueOrderByOrderIndexAsc(q))
+                .thenReturn(List.of(option(31L, q, false), option(32L, q, true)));
+
+        StudentEvaluationDetailResponse response = service.getStudentEvaluationDetail("EST0001", 10L);
+
+        // El estudiante recibe los permisos para mostrar/ocultar herramientas en el intento.
+        assertThat(response.allowChemicalCalculator()).isTrue();
+        assertThat(response.allowPeriodicTable()).isTrue();
     }
 }

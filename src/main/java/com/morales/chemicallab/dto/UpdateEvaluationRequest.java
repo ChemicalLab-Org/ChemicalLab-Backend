@@ -35,6 +35,8 @@ public record UpdateEvaluationRequest(
 
         QuestionDisplayMode questionDisplayMode,
 
-        Boolean randomizeQuestions
+        Boolean randomizeQuestions,
+
+        Boolean allowPeriodicTable
 
 ) {}

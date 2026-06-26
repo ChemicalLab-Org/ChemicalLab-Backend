@@ -91,6 +91,7 @@ public class EvaluationService {
                 .maxAttempts(request.maxAttempts())
                 .timeLimitMinutes(request.timeLimitMinutes())
                 .allowChemicalCalculator(Boolean.TRUE.equals(request.allowChemicalCalculator()))
+                .allowPeriodicTable(Boolean.TRUE.equals(request.allowPeriodicTable()))
                 .trackTabExit(Boolean.TRUE.equals(request.trackTabExit()))
                 .questionDisplayMode(request.questionDisplayMode() == null
                         ? QuestionDisplayMode.ALL_AT_ONCE : request.questionDisplayMode())
@@ -138,6 +139,7 @@ public class EvaluationService {
         evaluation.setMaxAttempts(request.maxAttempts());
         evaluation.setTimeLimitMinutes(request.timeLimitMinutes());
         evaluation.setAllowChemicalCalculator(Boolean.TRUE.equals(request.allowChemicalCalculator()));
+        evaluation.setAllowPeriodicTable(Boolean.TRUE.equals(request.allowPeriodicTable()));
         evaluation.setTrackTabExit(Boolean.TRUE.equals(request.trackTabExit()));
         evaluation.setQuestionDisplayMode(request.questionDisplayMode() == null
                 ? QuestionDisplayMode.ALL_AT_ONCE : request.questionDisplayMode());
@@ -1118,6 +1120,7 @@ public class EvaluationService {
                 evaluation.getMaxAttempts(),
                 evaluation.getTimeLimitMinutes(),
                 evaluation.getAllowChemicalCalculator(),
+                evaluation.getAllowPeriodicTable(),
                 evaluation.getTrackTabExit(),
                 evaluation.getQuestionDisplayMode(),
                 evaluation.getRandomizeQuestions(),
@@ -1152,6 +1155,7 @@ public class EvaluationService {
                 evaluation.getMaxAttempts(),
                 evaluation.getTimeLimitMinutes(),
                 evaluation.getAllowChemicalCalculator(),
+                evaluation.getAllowPeriodicTable(),
                 evaluation.getTrackTabExit(),
                 evaluation.getQuestionDisplayMode(),
                 evaluation.getRandomizeQuestions(),
@@ -1269,6 +1273,7 @@ public class EvaluationService {
                 evaluation.getTimeLimitMinutes(),
                 evaluation.getMaxAttempts(),
                 evaluation.getAllowChemicalCalculator(),
+                evaluation.getAllowPeriodicTable(),
                 evaluation.getTrackTabExit(),
                 evaluation.getQuestionDisplayMode(),
                 evaluation.getRandomizeQuestions(),
@@ -1296,6 +1301,7 @@ public class EvaluationService {
                 evaluation.getTopic(),
                 evaluation.getTimeLimitMinutes(),
                 evaluation.getAllowChemicalCalculator(),
+                evaluation.getAllowPeriodicTable(),
                 evaluation.getTrackTabExit(),
                 evaluation.getQuestionDisplayMode(),
                 evaluation.getRandomizeQuestions(),

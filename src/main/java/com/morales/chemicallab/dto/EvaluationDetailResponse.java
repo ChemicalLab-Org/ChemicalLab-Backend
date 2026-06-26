@@ -20,6 +20,7 @@ public record EvaluationDetailResponse(
         Integer maxAttempts,
         Integer timeLimitMinutes,
         Boolean allowChemicalCalculator,
+        Boolean allowPeriodicTable,
         Boolean trackTabExit,
         QuestionDisplayMode questionDisplayMode,
         Boolean randomizeQuestions,
