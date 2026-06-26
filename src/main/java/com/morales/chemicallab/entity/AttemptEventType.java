@@ -13,6 +13,9 @@ package com.morales.chemicallab.entity;
  *   <li>NAVIGATION_BLOCKED: el estudiante intentó navegar a otro módulo durante el
  *       intento y la aplicación lo impidió. Es navegación interna, no pérdida de foco,
  *       por lo que no cuenta como "salida de pestaña".</li>
+ *   <li>ATTEMPT_EXITED: el estudiante decidió salir del intento y este se dio por
+ *       finalizado. Es un evento del ciclo de vida del intento (salida voluntaria), no
+ *       una pérdida de foco, por lo que tampoco cuenta como "salida de pestaña".</li>
  * </ul>
  *
  * <p>Es una detección básica de pérdida de foco del navegador, no una vigilancia
@@ -24,5 +27,6 @@ public enum AttemptEventType {
     TAB_VISIBLE,
     WINDOW_BLUR,
     WINDOW_FOCUS,
-    NAVIGATION_BLOCKED
+    NAVIGATION_BLOCKED,
+    ATTEMPT_EXITED
 }

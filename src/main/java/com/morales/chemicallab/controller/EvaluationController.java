@@ -187,6 +187,18 @@ public class EvaluationController {
     }
 
     /**
+     * Finaliza el intento porque el estudiante decide salir de la evaluación. El intento
+     * se cierra y no queda retomable (cuenta como usado). El backend valida que el intento
+     * sea del estudiante autenticado y que siga en progreso.
+     */
+    @PostMapping("/student/attempts/{attemptId}/exit")
+    public AttemptResponse salirIntento(
+            Authentication authentication,
+            @PathVariable Long attemptId) {
+        return evaluationService.exitAttempt(authentication.getName(), attemptId);
+    }
+
+    /**
      * Registra una incidencia de foco (salida/retorno de pestaña o ventana) del propio
      * intento del estudiante. Solo aplica si la evaluación tiene activada la detección de
      * salida de pestaña; el backend valida la propiedad del intento y descarta duplicados.

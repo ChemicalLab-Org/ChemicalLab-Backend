@@ -185,6 +185,7 @@ Base: `/api/evaluations`
 | GET | `/student/attempts/{attemptId}` | Ver intento |
 | POST | `/student/attempts/{attemptId}/answers` | Guardar/actualizar una respuesta |
 | POST | `/student/attempts/{attemptId}/submit` | Enviar intento |
+| POST | `/student/attempts/{attemptId}/exit` | Salir del intento: lo finaliza (GRADED) con lo guardado; no retomable |
 | POST | `/student/attempts/{attemptId}/events` | Registrar incidencia de salida de pestaña (solo si `trackTabExit`) |
 | GET | `/student/results` | Listar sus resultados/calificaciones |
 | GET | `/student/attempts/{attemptId}/result` | Detalle del resultado de un intento propio |
@@ -256,8 +257,8 @@ comportamiento histórico**, de modo que las evaluaciones existentes no cambian.
 
 | Configuración | Campo | Por defecto | Qué hace |
 |---------------|-------|-------------|----------|
-| Calculadora química | `allowChemicalCalculator` | `false` | Habilita el acceso a la herramienta de apoyo químico (panel embebido) durante el intento. |
-| Tabla periódica | `allowPeriodicTable` | `false` | Habilita la consulta de la tabla periódica (panel embebido) durante el intento. |
+| Formación de compuestos | `allowChemicalCalculator` | `false` | Habilita el acceso al módulo existente de Formación de compuestos (`/compounds`) como herramienta de apoyo durante el intento. |
+| Tabla periódica | `allowPeriodicTable` | `false` | Habilita el acceso al módulo existente de Tabla periódica (`/periodic-table`) como herramienta de apoyo durante el intento. |
 | Detección de salida de pestaña | `trackTabExit` | `false` | Permite registrar incidencias de pérdida de foco/cambio de pestaña asociadas al intento. |
 | Modo de preguntas | `questionDisplayMode` | `ALL_AT_ONCE` | `ALL_AT_ONCE` muestra todas las preguntas juntas; `ONE_BY_ONE`, una por pantalla en flujo secuencial sin retroceso. No afecta la calificación. |
 | Orden aleatorio | `randomizeQuestions` | `false` | Si está activo, el orden de preguntas se baraja por intento (fijo para ese intento). |
@@ -307,27 +308,55 @@ para no alterar un intento en curso.
   estas reglas.
 - **Frontend (experiencia):** muestra la pantalla previa con las reglas; presenta las
   preguntas según el modo; muestra el contador regresivo y dispara el envío automático
-  al agotarse el tiempo; muestra/oculta el acceso a la calculadora; detecta la pérdida
-  de foco y la reporta. Es una capa de usabilidad, no de seguridad.
+  al agotarse el tiempo; adapta la barra lateral al modo examen mostrando solo las
+  herramientas permitidas; detecta la pérdida de foco y la reporta. Es una capa de
+  usabilidad, no de seguridad.
 
-### Herramientas durante el intento (calculadora y tabla periódica)
+### Herramientas durante el intento (formación de compuestos y tabla periódica)
 
-`allowChemicalCalculator` y `allowPeriodicTable` controlan si el estudiante **ve y puede
-abrir**, **dentro del intento** (panel/modal embebido), la calculadora química y la tabla
-periódica respectivamente. Ambas **reutilizan** funcionalidad ya existente del proyecto
-(el motor químico y los datos de elementos; no se duplica lógica química) y **nunca**
-acceden a la clave de respuestas de la evaluación. Si un permiso está desactivado, su
-acceso no se muestra y el frontend impide entrar al módulo correspondiente durante un
-intento activo. El backend es la fuente de verdad de estos permisos: viajan en los DTOs
-seguros del estudiante (`StudentEvaluationResponse` y `StudentEvaluationDetailResponse`),
-no solo en el formulario del docente.
+`allowChemicalCalculator` y `allowPeriodicTable` controlan si el estudiante puede usar,
+**durante el intento**, los **módulos ya existentes** de Formación de compuestos
+(`/compounds`) y Tabla periódica (`/periodic-table`) como herramientas de apoyo. No se
+crean ni se duplican herramientas dentro del examen: se reutilizan tal cual los módulos
+del sistema. Ninguno de esos módulos accede a la clave de respuestas de la evaluación.
 
-**Control de navegación:** durante un intento activo el estudiante no debe navegar
-libremente a otros módulos. Es un control **dentro de la aplicación** (no un bloqueo del
-navegador): el frontend usa un layout de examen sin barra lateral y un guard que impide
-salir a otros módulos. Si la evaluación tiene `trackTabExit` activo, un intento de
-navegación interna puede registrarse como evento `NAVIGATION_BLOCKED` del intento (no
-cuenta como "salida de pestaña" ni satura el log global de auditoría).
+El backend es la fuente de verdad de estos permisos: además de los DTOs del docente,
+viajan en los DTOs seguros del estudiante (`StudentEvaluationResponse` y
+`StudentEvaluationDetailResponse`) y en el propio intento (`AttemptResponse`), para que
+el frontend sepa qué módulos habilitar durante el examen.
+
+**Barra lateral en modo examen:** mientras hay un intento activo, el frontend reemplaza
+el menú normal del estudiante por un menú reducido: *Volver al intento*, *Formación de
+compuestos* (solo si `allowChemicalCalculator`), *Tabla periódica* (solo si
+`allowPeriodicTable`) y *Salir del intento*. No se muestran Inicio, Conceptos, Mis
+evaluaciones ni Mis resultados.
+
+**Control de navegación:** es un control **dentro de la aplicación** (no un bloqueo del
+navegador). Un guard permite, durante el intento, solo las rutas de las herramientas
+habilitadas; cualquier otra ruta (incluido el acceso manual por URL a una herramienta no
+permitida) redirige de vuelta al intento. Volver desde una herramienta no reinicia el
+intento ni altera el orden de preguntas.
+
+### Salir del intento (finalización por abandono)
+
+`POST /student/attempts/{attemptId}/exit` finaliza el intento cuando el estudiante decide
+salir de la evaluación. El backend valida que el intento sea del estudiante autenticado y
+que siga en progreso; entonces:
+
+- califica con las respuestas ya guardadas (las preguntas sin responder quedan en cero,
+  con la misma lógica de calificación automática del envío);
+- deja el intento en estado **GRADED** con `submittedAt`/`gradedAt`;
+- el intento **cuenta como usado**, por lo que **no puede retomarse**: con
+  `maxAttempts = 1` el estudiante ya no podrá iniciar otro, y con más intentos solo si le
+  quedan disponibles;
+- si la evaluación tiene `trackTabExit` activo, registra un evento `ATTEMPT_EXITED` del
+  intento (no cuenta como "salida de pestaña") y deja un log de auditoría agregado sin
+  respuestas ni payloads.
+
+No se reutiliza el estado del intento como retomable: salir es un cierre definitivo. Si
+la evaluación tiene `trackTabExit` activo, un intento de navegación interna también puede
+registrarse como evento `NAVIGATION_BLOCKED` (no cuenta como "salida de pestaña" ni satura
+el log global de auditoría).
 
 ### Detección de salida de pestaña
 

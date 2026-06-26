@@ -1286,4 +1286,111 @@ class EvaluationServiceTest {
         assertThat(response.allowChemicalCalculator()).isTrue();
         assertThat(response.allowPeriodicTable()).isTrue();
     }
+
+    // =========================================================================
+    // 47. El intento informa al estudiante qué herramientas tiene permitidas
+    // =========================================================================
+
+    @Test
+    void intentoInformaHerramientasPermitidas() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
+        eval.setAllowChemicalCalculator(true);
+        eval.setAllowPeriodicTable(false);
+        EvaluationAssignment asig = assignment(40L, eval, docente, "3", "A");
+        when(assignmentRepository.findActiveForSectionByEvaluation(10L, "3", "A", EvaluationStatus.PUBLISHED))
+                .thenReturn(Optional.of(asig));
+        when(attemptRepository.findByEvaluationAndStudentAndStatus(eval, alumno, AttemptStatus.IN_PROGRESS))
+                .thenReturn(Optional.empty());
+        when(attemptRepository.countByEvaluationAndStudent(eval, alumno)).thenReturn(0L);
+        when(attemptRepository.save(any(EvaluationAttempt.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(answerRepository.findByAttemptOrderByAnsweredAtAsc(any())).thenReturn(List.of());
+
+        AttemptResponse response = service.startAttempt("EST0001", 10L, new StartEvaluationAttemptRequest(null));
+
+        // El DTO del intento traslada la configuración real de la evaluación.
+        assertThat(response.allowChemicalCalculator()).isTrue();
+        assertThat(response.allowPeriodicTable()).isFalse();
+    }
+
+    // =========================================================================
+    // 48. El estudiante finaliza su intento al salir (se califica lo guardado)
+    // =========================================================================
+
+    @Test
+    void estudianteFinalizaIntentoAlSalir() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
+        // Dos preguntas: una respondida correctamente y otra sin responder (queda en cero).
+        EvaluationQuestion respondida = question(20L, eval, 2);
+        EvaluationQuestion sinResponder = question(21L, eval, 3);
+        EvaluationOption correcta = option(32L, respondida, true);
+        EvaluationAnswer answer = EvaluationAnswer.builder()
+                .id(60L).attempt(null).question(respondida).selectedOption(correcta).build();
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .status(AttemptStatus.IN_PROGRESS).active(true).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+        when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval))
+                .thenReturn(List.of(respondida, sinResponder));
+        when(answerRepository.findByAttemptAndQuestion(attempt, respondida)).thenReturn(Optional.of(answer));
+        when(answerRepository.findByAttemptAndQuestion(attempt, sinResponder)).thenReturn(Optional.empty());
+        when(answerRepository.save(any(EvaluationAnswer.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(attemptRepository.save(any(EvaluationAttempt.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(answerRepository.findByAttemptOrderByAnsweredAtAsc(attempt)).thenReturn(List.of(answer));
+
+        AttemptResponse response = service.exitAttempt("EST0001", 50L);
+
+        // El intento queda finalizado (GRADED) y calificado con lo respondido: 2 de 5 puntos.
+        assertThat(response.status()).isEqualTo(AttemptStatus.GRADED);
+        assertThat(response.score()).isEqualTo(2);
+        assertThat(response.maxScore()).isEqualTo(5);
+        assertThat(attempt.getSubmittedAt()).isNotNull();
+    }
+
+    // =========================================================================
+    // 49. Un intento finalizado por salida no puede retomarse ni reenviarse
+    // =========================================================================
+
+    @Test
+    void intentoFinalizadoPorSalidaNoSeRetoma() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .status(AttemptStatus.GRADED).active(true).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+
+        // Ya no está en progreso: ni salir de nuevo ni enviarlo vuelve a procesarlo.
+        assertThatThrownBy(() -> service.exitAttempt("EST0001", 50L))
+                .hasMessageContaining("ya fue enviado");
+        verify(attemptRepository, never()).save(any(EvaluationAttempt.class));
+    }
+
+    // =========================================================================
+    // 50. El estudiante no puede finalizar (salir de) el intento de otro
+    // =========================================================================
+
+    @Test
+    void estudianteNoFinalizaIntentoAjeno() {
+        StudentProfile dueno = student(5L, "EST0001", "3", "A");
+        StudentProfile otro = student(6L, "EST0002", "3", "A");
+        stubStudent(otro);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(dueno).attemptNumber(1)
+                .status(AttemptStatus.IN_PROGRESS).active(true).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+
+        assertThatThrownBy(() -> service.exitAttempt("EST0002", 50L))
+                .hasMessageContaining("No tienes permiso");
+        verify(attemptRepository, never()).save(any(EvaluationAttempt.class));
+    }
 }

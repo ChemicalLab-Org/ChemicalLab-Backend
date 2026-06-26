@@ -476,6 +476,60 @@ public class EvaluationService {
     }
 
     /**
+     * Finaliza un intento porque el estudiante decidió salir de la evaluación. El intento
+     * se da por terminado y <b>no</b> queda retomable: se califica con las respuestas que
+     * el estudiante alcanzó a guardar (las preguntas sin responder cuentan como no
+     * respondidas, con cero puntos) y pasa a estado GRADED.
+     *
+     * <p>No se aceptan respuestas nuevas en el cuerpo: salir es un cierre, no un envío.
+     * El intento cuenta como usado (igual que un envío normal), de modo que con
+     * {@code maxAttempts = 1} el estudiante ya no podrá iniciar otro, y con más intentos
+     * solo podrá iniciar uno nuevo si todavía le quedan disponibles.</p>
+     *
+     * <p>Valida que el intento sea del estudiante autenticado y que siga en progreso; un
+     * docente no finaliza intentos por esta vía. No expone respuestas correctas.</p>
+     */
+    public AttemptResponse exitAttempt(String username, Long attemptId) {
+        StudentProfile student = requireStudent(username);
+        EvaluationAttempt attempt = requireOwnedAttempt(attemptId, student);
+        requireInProgress(attempt);
+
+        // Se califica con lo guardado hasta el momento: las preguntas no respondidas
+        // quedan en cero según la misma lógica de calificación automática del envío.
+        gradeAttempt(attempt);
+
+        LocalDateTime now = LocalDateTime.now();
+        attempt.setStatus(AttemptStatus.GRADED);
+        attempt.setSubmittedAt(now);
+        attempt.setGradedAt(now);
+        attemptRepository.save(attempt);
+
+        Evaluation evaluation = attempt.getEvaluation();
+
+        // Trazabilidad del intento: si la evaluación registra incidencias del intento, se
+        // deja constancia de la salida voluntaria. No cuenta como "salida de pestaña" y no
+        // guarda contenido sensible: solo el tipo de evento y el momento.
+        if (Boolean.TRUE.equals(evaluation.getTrackTabExit())
+                && !isDuplicateEvent(attempt, AttemptEventType.ATTEMPT_EXITED)) {
+            attemptEventRepository.save(EvaluationAttemptEvent.builder()
+                    .attempt(attempt)
+                    .eventType(AttemptEventType.ATTEMPT_EXITED)
+                    .description("El estudiante salió del intento y se dio por finalizado.")
+                    .build());
+        }
+
+        // Log de auditoría agregado: solo identifica la evaluación y marca que fue una
+        // salida; nunca registra respuestas ni payloads.
+        auditLogService.recordInfo(LogEventType.EVALUATION_ATTEMPT_SUBMITTED, TARGET_EVALUATION,
+                evaluation.getId(), evaluation.getTitle(), "Finalizar intento por salida",
+                "Un intento de la evaluación «" + evaluation.getTitle()
+                        + "» se finalizó porque el estudiante salió de la evaluación.",
+                "attemptId=" + attempt.getId() + ";exited=true");
+
+        return toAttemptResponse(attempt);
+    }
+
+    /**
      * Registra una incidencia de foco (salida/retorno de pestaña o ventana) durante un
      * intento. Solo procede si la evaluación tiene activada la detección de salida de
      * pestaña, el intento pertenece al estudiante autenticado y sigue en progreso.
@@ -1353,6 +1407,8 @@ public class EvaluationService {
                 attempt.getMaxScore(),
                 parseOrder(attempt.getQuestionOrder()),
                 attempt.getCurrentQuestionIndex(),
+                Boolean.TRUE.equals(attempt.getEvaluation().getAllowChemicalCalculator()),
+                Boolean.TRUE.equals(attempt.getEvaluation().getAllowPeriodicTable()),
                 answers
         );
     }
