@@ -24,8 +24,15 @@ import org.springframework.stereotype.Component;
  * ejecutarla siempre: si la columna ya existe (esquema nuevo creado por Hibernate), no
  * hace nada. Un fallo aquí se registra pero nunca interrumpe el arranque.</p>
  *
- * <p>La tabla {@code evaluation_attempt_events} no requiere migración: al ser nueva,
- * Hibernate la crea automáticamente con {@code ddl-auto=update}.</p>
+ * <p>Para {@code evaluation_attempt_events} sí hace falta una corrección: Hibernate creó
+ * una restricción CHECK sobre {@code event_type} con los únicos valores que el enum
+ * {@code AttemptEventType} tenía cuando se creó la tabla
+ * ({@code TAB_HIDDEN, TAB_VISIBLE, WINDOW_BLUR, WINDOW_FOCUS}). Al ampliarse el enum con
+ * los hitos del intento (inicio, envío, salida), el uso de herramientas y el intento de
+ * salida, {@code ddl-auto=update} <b>no</b> actualiza ese CHECK, por lo que insertar un
+ * evento de un tipo nuevo (p. ej. {@code ATTEMPT_STARTED} al iniciar el intento) viola la
+ * restricción y devuelve HTTP 500. Aquí se elimina ese CHECK heredado de forma idempotente;
+ * la validación de los valores la garantiza el mapeo JPA del enum.</p>
  */
 @Slf4j
 @Component
@@ -61,6 +68,13 @@ public class EvaluationSchemaMigration implements ApplicationRunner {
             "ALTER TABLE evaluation_attempts ADD COLUMN IF NOT EXISTS current_question_index "
                     + "integer NOT NULL DEFAULT 0";
 
+    // CHECK heredado de event_type que solo admite los 4 valores originales del enum.
+    // Al crecer AttemptEventType, ddl-auto=update no lo actualiza y rechaza los tipos
+    // nuevos (p. ej. ATTEMPT_STARTED), provocando un 500 al iniciar el intento.
+    private static final String DROP_EVENT_TYPE_CHECK =
+            "ALTER TABLE evaluation_attempt_events "
+                    + "DROP CONSTRAINT IF EXISTS evaluation_attempt_events_event_type_check";
+
     private final JdbcTemplate jdbcTemplate;
 
     @Override
@@ -86,6 +100,9 @@ public class EvaluationSchemaMigration implements ApplicationRunner {
         runQuietly(ADD_ATTEMPT_CURRENT_INDEX,
                 "Columna current_question_index de intentos verificada.",
                 "No se pudo agregar evaluation_attempts.current_question_index");
+        runQuietly(DROP_EVENT_TYPE_CHECK,
+                "Restricción CHECK heredada de event_type eliminada (o ausente).",
+                "No se pudo eliminar el CHECK heredado de evaluation_attempt_events.event_type");
     }
 
     /** Ejecuta una sentencia DDL idempotente sin interrumpir el arranque si falla. */

@@ -5,6 +5,7 @@ import com.morales.chemicallab.entity.*;
 import com.morales.chemicallab.repository.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -912,7 +913,7 @@ class EvaluationServiceTest {
         when(attemptEventRepository.countByAttemptAndEventTypeIn(eq(attempt), any())).thenReturn(1L);
 
         AttemptEventSummaryResponse res = service.registerAttemptEvent(
-                "EST0001", 50L, new RegisterAttemptEventRequest(AttemptEventType.TAB_HIDDEN, null));
+                "EST0001", 50L, new RegisterAttemptEventRequest(AttemptEventType.TAB_HIDDEN, null, null, null));
 
         assertThat(res.recorded()).isTrue();
         assertThat(res.tabExitCount()).isEqualTo(1L);
@@ -936,7 +937,7 @@ class EvaluationServiceTest {
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
 
         assertThatThrownBy(() -> service.registerAttemptEvent(
-                "EST0001", 50L, new RegisterAttemptEventRequest(AttemptEventType.TAB_HIDDEN, null)))
+                "EST0001", 50L, new RegisterAttemptEventRequest(AttemptEventType.TAB_HIDDEN, null, null, null)))
                 .hasMessageContaining("no está activada");
         verify(attemptEventRepository, never()).save(any(EvaluationAttemptEvent.class));
     }
@@ -959,7 +960,7 @@ class EvaluationServiceTest {
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
 
         assertThatThrownBy(() -> service.registerAttemptEvent(
-                "EST0002", 50L, new RegisterAttemptEventRequest(AttemptEventType.TAB_HIDDEN, null)))
+                "EST0002", 50L, new RegisterAttemptEventRequest(AttemptEventType.TAB_HIDDEN, null, null, null)))
                 .hasMessageContaining("No tienes permiso");
         verify(attemptEventRepository, never()).save(any(EvaluationAttemptEvent.class));
     }
@@ -988,7 +989,7 @@ class EvaluationServiceTest {
         when(attemptEventRepository.countByAttemptAndEventTypeIn(eq(attempt), any())).thenReturn(1L);
 
         AttemptEventSummaryResponse res = service.registerAttemptEvent(
-                "EST0001", 50L, new RegisterAttemptEventRequest(AttemptEventType.TAB_HIDDEN, null));
+                "EST0001", 50L, new RegisterAttemptEventRequest(AttemptEventType.TAB_HIDDEN, null, null, null));
 
         assertThat(res.recorded()).isFalse();
         verify(attemptEventRepository, never()).save(any(EvaluationAttemptEvent.class));
@@ -1392,5 +1393,250 @@ class EvaluationServiceTest {
         assertThatThrownBy(() -> service.exitAttempt("EST0002", 50L))
                 .hasMessageContaining("No tienes permiso");
         verify(attemptRepository, never()).save(any(EvaluationAttempt.class));
+    }
+
+    // =========================================================================
+    // 51. Iniciar un intento registra el evento ATTEMPT_STARTED (trazabilidad)
+    // =========================================================================
+
+    @Test
+    void iniciarIntentoRegistraInicio() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        // La detección de salida de pestaña está desactivada: el inicio igual debe registrarse.
+        eval.setTrackTabExit(false);
+        EvaluationAssignment asig = assignment(40L, eval, docente, "3", "A");
+        EvaluationQuestion q1 = question(20L, eval, 1);
+        when(assignmentRepository.findActiveForSectionByEvaluation(10L, "3", "A", EvaluationStatus.PUBLISHED))
+                .thenReturn(Optional.of(asig));
+        when(attemptRepository.findByEvaluationAndStudentAndStatus(eval, alumno, AttemptStatus.IN_PROGRESS))
+                .thenReturn(Optional.empty());
+        when(attemptRepository.countByEvaluationAndStudent(eval, alumno)).thenReturn(0L);
+        when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval)).thenReturn(List.of(q1));
+        when(attemptRepository.save(any(EvaluationAttempt.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(attemptEventRepository.save(any(EvaluationAttemptEvent.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(answerRepository.findByAttemptOrderByAnsweredAtAsc(any())).thenReturn(List.of());
+
+        service.startAttempt("EST0001", 10L, new StartEvaluationAttemptRequest(null));
+
+        ArgumentCaptor<EvaluationAttemptEvent> captor = ArgumentCaptor.forClass(EvaluationAttemptEvent.class);
+        verify(attemptEventRepository).save(captor.capture());
+        assertThat(captor.getValue().getEventType()).isEqualTo(AttemptEventType.ATTEMPT_STARTED);
+    }
+
+    // =========================================================================
+    // 52. Enviar un intento registra el evento ATTEMPT_SUBMITTED (trazabilidad)
+    // =========================================================================
+
+    @Test
+    void enviarIntentoRegistraEnvio() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        EvaluationQuestion q = question(20L, eval, 2);
+        EvaluationOption correcta = option(32L, q, true);
+        EvaluationAnswer answer = EvaluationAnswer.builder()
+                .id(60L).attempt(null).question(q).selectedOption(correcta).build();
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .status(AttemptStatus.IN_PROGRESS).startedAt(LocalDateTime.now()).active(true).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+        when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval)).thenReturn(List.of(q));
+        when(answerRepository.findByAttemptAndQuestion(attempt, q)).thenReturn(Optional.of(answer));
+        when(answerRepository.save(any(EvaluationAnswer.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(attemptRepository.save(any(EvaluationAttempt.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(attemptEventRepository.save(any(EvaluationAttemptEvent.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(answerRepository.findByAttemptOrderByAnsweredAtAsc(attempt)).thenReturn(List.of(answer));
+
+        AttemptResponse response = service.submitAttempt("EST0001", 50L, null);
+
+        assertThat(response.status()).isEqualTo(AttemptStatus.GRADED);
+        ArgumentCaptor<EvaluationAttemptEvent> captor = ArgumentCaptor.forClass(EvaluationAttemptEvent.class);
+        verify(attemptEventRepository).save(captor.capture());
+        assertThat(captor.getValue().getEventType()).isEqualTo(AttemptEventType.ATTEMPT_SUBMITTED);
+    }
+
+    // =========================================================================
+    // 53. Se registra el uso de una herramienta aunque trackTabExit esté inactivo
+    // =========================================================================
+
+    @Test
+    void registraUsoDeHerramientaSinDeteccionDePestania() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        eval.setTrackTabExit(false);
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .status(AttemptStatus.IN_PROGRESS).startedAt(LocalDateTime.now()).active(true).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+        when(attemptEventRepository.findFirstByAttemptOrderByOccurredAtDesc(attempt)).thenReturn(Optional.empty());
+        when(attemptEventRepository.save(any(EvaluationAttemptEvent.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(attemptEventRepository.countByAttempt(attempt)).thenReturn(1L);
+        when(attemptEventRepository.countByAttemptAndEventTypeIn(eq(attempt), any())).thenReturn(0L);
+
+        AttemptEventSummaryResponse res = service.registerAttemptEvent("EST0001", 50L,
+                new RegisterAttemptEventRequest(AttemptEventType.TOOL_OPENED, "Abrió la tabla periódica.",
+                        AttemptTool.PERIODIC_TABLE, null));
+
+        assertThat(res.recorded()).isTrue();
+        ArgumentCaptor<EvaluationAttemptEvent> captor = ArgumentCaptor.forClass(EvaluationAttemptEvent.class);
+        verify(attemptEventRepository).save(captor.capture());
+        assertThat(captor.getValue().getEventType()).isEqualTo(AttemptEventType.TOOL_OPENED);
+        assertThat(captor.getValue().getMetadata()).isEqualTo("tool=PERIODIC_TABLE");
+    }
+
+    // =========================================================================
+    // 54. Se registra el intento de salida (EXIT_ATTEMPTED)
+    // =========================================================================
+
+    @Test
+    void registraIntentoDeSalida() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .status(AttemptStatus.IN_PROGRESS).startedAt(LocalDateTime.now()).active(true).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+        when(attemptEventRepository.findFirstByAttemptOrderByOccurredAtDesc(attempt)).thenReturn(Optional.empty());
+        when(attemptEventRepository.save(any(EvaluationAttemptEvent.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(attemptEventRepository.countByAttempt(attempt)).thenReturn(1L);
+        when(attemptEventRepository.countByAttemptAndEventTypeIn(eq(attempt), any())).thenReturn(0L);
+
+        AttemptEventSummaryResponse res = service.registerAttemptEvent("EST0001", 50L,
+                new RegisterAttemptEventRequest(AttemptEventType.EXIT_ATTEMPTED, null, null, "BUTTON_EXIT"));
+
+        assertThat(res.recorded()).isTrue();
+        ArgumentCaptor<EvaluationAttemptEvent> captor = ArgumentCaptor.forClass(EvaluationAttemptEvent.class);
+        verify(attemptEventRepository).save(captor.capture());
+        assertThat(captor.getValue().getEventType()).isEqualTo(AttemptEventType.EXIT_ATTEMPTED);
+        assertThat(captor.getValue().getMetadata()).isEqualTo("source=BUTTON_EXIT");
+    }
+
+    // =========================================================================
+    // 55. El cliente no puede registrar un hito del ciclo de vida (lo hace el backend)
+    // =========================================================================
+
+    @Test
+    void clienteNoRegistraHitoDeCicloDeVida() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        eval.setTrackTabExit(true);
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .status(AttemptStatus.IN_PROGRESS).startedAt(LocalDateTime.now()).active(true).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+
+        assertThatThrownBy(() -> service.registerAttemptEvent("EST0001", 50L,
+                new RegisterAttemptEventRequest(AttemptEventType.ATTEMPT_SUBMITTED, null, null, null)))
+                .hasMessageContaining("registra el sistema");
+        verify(attemptEventRepository, never()).save(any(EvaluationAttemptEvent.class));
+    }
+
+    // =========================================================================
+    // 56. La metadata de origen enviada por el cliente se limpia (sin datos sensibles)
+    // =========================================================================
+
+    @Test
+    void metadataDeOrigenSeLimpia() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .status(AttemptStatus.IN_PROGRESS).startedAt(LocalDateTime.now()).active(true).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+        when(attemptEventRepository.findFirstByAttemptOrderByOccurredAtDesc(attempt)).thenReturn(Optional.empty());
+        when(attemptEventRepository.save(any(EvaluationAttemptEvent.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(attemptEventRepository.countByAttempt(attempt)).thenReturn(1L);
+        when(attemptEventRepository.countByAttemptAndEventTypeIn(eq(attempt), any())).thenReturn(0L);
+
+        // El origen llega con espacios y caracteres especiales: debe quedar como token limpio.
+        service.registerAttemptEvent("EST0001", 50L,
+                new RegisterAttemptEventRequest(AttemptEventType.TOOL_RETURNED, null, null,
+                        "visibility change; drop table"));
+
+        ArgumentCaptor<EvaluationAttemptEvent> captor = ArgumentCaptor.forClass(EvaluationAttemptEvent.class);
+        verify(attemptEventRepository).save(captor.capture());
+        String metadata = captor.getValue().getMetadata();
+        assertThat(metadata).isEqualTo("source=visibilitychangedroptable");
+        assertThat(metadata).doesNotContain(" ").doesNotContain(";");
+    }
+
+    // =========================================================================
+    // 57. El docente ve la trazabilidad de un intento de su evaluación
+    // =========================================================================
+
+    @Test
+    void docenteVeTrazabilidadDelIntento() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        stubTeacher(docente);
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        eval.setTrackTabExit(true);
+        LocalDateTime inicio = LocalDateTime.now().minusMinutes(10);
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .status(AttemptStatus.GRADED).startedAt(inicio).submittedAt(inicio.plusMinutes(8))
+                .active(true).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+
+        List<EvaluationAttemptEvent> eventos = List.of(
+                EvaluationAttemptEvent.builder().id(1L).attempt(attempt)
+                        .eventType(AttemptEventType.ATTEMPT_STARTED).occurredAt(inicio).build(),
+                EvaluationAttemptEvent.builder().id(2L).attempt(attempt)
+                        .eventType(AttemptEventType.TAB_HIDDEN).occurredAt(inicio.plusMinutes(1)).build(),
+                EvaluationAttemptEvent.builder().id(3L).attempt(attempt)
+                        .eventType(AttemptEventType.TAB_VISIBLE).occurredAt(inicio.plusMinutes(2)).build(),
+                EvaluationAttemptEvent.builder().id(4L).attempt(attempt)
+                        .eventType(AttemptEventType.TOOL_OPENED).metadata("tool=PERIODIC_TABLE")
+                        .occurredAt(inicio.plusMinutes(3)).build(),
+                EvaluationAttemptEvent.builder().id(5L).attempt(attempt)
+                        .eventType(AttemptEventType.EXIT_ATTEMPTED).occurredAt(inicio.plusMinutes(4)).build(),
+                EvaluationAttemptEvent.builder().id(6L).attempt(attempt)
+                        .eventType(AttemptEventType.ATTEMPT_SUBMITTED).occurredAt(inicio.plusMinutes(8)).build());
+        when(attemptEventRepository.findByAttemptOrderByOccurredAtAsc(attempt)).thenReturn(eventos);
+
+        AttemptTraceabilityResponse res = service.getAttemptTraceability("docente1", 50L);
+
+        assertThat(res.totalEvents()).isEqualTo(6);
+        assertThat(res.tabExitCount()).isEqualTo(1);
+        assertThat(res.tabReturnCount()).isEqualTo(1);
+        assertThat(res.exitAttemptCount()).isEqualTo(1);
+        assertThat(res.toolsUsed()).containsExactly("PERIODIC_TABLE");
+        assertThat(res.finalStatus()).isEqualTo(AttemptStatus.GRADED);
+        // Tiempo usado calculado en el backend con timestamps del intento: 8 minutos = 480 s.
+        assertThat(res.timeUsedSeconds()).isEqualTo(480L);
+        assertThat(res.events()).hasSize(6);
+    }
+
+    // =========================================================================
+    // 58. El docente no ve la trazabilidad de un intento de otra evaluación
+    // =========================================================================
+
+    @Test
+    void docenteNoVeTrazabilidadDeIntentoAjeno() {
+        TeacherProfile docenteDueno = teacher(1L, "docente1");
+        TeacherProfile otroDocente = teacher(2L, "docente2");
+        stubTeacher(otroDocente);
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        Evaluation eval = evaluation(10L, docenteDueno, EvaluationStatus.PUBLISHED, 1);
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .status(AttemptStatus.GRADED).startedAt(LocalDateTime.now()).active(true).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+
+        assertThatThrownBy(() -> service.getAttemptTraceability("docente2", 50L))
+                .hasMessageContaining("No tienes permiso");
+        verify(attemptEventRepository, never()).findByAttemptOrderByOccurredAtAsc(any());
     }
 }
