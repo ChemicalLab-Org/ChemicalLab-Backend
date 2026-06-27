@@ -107,10 +107,30 @@ Intento de un estudiante sobre una evaluación.
 | `status` | Estado (`AttemptStatus`: `IN_PROGRESS`, `SUBMITTED`, `PENDING_MANUAL_REVIEW`, `GRADED`) |
 | `startedAt` / `submittedAt` | Fechas de inicio y envío |
 | `gradedAt` | Fecha de calificación final (coincide con el envío en alternativa única; en intentos con preguntas abiertas se fija al completar la revisión manual; `null` mientras está `PENDING_MANUAL_REVIEW`) |
-| `score` / `maxScore` | Puntaje obtenido y máximo (al enviar/calificar) |
+| `score` / `maxScore` | Puntaje obtenido y máximo **en puntos** (al enviar/calificar) |
+| `finalScore` | Nota final en **escala 0–20** = nota base (`score/maxScore*20`) + suma de ajustes manuales activos, acotada a `[0, 20]`. Se recalcula tras cada revisión, ajuste o cierre |
+| `overallFeedback` | Retroalimentación general del docente para el estudiante (TEXT, máx. 1500); visible al estudiante solo con la calificación cerrada |
+| `gradeClosed` | Si la calificación ya fue cerrada. Mientras es `false`, el docente puede ajustar y el estudiante ve "pendiente de revisión"; al cerrarse, la nota final queda visible y se bloquea la edición. Por defecto `true` en intentos antiguos (columna con default) |
+| `gradeClosedAt` / `gradeClosedBy` | Momento y docente del cierre. `gradeClosedBy` es `null` en cierres automáticos (solo alternativa única) |
 | `questionOrder` | Orden de preguntas fijado para el intento (IDs separados por comas) |
 | `currentQuestionIndex` | Solo `ONE_BY_ONE`: índice (0-based) de la pregunta actual; las anteriores quedan bloqueadas |
 | `active` | Marca de actividad |
+
+### EvaluationAttemptAdjustment
+Ajuste manual de puntaje que el docente aplica a un intento completo, por encima del
+puntaje por pregunta. Permite sumar o restar puntos a la nota final con una justificación
+obligatoria. Vive en su propia tabla (`evaluation_attempt_adjustments`); **no sobrescribe**
+la nota: la nota final se recompone a partir de los ajustes activos.
+
+| Campo | Descripción |
+|-------|-------------|
+| `id` | Identificador |
+| `attempt` | Intento al que pertenece |
+| `amount` | Monto en escala 0–20 (`numeric(5,2)`), con signo: positivo bonifica, negativo penaliza; nunca cero |
+| `type` | `AdjustmentType` (`BONUS`/`PENALTY`), derivado del signo del monto |
+| `reason` | Motivo **obligatorio** del ajuste (TEXT) |
+| `createdBy` / `createdAt` | Docente responsable y momento del registro |
+| `active` | Anulación lógica: un ajuste anulado deja de afectar la nota pero permanece registrado |
 
 ### EvaluationAttemptEvent
 Evento de trazabilidad registrado durante un intento. Es trazabilidad **a nivel de
@@ -170,8 +190,12 @@ Respuesta de un estudiante a una pregunta dentro de un intento.
 6. Asignar la evaluación a uno o varios grados/secciones.
 7. Revisar manualmente los intentos con preguntas abiertas: asignar puntaje y
    retroalimentación por respuesta, lo que recalcula la nota y, al completar todas, deja
-   el intento en `GRADED`.
-8. Archivar la evaluación o desactivar una asignación.
+   el intento en `GRADED` (revisado pero aún **no cerrado**).
+8. Ajustar la nota final del intento (opcional): agregar ajustes manuales positivos o
+   negativos con motivo, y escribir una retroalimentación general para el estudiante.
+9. **Cerrar la calificación**: fija la nota final, la deja visible al estudiante y bloquea
+   la edición posterior (ver «Ajuste manual de puntajes…»).
+10. Archivar la evaluación o desactivar una asignación.
 
 ## Flujo del estudiante
 
@@ -184,8 +208,11 @@ Respuesta de un estudiante a una pregunta dentro de un intento.
    - si solo tiene alternativa única, se califica automáticamente y queda en `GRADED`;
    - si tiene preguntas abiertas, la parte cerrada se califica y el intento queda en
      `PENDING_MANUAL_REVIEW` hasta la revisión del docente.
-6. Consultar sus resultados: estado de revisión, y la nota final con la retroalimentación
-   por pregunta cuando el docente termina la revisión.
+6. Consultar sus resultados:
+   - mientras la calificación **no esté cerrada**, ve el estado «pendiente de revisión» sin
+     nota final;
+   - una vez **cerrada**, ve su nota final (0–20), la retroalimentación general, los puntos
+     y la retroalimentación por pregunta abierta, sin criterios internos ni claves.
 
 ## Endpoints principales
 
@@ -212,7 +239,11 @@ Base: `/api/evaluations`
 | GET | `/teacher/manual-review` | Bandeja de intentos pendientes de revisión manual |
 | GET | `/teacher/attempts/{attemptId}/review` | Detalle de un intento para revisar sus respuestas abiertas (incluye el criterio de corrección) |
 | PATCH | `/teacher/attempts/{attemptId}/answers/{answerId}/manual-grade` | Asignar puntaje y retroalimentación a una respuesta abierta |
-| PATCH | `/teacher/attempts/{attemptId}/complete-review` | Cerrar la revisión del intento y recalcular la nota final |
+| PATCH | `/teacher/attempts/{attemptId}/complete-review` | Marcar la revisión como completa y recalcular la nota (no cierra la calificación) |
+| POST | `/teacher/attempts/{attemptId}/adjustments` | Agregar un ajuste manual de puntaje (bonificación/penalización) con motivo |
+| DELETE | `/teacher/attempts/{attemptId}/adjustments/{adjustmentId}` | Anular un ajuste manual aplicado |
+| PATCH | `/teacher/attempts/{attemptId}/feedback` | Guardar la retroalimentación general del intento |
+| PATCH | `/teacher/attempts/{attemptId}/close-grade` | Cerrar la calificación: fija la nota final y la deja visible al estudiante |
 
 ### Estudiante (`/student`)
 | Método | Ruta | Acción |
@@ -248,9 +279,14 @@ Base: `/api/evaluations`
   **no recibe** el campo `correct` de las alternativas ni el `expectedAnswer`/criterio de
   corrección de las preguntas abiertas.
 - La revisión manual de un intento solo la puede hacer el docente **dueño** de la
-  evaluación; no puede revisar intentos de evaluaciones ajenas.
+  evaluación; no puede revisar, ajustar ni cerrar intentos de evaluaciones ajenas.
 - El estudiante no ve el puntaje ni la retroalimentación de una respuesta abierta hasta
-  que el docente la revisa.
+  que el docente la revisa, ni la **nota final** ni la retroalimentación general hasta que
+  la calificación está **cerrada**.
+- Los ajustes manuales, la retroalimentación y el cierre solo proceden mientras la
+  calificación no esté cerrada; una vez cerrada se bloquea la edición (no hay reapertura).
+- El estudiante nunca recibe los criterios internos (`expectedAnswer`), las claves de
+  alternativas, ni el detalle técnico de los ajustes.
 
 ## Validaciones de negocio
 
@@ -302,11 +338,17 @@ evaluación, nunca preguntas, claves ni respuestas):
 - `EVALUATION_ANSWER_REVIEWED` — el docente revisó una respuesta abierta (metadato solo con
   `attemptId`/`answerId`; **nunca** el texto de la respuesta ni la retroalimentación).
 - `EVALUATION_REVIEW_COMPLETED` — se completó la revisión manual y se recalculó la nota final.
+- `EVALUATION_ADJUSTMENT_ADDED` — se agregó un ajuste manual de puntaje (metadato con
+  `attemptId`, `adjustmentId` y `type=BONUS/PENALTY`; **nunca** el monto ni el motivo).
+- `EVALUATION_ADJUSTMENT_REMOVED` — se anuló un ajuste manual de puntaje.
+- `EVALUATION_FEEDBACK_UPDATED` — se actualizó la retroalimentación general (sin su texto).
+- `EVALUATION_GRADE_CLOSED` — se cerró la calificación de un intento.
 
 Estos logs usan descripciones seguras del tipo «El docente revisó una respuesta abierta de
-la evaluación "Nombre".» o «Se actualizó la calificación manual de un intento.». **No** se
-registran el texto de la respuesta del estudiante, la retroalimentación completa, los
-criterios de corrección, las claves ni el payload.
+la evaluación "Nombre".», «Se agregó un ajuste de puntaje al intento de una evaluación.» o
+«Se cerró la calificación de un intento.». **No** se registran el texto de la respuesta del
+estudiante, la retroalimentación completa, los montos, los motivos de ajuste, los criterios
+de corrección, las claves ni el payload.
 
 Las **incidencias de salida de pestaña** se registran como eventos del intento
 (`evaluation_attempt_events`), **no** como logs globales de auditoría, para no saturar el
@@ -541,9 +583,10 @@ el docente**.
   pregunta) y una retroalimentación opcional. Tras guardar, **recalcula** la nota del
   intento; cuando ya no quedan abiertas pendientes, el intento pasa a **`GRADED`** y se fija
   `gradedAt`.
-- `PATCH …/complete-review` cierra explícitamente la revisión (exige que no queden abiertas
-  pendientes) y recalcula la nota final. Es idempotente si el intento ya estaba `GRADED`;
-  permite además **ajustar** un puntaje ya asignado y vuelve a recalcular.
+- `PATCH …/complete-review` marca la revisión como completa (exige que no queden abiertas
+  pendientes) y recalcula la nota. Deja el intento en `GRADED` pero **no lo cierra**: la nota
+  final solo se hace visible al estudiante al **cerrar la calificación** (ver la sección
+  siguiente).
 
 **Cálculo de la nota final.** El sistema usa puntaje por pregunta: `maxScore` es la suma de
 los `points` de todas las preguntas activas (de cualquier tipo) y `score` es la suma de lo
@@ -552,10 +595,11 @@ El `percentage = score / maxScore * 100` (un decimal). Las preguntas abiertas si
 aportan 0 mientras están pendientes, por lo que el puntaje mostrado en
 `PENDING_MANUAL_REVIEW` es **parcial** y no debe tomarse como final hasta el estado `GRADED`.
 
-> Escala: el módulo trabaja con **puntaje por pregunta y porcentaje** (no una escala fija
-> 0–20). La nota final se obtiene proporcionalmente como `score / maxScore`; si se requiere
-> expresarla sobre una escala (p. ej. 0–20), se multiplica ese cociente por el tope de la
-> escala.
+> Escala: el módulo trabaja internamente con **puntaje por pregunta y porcentaje**, y expone
+> además una **nota final en escala 0–20** (`finalScore`) derivada proporcionalmente como
+> `score / maxScore * 20`. Sobre esa escala 0–20 se aplican los ajustes manuales (ver la
+> sección siguiente). El puntaje en puntos y el porcentaje se conservan sin cambios para no
+> romper los resultados existentes.
 
 ### Estados del intento
 
@@ -571,12 +615,80 @@ si tiene abiertas sin revisar, queda `PENDING_MANUAL_REVIEW` (el docente las cal
 normalmente con 0 si quedaron en blanco); si no, queda `GRADED`. El abandono no se confunde
 con la revisión pendiente: son situaciones independientes que pueden coincidir.
 
+## Ajuste manual de puntajes, retroalimentación general y cierre de calificación
+
+Tras revisar las respuestas, el docente puede **ajustar la nota final** del intento, escribir
+una **retroalimentación general** y **cerrar la calificación** para dejarla visible al
+estudiante. Todo esto solo procede si el intento es del docente **dueño** de la evaluación y
+mientras la calificación **no esté cerrada**.
+
+### Nota final (escala 0–20)
+
+```
+notaBase   = score / maxScore * 20        (0 si maxScore es 0)
+ajustes    = Σ amount de los ajustes activos del intento
+finalScore = clamp(notaBase + ajustes, 0, 20)   → redondeada a 2 decimales
+```
+
+- El puntaje en **puntos** (`score`/`maxScore`) y el **porcentaje** no cambian: el ajuste se
+  aplica sobre la escala 0–20, no sobre los puntos por pregunta.
+- La nota final **nunca** es menor a 0 ni mayor a 20 (se acota con *clamp*); por eso un ajuste
+  no se rechaza por dejar la nota fuera de rango: la nota resultante se acota.
+- `finalScore` se recalcula y persiste tras cada revisión de respuesta, alta/anulación de
+  ajuste y cierre. Los intentos terminales antiguos sin `finalScore` la completan al
+  consultarse (`ensureScored`), sin recalcular los puntos.
+
+### Ajustes manuales
+
+- `POST …/adjustments` con `{ amount, reason }`. El monto va en escala 0–20 con signo
+  (positivo = bonificación, negativo = penalización); el **motivo es obligatorio** y el
+  **monto no puede ser cero**. El tipo (`BONUS`/`PENALTY`) se deriva del signo. Cada ajuste
+  registra docente y fecha; **no sobrescribe** la nota, queda como registro propio.
+- `DELETE …/adjustments/{adjustmentId}` anula un ajuste (borrado lógico, `active = false`):
+  deja de afectar la nota pero permanece para la trazabilidad.
+- Tras agregar o anular un ajuste se recalcula `finalScore`.
+
+### Retroalimentación general
+
+- `PATCH …/feedback` con `{ overallFeedback }` (opcional, máx. 1500). Se guarda en el intento
+  y solo se le muestra al estudiante **cuando la calificación está cerrada**. No debe usarse
+  para exponer criterios internos.
+
+### Cierre de calificación
+
+- `PATCH …/close-grade`:
+  - exige que **no queden preguntas abiertas por revisar** (si faltan, error);
+  - recalcula puntaje y nota final, deja el intento en `GRADED`;
+  - marca `gradeClosed = true`, registra `gradeClosedAt`/`gradeClosedBy`;
+  - a partir de ahí, el estudiante ve su nota final y la retroalimentación, y **se bloquea**
+    toda edición de puntajes, ajustes y retroalimentación.
+- Los intentos de **solo alternativa única** se cierran **automáticamente** al enviarse
+  (`gradeClosed = true`, sin `gradeClosedBy`), conservando el comportamiento previo: su
+  resultado queda visible de inmediato.
+- **Reapertura:** no se implementa en esta sesión. Una vez cerrada, la calificación no se
+  puede modificar (pendiente documentado).
+
+### Logs de auditoría (acciones docentes)
+
+Se registran como logs seguros (categoría `EVALUATION`), **sin** texto de respuestas,
+retroalimentación, montos ni criterios internos —solo el tipo y los identificadores:
+
+| Evento | Cuándo |
+|--------|--------|
+| `EVALUATION_ANSWER_REVIEWED` | Se actualizó el puntaje manual de una respuesta abierta |
+| `EVALUATION_ADJUSTMENT_ADDED` | Se agregó un ajuste de puntaje (incluye `type=BONUS/PENALTY`) |
+| `EVALUATION_ADJUSTMENT_REMOVED` | Se anuló un ajuste de puntaje |
+| `EVALUATION_FEEDBACK_UPDATED` | Se actualizó la retroalimentación general |
+| `EVALUATION_GRADE_CLOSED` | Se cerró la calificación de un intento |
+
 ## Resultados y retroalimentación
 
 **Qué ve el docente**
 - Lista de resultados de su evaluación: por cada intento terminal, el estudiante
   (código, nombre, grado/sección), número de intento, estado, `score`/`maxScore`,
-  porcentaje y fechas de envío/calificación.
+  porcentaje, **nota final** (0–20, si está cerrada) y si la calificación está cerrada,
+  además de las fechas de envío/calificación. Esto permite distinguir los intentos
+  **pendientes de revisión**, **revisados pero no cerrados** y **cerrados**.
 - Agregados de la evaluación: total de intentos, promedio de puntaje, porcentaje
   promedio, mayor y menor puntaje, y conteo de aprobados/desaprobados (umbral de
   aprobación: 60 %, usado solo para esos contadores).
@@ -588,12 +700,17 @@ con la revisión pendiente: son situaciones independientes que pueden coincidir.
   abiertas a calificar (ver sección anterior).
 
 **Qué ve el estudiante**
-- Siempre: título, `score`, `maxScore`, porcentaje, número de intento, **estado** y fecha
-  de envío de sus propios intentos. Si el intento está `PENDING_MANUAL_REVIEW`, ve el estado
-  "pendiente de revisión" y la nota **no** se presenta como definitiva.
-- Detalle por pregunta: su respuesta (alternativa elegida o su propio texto), si fue
-  correcta (alternativa única) y el puntaje obtenido. En preguntas abiertas, el puntaje y la
-  **retroalimentación** del docente aparecen solo una vez que esa respuesta fue **revisada**.
+- Mientras la calificación **no esté cerrada** (`gradeClosed = false`): el estado
+  «pendiente de revisión», sin nota, sin nota final, sin retroalimentación general y sin el
+  detalle de puntajes por pregunta. Sí ve su propia respuesta (alternativa elegida o texto).
+- Una vez **cerrada** (`gradeClosed = true`): título, número de intento, estado, `score`,
+  `maxScore`, porcentaje y **nota final 0–20** (`finalScore`), la **retroalimentación
+  general**, y por cada pregunta su respuesta, si fue correcta (alternativa única), el
+  puntaje obtenido y la retroalimentación de las abiertas revisadas.
+- Los intentos de solo alternativa única están cerrados desde el envío, por lo que su
+  resultado es visible de inmediato (sin cambios respecto al comportamiento previo).
+- Nunca ve criterios internos (`expectedAnswer`), claves de alternativas mientras le queden
+  intentos (ver abajo), ni el detalle técnico de los ajustes.
 
 **Criterio de retroalimentación con más de un intento**
 

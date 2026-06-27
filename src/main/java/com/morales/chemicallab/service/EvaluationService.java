@@ -8,6 +8,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -50,6 +52,7 @@ public class EvaluationService {
     private final EvaluationAttemptRepository attemptRepository;
     private final EvaluationAttemptEventRepository attemptEventRepository;
     private final EvaluationAnswerRepository answerRepository;
+    private final EvaluationAttemptAdjustmentRepository adjustmentRepository;
     private final UserAccountRepository userAccountRepository;
     private final TeacherProfileRepository teacherProfileRepository;
     private final StudentProfileRepository studentProfileRepository;
@@ -65,6 +68,11 @@ public class EvaluationService {
 
     // Umbral de aprobación (en %) usado solo para los contadores aprobados/desaprobados.
     private static final double APPROVAL_PERCENTAGE = 60.0;
+
+    // Nota máxima de la escala vigesimal (0–20) en la que se expresa la nota final del
+    // intento. La nota base se deriva del puntaje en puntos (score/maxScore*20) y los
+    // ajustes manuales se aplican sobre esta misma escala.
+    private static final BigDecimal MAX_GRADE = new BigDecimal("20");
 
     // Margen de gracia (segundos) sobre el límite de tiempo, para tolerar latencia de red
     // y desfase de reloj en el envío automático del frontend. Pasado este margen, el
@@ -548,12 +556,20 @@ public class EvaluationService {
         LocalDateTime now = LocalDateTime.now();
         attempt.setSubmittedAt(now);
         if (pendingReview) {
+            // Queda pendiente de revisión manual: la calificación no se cierra (el estudiante
+            // no verá su nota final hasta que el docente cierre la calificación).
             attempt.setStatus(AttemptStatus.PENDING_MANUAL_REVIEW);
             attempt.setGradedAt(null);
+            attempt.setGradeClosed(false);
         } else {
+            // Solo alternativa única: se califica y se cierra automáticamente, como hasta ahora,
+            // para que el resultado quede visible de inmediato sin acción del docente.
             attempt.setStatus(AttemptStatus.GRADED);
             attempt.setGradedAt(now);
+            attempt.setGradeClosed(true);
+            attempt.setGradeClosedAt(now);
         }
+        recomputeFinalScore(attempt);
         attemptRepository.save(attempt);
 
         // Trazabilidad del intento: si el envío llega fuera de tiempo, se deja constancia
@@ -653,12 +669,20 @@ public class EvaluationService {
         LocalDateTime now = LocalDateTime.now();
         attempt.setSubmittedAt(now);
         if (pendingReview) {
+            // Queda pendiente de revisión manual: la calificación no se cierra (el estudiante
+            // no verá su nota final hasta que el docente cierre la calificación).
             attempt.setStatus(AttemptStatus.PENDING_MANUAL_REVIEW);
             attempt.setGradedAt(null);
+            attempt.setGradeClosed(false);
         } else {
+            // Solo alternativa única: se califica y se cierra automáticamente, como hasta ahora,
+            // para que el resultado quede visible de inmediato sin acción del docente.
             attempt.setStatus(AttemptStatus.GRADED);
             attempt.setGradedAt(now);
+            attempt.setGradeClosed(true);
+            attempt.setGradeClosedAt(now);
         }
+        recomputeFinalScore(attempt);
         attemptRepository.save(attempt);
 
         Evaluation evaluation = attempt.getEvaluation();
@@ -948,6 +972,7 @@ public class EvaluationService {
         TeacherProfile teacher = requireTeacher(username);
         EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
         requireGradedResult(attempt);
+        requireNotClosed(attempt);
 
         EvaluationAnswer answer = answerRepository.findById(answerId)
                 .orElseThrow(() -> new EntityNotFoundException("La respuesta no existe."));
@@ -993,6 +1018,8 @@ public class EvaluationService {
         EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
         requireGradedResult(attempt);
 
+        requireNotClosed(attempt);
+
         if (hasPendingManualReview(attempt)) {
             throw new IllegalArgumentException("Aún quedan respuestas abiertas por revisar.");
         }
@@ -1003,6 +1030,7 @@ public class EvaluationService {
         if (attempt.getGradedAt() == null) {
             attempt.setGradedAt(LocalDateTime.now());
         }
+        recomputeFinalScore(attempt);
         attemptRepository.save(attempt);
 
         if (!wasGraded) {
@@ -1023,13 +1051,18 @@ public class EvaluationService {
         if (hasPendingManualReview(attempt)) {
             attempt.setStatus(AttemptStatus.PENDING_MANUAL_REVIEW);
             attempt.setGradedAt(null);
+            recomputeFinalScore(attempt);
             attemptRepository.save(attempt);
             return false;
         }
+        // Todas las abiertas quedaron revisadas: el intento pasa a GRADED, pero no se cierra
+        // automáticamente. El docente puede aún ajustar puntajes/ajustes y debe cerrar la
+        // calificación de forma explícita para que el estudiante vea su nota final.
         attempt.setStatus(AttemptStatus.GRADED);
         if (attempt.getGradedAt() == null) {
             attempt.setGradedAt(LocalDateTime.now());
         }
+        recomputeFinalScore(attempt);
         attemptRepository.save(attempt);
         return !wasGraded;
     }
@@ -1040,6 +1073,207 @@ public class EvaluationService {
                 "Se actualizó la calificación manual de un intento de la evaluación «"
                         + evaluation.getTitle() + "».",
                 "attemptId=" + attempt.getId());
+    }
+
+    // =========================================================================
+    // AJUSTES MANUALES, RETROALIMENTACIÓN GENERAL Y CIERRE — DOCENTE
+    // =========================================================================
+
+    /**
+     * Agrega un ajuste manual de puntaje al intento completo (bonificación si el monto es
+     * positivo, penalización si es negativo) con un motivo obligatorio. El ajuste no
+     * sobrescribe la nota: queda registrado con su autor y fecha, y la nota final se
+     * recompone como la nota base (0–20) más la suma de los ajustes activos, acotada a
+     * [0, 20]. Solo el docente dueño de la evaluación puede ajustar, y solo mientras la
+     * calificación no esté cerrada.
+     */
+    public TeacherAttemptReviewResponse addAdjustment(String username, Long attemptId,
+                                                      CreateAdjustmentRequest request) {
+        TeacherProfile teacher = requireTeacher(username);
+        EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
+        requireGradedResult(attempt);
+        requireNotClosed(attempt);
+
+        BigDecimal amount = request.amount().setScale(2, RoundingMode.HALF_UP);
+        if (amount.signum() == 0) {
+            throw new IllegalArgumentException("El monto del ajuste no puede ser cero.");
+        }
+        String reason = trimOrNull(request.reason());
+        if (reason == null) {
+            throw new IllegalArgumentException("El motivo del ajuste es obligatorio.");
+        }
+        AdjustmentType type = amount.signum() > 0 ? AdjustmentType.BONUS : AdjustmentType.PENALTY;
+
+        EvaluationAttemptAdjustment adjustment = EvaluationAttemptAdjustment.builder()
+                .attempt(attempt).amount(amount).type(type).reason(reason)
+                .createdBy(teacher).active(true).build();
+        adjustmentRepository.save(adjustment);
+
+        recomputeFinalScore(attempt);
+        attemptRepository.save(attempt);
+
+        Evaluation evaluation = attempt.getEvaluation();
+        // Log seguro: registra el tipo (enum) y los identificadores, nunca el monto exacto ni
+        // el motivo escrito por el docente.
+        auditLogService.recordInfo(LogEventType.EVALUATION_ADJUSTMENT_ADDED, TARGET_EVALUATION,
+                evaluation.getId(), evaluation.getTitle(), "Agregar ajuste de puntaje",
+                "Se agregó un ajuste de puntaje al intento de la evaluación «"
+                        + evaluation.getTitle() + "».",
+                "attemptId=" + attempt.getId() + ";adjustmentId=" + adjustment.getId()
+                        + ";type=" + type.name());
+
+        return toAttemptReview(attempt);
+    }
+
+    /**
+     * Anula (de forma lógica) un ajuste manual de un intento: deja de afectar la nota final
+     * pero permanece registrado para conservar la trazabilidad. Solo el docente dueño puede
+     * anularlo y solo mientras la calificación no esté cerrada.
+     */
+    public TeacherAttemptReviewResponse deleteAdjustment(String username, Long attemptId,
+                                                         Long adjustmentId) {
+        TeacherProfile teacher = requireTeacher(username);
+        EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
+        requireGradedResult(attempt);
+        requireNotClosed(attempt);
+
+        EvaluationAttemptAdjustment adjustment = adjustmentRepository.findById(adjustmentId)
+                .orElseThrow(() -> new EntityNotFoundException("El ajuste no existe."));
+        if (!adjustment.getAttempt().getId().equals(attempt.getId())) {
+            throw new IllegalArgumentException("El ajuste no pertenece a este intento.");
+        }
+
+        if (Boolean.TRUE.equals(adjustment.getActive())) {
+            adjustment.setActive(false);
+            adjustmentRepository.save(adjustment);
+            recomputeFinalScore(attempt);
+            attemptRepository.save(attempt);
+
+            Evaluation evaluation = attempt.getEvaluation();
+            auditLogService.recordInfo(LogEventType.EVALUATION_ADJUSTMENT_REMOVED, TARGET_EVALUATION,
+                    evaluation.getId(), evaluation.getTitle(), "Anular ajuste de puntaje",
+                    "Se anuló un ajuste de puntaje del intento de la evaluación «"
+                            + evaluation.getTitle() + "».",
+                    "attemptId=" + attempt.getId() + ";adjustmentId=" + adjustment.getId());
+        }
+        return toAttemptReview(attempt);
+    }
+
+    /**
+     * Guarda la retroalimentación general que el docente escribe para el estudiante sobre el
+     * intento. Es opcional (puede vaciarse) y solo se le muestra al estudiante una vez que la
+     * calificación esté cerrada. Solo el docente dueño puede editarla y solo si no está
+     * cerrada.
+     */
+    public TeacherAttemptReviewResponse updateOverallFeedback(String username, Long attemptId,
+                                                              UpdateAttemptFeedbackRequest request) {
+        TeacherProfile teacher = requireTeacher(username);
+        EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
+        requireGradedResult(attempt);
+        requireNotClosed(attempt);
+
+        attempt.setOverallFeedback(trimOrNull(request.overallFeedback()));
+        attemptRepository.save(attempt);
+
+        Evaluation evaluation = attempt.getEvaluation();
+        // Log seguro: nunca incluye el texto de la retroalimentación, solo el identificador.
+        auditLogService.recordInfo(LogEventType.EVALUATION_FEEDBACK_UPDATED, TARGET_EVALUATION,
+                evaluation.getId(), evaluation.getTitle(), "Actualizar retroalimentación general",
+                "Se actualizó la retroalimentación general de un intento de la evaluación «"
+                        + evaluation.getTitle() + "».",
+                "attemptId=" + attempt.getId());
+
+        return toAttemptReview(attempt);
+    }
+
+    /**
+     * Cierra la calificación de un intento: exige que no queden respuestas abiertas por
+     * revisar, recalcula el puntaje y la nota final (con los ajustes manuales), y deja la
+     * nota visible para el estudiante. Registra fecha y docente del cierre y bloquea la
+     * edición posterior de puntajes, ajustes y retroalimentación (no se implementa
+     * reapertura en esta sesión). Solo el docente dueño puede cerrar.
+     */
+    public TeacherAttemptReviewResponse closeGrade(String username, Long attemptId) {
+        TeacherProfile teacher = requireTeacher(username);
+        EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
+        requireGradedResult(attempt);
+
+        if (Boolean.TRUE.equals(attempt.getGradeClosed())) {
+            throw new IllegalArgumentException("La calificación ya está cerrada.");
+        }
+        if (hasPendingManualReview(attempt)) {
+            throw new IllegalArgumentException("Aún quedan respuestas abiertas por revisar.");
+        }
+
+        gradeAttempt(attempt);
+        attempt.setStatus(AttemptStatus.GRADED);
+        recomputeFinalScore(attempt);
+        LocalDateTime now = LocalDateTime.now();
+        if (attempt.getGradedAt() == null) {
+            attempt.setGradedAt(now);
+        }
+        attempt.setGradeClosed(true);
+        attempt.setGradeClosedAt(now);
+        attempt.setGradeClosedBy(teacher);
+        attemptRepository.save(attempt);
+
+        Evaluation evaluation = attempt.getEvaluation();
+        auditLogService.recordInfo(LogEventType.EVALUATION_GRADE_CLOSED, TARGET_EVALUATION,
+                evaluation.getId(), evaluation.getTitle(), "Cerrar calificación",
+                "Se cerró la calificación de un intento de la evaluación «"
+                        + evaluation.getTitle() + "».",
+                "attemptId=" + attempt.getId());
+
+        return toAttemptReview(attempt);
+    }
+
+    /** Impide modificar la calificación de un intento ya cerrado (no hay reapertura). */
+    private void requireNotClosed(EvaluationAttempt attempt) {
+        if (Boolean.TRUE.equals(attempt.getGradeClosed())) {
+            throw new IllegalArgumentException(
+                    "La calificación ya está cerrada; no se puede modificar.");
+        }
+    }
+
+    /** Nota base del intento en escala 0–20, derivada del puntaje en puntos. */
+    private BigDecimal baseScore20(EvaluationAttempt attempt) {
+        Integer score = attempt.getScore();
+        Integer maxScore = attempt.getMaxScore();
+        if (score == null || maxScore == null || maxScore == 0) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        return BigDecimal.valueOf(score)
+                .multiply(MAX_GRADE)
+                .divide(BigDecimal.valueOf(maxScore), 2, RoundingMode.HALF_UP);
+    }
+
+    /** Suma de los ajustes manuales activos del intento (en escala 0–20, con su signo). */
+    private BigDecimal adjustmentsTotal(EvaluationAttempt attempt) {
+        return adjustmentRepository.findByAttemptAndActiveTrueOrderByCreatedAtAsc(attempt).stream()
+                .map(EvaluationAttemptAdjustment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Nota final del intento en escala 0–20: nota base más la suma de los ajustes activos,
+     * acotada a [0, 20] para que nunca sea negativa ni supere el máximo de la escala.
+     */
+    private BigDecimal computeFinalScore(EvaluationAttempt attempt) {
+        BigDecimal raw = baseScore20(attempt).add(adjustmentsTotal(attempt));
+        BigDecimal clamped = raw.max(BigDecimal.ZERO).min(MAX_GRADE);
+        return clamped.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /** Recalcula y fija la nota final del intento (el llamador persiste el intento). */
+    private void recomputeFinalScore(EvaluationAttempt attempt) {
+        attempt.setFinalScore(computeFinalScore(attempt));
+    }
+
+    private AttemptAdjustmentResponse toAdjustmentResponse(EvaluationAttemptAdjustment a) {
+        return new AttemptAdjustmentResponse(
+                a.getId(), a.getAmount(), a.getType(), a.getReason(),
+                a.getCreatedBy() == null ? null : fullName(a.getCreatedBy()), a.getCreatedAt());
     }
 
     /** Preguntas abiertas activas de una evaluación, en su orden. */
@@ -1103,12 +1337,18 @@ public class EvaluationService {
                     reviewed, a == null ? null : a.getPointsAwarded(),
                     a == null ? null : a.getTeacherFeedback()));
         }
+        List<AttemptAdjustmentResponse> adjustments =
+                adjustmentRepository.findByAttemptAndActiveTrueOrderByCreatedAtAsc(attempt).stream()
+                        .map(this::toAdjustmentResponse)
+                        .toList();
         return new TeacherAttemptReviewResponse(
                 attempt.getId(), evaluation.getId(), evaluation.getTitle(),
                 s.getId(), s.getStudentCode(), fullName(s), s.getGrade(), s.getSection(),
                 attempt.getAttemptNumber(), attempt.getStatus(),
                 attempt.getScore(), attempt.getMaxScore(),
-                attempt.getSubmittedAt(), attempt.getGradedAt(), pending, openAnswers);
+                baseScore20(attempt), adjustmentsTotal(attempt), computeFinalScore(attempt),
+                attempt.getOverallFeedback(), attempt.getGradeClosed(), attempt.getGradeClosedAt(),
+                attempt.getSubmittedAt(), attempt.getGradedAt(), pending, openAnswers, adjustments);
     }
 
     /**
@@ -1146,6 +1386,10 @@ public class EvaluationService {
         ensureScored(attempt);
 
         Evaluation evaluation = attempt.getEvaluation();
+        // Mientras la calificación no esté cerrada, el estudiante no ve su nota final ni el
+        // detalle de puntajes/retroalimentación: el intento aparece como pendiente de
+        // revisión. Solo se revela todo (nota, puntajes por pregunta, comentarios) al cerrar.
+        boolean closed = Boolean.TRUE.equals(attempt.getGradeClosed());
         boolean canView = canViewDetailedFeedback(evaluation, student);
 
         List<StudentAnswerResultResponse> answers = answerDetailsOf(attempt).stream()
@@ -1153,25 +1397,31 @@ public class EvaluationService {
                     boolean open = d.question.getQuestionType() == QuestionType.OPEN_TEXT;
                     return new StudentAnswerResultResponse(
                             d.question.getId(), d.question.getQuestionText(), d.question.getQuestionType(),
-                            // El estudiante ve su alternativa elegida o su propio texto.
+                            // El estudiante siempre ve su alternativa elegida o su propio texto.
                             d.selected == null ? null : d.selected.getOptionText(),
                             open ? d.answerText : null,
-                            open ? null : d.isCorrect,
+                            closed && !open ? d.isCorrect : null,
                             d.question.getPoints(),
-                            // En una abierta, el puntaje y la retroalimentación solo se muestran
-                            // una vez revisada por el docente.
-                            open && !d.reviewed ? null : d.pointsAwarded,
-                            d.reviewed,
-                            open && d.reviewed ? d.teacherFeedback : null,
-                            canView && !open && d.correctOption != null ? d.correctOption.getOptionText() : null,
-                            canView ? d.question.getExplanation() : null);
+                            // El puntaje por pregunta y la retroalimentación solo se muestran con
+                            // la calificación cerrada (y, en abiertas, una vez revisadas).
+                            closed && !(open && !d.reviewed) ? d.pointsAwarded : null,
+                            closed && d.reviewed,
+                            closed && open && d.reviewed ? d.teacherFeedback : null,
+                            closed && canView && !open && d.correctOption != null
+                                    ? d.correctOption.getOptionText() : null,
+                            closed && canView ? d.question.getExplanation() : null);
                 })
                 .toList();
 
         return new StudentAttemptResultDetailResponse(
                 attempt.getId(), evaluation.getId(), evaluation.getTitle(), evaluation.getTopic(),
                 attempt.getAttemptNumber(), attempt.getStatus(),
-                attempt.getScore(), attempt.getMaxScore(), percentageOf(attempt),
+                closed ? attempt.getScore() : null,
+                closed ? attempt.getMaxScore() : null,
+                closed ? percentageOf(attempt) : null,
+                closed ? computeFinalScore(attempt) : null,
+                closed ? attempt.getOverallFeedback() : null,
+                closed,
                 attempt.getSubmittedAt(), canView, answers);
     }
 
@@ -1233,11 +1483,14 @@ public class EvaluationService {
 
     private TeacherStudentResultResponse toTeacherStudentResult(EvaluationAttempt attempt) {
         StudentProfile student = attempt.getStudent();
+        boolean closed = Boolean.TRUE.equals(attempt.getGradeClosed());
         return new TeacherStudentResultResponse(
                 attempt.getId(), student.getId(), student.getStudentCode(), fullName(student),
                 student.getGrade(), student.getSection(),
                 attempt.getAttemptNumber(), attempt.getStatus(),
                 attempt.getScore(), attempt.getMaxScore(), percentageOf(attempt),
+                // La nota final (con ajustes) solo es definitiva con la calificación cerrada.
+                closed ? computeFinalScore(attempt) : null, closed,
                 attempt.getSubmittedAt(), attempt.getGradedAt(), tabExitCountOf(attempt));
     }
 
@@ -1245,11 +1498,16 @@ public class EvaluationService {
         ensureScored(attempt);
         Evaluation evaluation = attempt.getEvaluation();
         StudentProfile student = attempt.getStudent();
+        boolean closed = Boolean.TRUE.equals(attempt.getGradeClosed());
         int attemptsUsed = (int) attemptRepository.countByEvaluationAndStudent(evaluation, student);
         return new StudentResultSummaryResponse(
                 attempt.getId(), evaluation.getId(), evaluation.getTitle(), evaluation.getTopic(),
                 attempt.getAttemptNumber(), attempt.getStatus(),
-                attempt.getScore(), attempt.getMaxScore(), percentageOf(attempt),
+                // Antes del cierre no se expone la nota: el estudiante ve "pendiente de revisión".
+                closed ? attempt.getScore() : null,
+                closed ? attempt.getMaxScore() : null,
+                closed ? percentageOf(attempt) : null,
+                closed ? computeFinalScore(attempt) : null, closed,
                 attempt.getSubmittedAt(), canViewDetailedFeedback(evaluation, student),
                 attemptsUsed, evaluation.getMaxAttempts());
     }
@@ -1313,6 +1571,12 @@ public class EvaluationService {
                 attempt.setGradedAt(attempt.getSubmittedAt() != null
                         ? attempt.getSubmittedAt() : LocalDateTime.now());
             }
+            recomputeFinalScore(attempt);
+            attemptRepository.save(attempt);
+        } else if (attempt.getFinalScore() == null) {
+            // Intentos terminales con puntaje pero sin nota final (anteriores a esta sesión):
+            // se completa la nota final en escala 0–20 sin recalcular el puntaje en puntos.
+            recomputeFinalScore(attempt);
             attemptRepository.save(attempt);
         }
     }
@@ -1426,6 +1690,10 @@ public class EvaluationService {
 
     private String fullName(StudentProfile student) {
         return (student.getNames() + " " + student.getLastNames()).trim();
+    }
+
+    private String fullName(TeacherProfile teacher) {
+        return (teacher.getNames() + " " + teacher.getLastNames()).trim();
     }
 
     private double round1(double value) {
