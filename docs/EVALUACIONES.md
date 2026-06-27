@@ -1,16 +1,21 @@
 # Evaluaciones
 
-Módulo del backend que permite a los docentes crear evaluaciones de alternativa
-única sobre temas de química, agregarles preguntas y alternativas, publicarlas y
-asignarlas a los grados y secciones que tienen a cargo. Los estudiantes resuelven
-únicamente las evaluaciones publicadas que corresponden a su grado y sección.
+Módulo del backend que permite a los docentes crear evaluaciones sobre temas de química
+con preguntas de **alternativa única** y de **respuesta abierta**, agregarles preguntas
+(y alternativas cuando corresponde), publicarlas y asignarlas a los grados y secciones
+que tienen a cargo. Los estudiantes resuelven únicamente las evaluaciones publicadas que
+corresponden a su grado y sección.
 
 > Estado actual: además de crear, publicar y rendir evaluaciones, el módulo ya
-> **califica automáticamente** cada intento al enviarse (estado `GRADED`) y expone los
-> **resultados/calificaciones** tanto para el docente (resultados de su evaluación y
-> detalle de cada intento) como para el estudiante (sus calificaciones). Quedan fuera
-> de alcance la exportación a Excel/PDF, las estadísticas avanzadas, la edición manual
-> de notas y los comentarios del docente.
+> **califica automáticamente** las preguntas de alternativa única al enviarse y soporta
+> **preguntas abiertas con calificación manual** del docente. Un intento con preguntas
+> abiertas sin calificar queda en estado `PENDING_MANUAL_REVIEW` (puntaje parcial, nota
+> no definitiva) hasta que el docente revise cada respuesta y asigne puntaje; entonces
+> pasa a `GRADED`. Expone los **resultados/calificaciones** para el docente (resultados
+> de su evaluación, detalle de cada intento y bandeja de revisión manual) y para el
+> estudiante (sus calificaciones y el estado de revisión). Quedan fuera de alcance la
+> calificación automática de texto, las rúbricas complejas, los archivos como respuesta,
+> la detección de plagio/similitud, la exportación a Excel/PDF y las estadísticas avanzadas.
 
 ## Propósito del módulo
 
@@ -45,17 +50,21 @@ Evaluación creada por un docente.
 | `createdAt` / `updatedAt` | Auditoría de fechas |
 
 ### EvaluationQuestion
-Pregunta de alternativa única de una evaluación.
+Pregunta de una evaluación. Puede ser de alternativa única (`MULTIPLE_CHOICE`, con sus
+alternativas) o de respuesta abierta (`OPEN_TEXT`, sin alternativas y con calificación
+manual).
 
 | Campo | Descripción |
 |-------|-------------|
 | `id` | Identificador |
 | `evaluation` | Evaluación a la que pertenece |
 | `questionText` | Enunciado (obligatorio, TEXT) |
-| `questionType` | Tipo (`QuestionType`: `MULTIPLE_CHOICE`) |
+| `questionType` | Tipo (`QuestionType`: `MULTIPLE_CHOICE`, `OPEN_TEXT`) |
 | `points` | Puntaje de la pregunta (mínimo 1) |
 | `orderIndex` | Orden de presentación |
 | `explanation` | Explicación opcional (TEXT) |
+| `expectedAnswer` | Solo `OPEN_TEXT`: respuesta esperada o criterio de corrección, **visible solo para el docente** (TEXT, opcional, máx. 3000) |
+| `required` | Si la pregunta es obligatoria (por defecto `true`); en `OPEN_TEXT` impide enviar el intento con la respuesta en blanco |
 | `active` | Marca de actividad (borrado lógico) |
 | `createdAt` / `updatedAt` | Auditoría de fechas |
 
@@ -95,9 +104,9 @@ Intento de un estudiante sobre una evaluación.
 | `assignment` | Asignación bajo la que se inició |
 | `student` | Estudiante (`StudentProfile`) |
 | `attemptNumber` | Número de intento |
-| `status` | Estado (`AttemptStatus`: `IN_PROGRESS`, `SUBMITTED`, `GRADED`) |
+| `status` | Estado (`AttemptStatus`: `IN_PROGRESS`, `SUBMITTED`, `PENDING_MANUAL_REVIEW`, `GRADED`) |
 | `startedAt` / `submittedAt` | Fechas de inicio y envío |
-| `gradedAt` | Fecha de calificación (coincide con el envío en alternativa única) |
+| `gradedAt` | Fecha de calificación final (coincide con el envío en alternativa única; en intentos con preguntas abiertas se fija al completar la revisión manual; `null` mientras está `PENDING_MANUAL_REVIEW`) |
 | `score` / `maxScore` | Puntaje obtenido y máximo (al enviar/calificar) |
 | `questionOrder` | Orden de preguntas fijado para el intento (IDs separados por comas) |
 | `currentQuestionIndex` | Solo `ONE_BY_ONE`: índice (0-based) de la pregunta actual; las anteriores quedan bloqueadas |
@@ -139,30 +148,44 @@ Respuesta de un estudiante a una pregunta dentro de un intento.
 | `id` | Identificador |
 | `attempt` | Intento |
 | `question` | Pregunta |
-| `selectedOption` | Alternativa elegida |
-| `answerText` | Texto libre (reservado para tipos futuros) |
-| `correct` | Resultado de la corrección (al enviar) |
-| `pointsAwarded` | Puntos otorgados (al enviar) |
+| `selectedOption` | Alternativa elegida (alternativa única) |
+| `answerText` | Texto escrito por el estudiante (preguntas abiertas, máx. 3000) |
+| `correct` | Resultado de la corrección de alternativa única (al enviar); `null` en preguntas abiertas |
+| `pointsAwarded` | Puntos otorgados: automáticos en alternativa única, asignados por el docente en preguntas abiertas |
+| `reviewed` | Si la respuesta ya fue calificada; `true` siempre en alternativa única, `false` en una abierta hasta que el docente la revise |
+| `teacherFeedback` | Retroalimentación opcional del docente para una respuesta abierta (TEXT, máx. 2000) |
+| `reviewedAt` / `reviewedBy` | Momento y docente de la revisión manual (`null` mientras no se revisa) |
 | `answeredAt` | Fecha de la respuesta |
 
 ## Flujo del docente
 
 1. Crear evaluación (queda en `DRAFT`).
 2. Editar evaluación.
-3. Agregar preguntas con sus alternativas (se exige exactamente una correcta).
+3. Agregar preguntas:
+   - de **alternativa única**: con sus alternativas (se exige exactamente una correcta);
+   - de **respuesta abierta**: con enunciado, puntaje y, opcionalmente, un criterio de
+     corrección (`expectedAnswer`) visible solo para el docente; sin alternativas.
 4. Editar o desactivar preguntas.
 5. Publicar la evaluación (validaciones de publicación, ver abajo).
 6. Asignar la evaluación a uno o varios grados/secciones.
-7. Archivar la evaluación o desactivar una asignación.
+7. Revisar manualmente los intentos con preguntas abiertas: asignar puntaje y
+   retroalimentación por respuesta, lo que recalcula la nota y, al completar todas, deja
+   el intento en `GRADED`.
+8. Archivar la evaluación o desactivar una asignación.
 
 ## Flujo del estudiante
 
 1. Listar las evaluaciones publicadas asignadas a su grado/sección.
-2. Ver el detalle de una evaluación asignada (sin las respuestas correctas).
+2. Ver el detalle de una evaluación asignada (sin las respuestas correctas ni los
+   criterios de corrección de las preguntas abiertas).
 3. Iniciar un intento.
-4. Guardar respuestas de forma incremental.
-5. Enviar el intento (se califica automáticamente y queda en `GRADED`).
-6. Consultar sus resultados/calificaciones y el detalle de un intento propio.
+4. Guardar respuestas de forma incremental (alternativa elegida o texto en las abiertas).
+5. Enviar el intento:
+   - si solo tiene alternativa única, se califica automáticamente y queda en `GRADED`;
+   - si tiene preguntas abiertas, la parte cerrada se califica y el intento queda en
+     `PENDING_MANUAL_REVIEW` hasta la revisión del docente.
+6. Consultar sus resultados: estado de revisión, y la nota final con la retroalimentación
+   por pregunta cuando el docente termina la revisión.
 
 ## Endpoints principales
 
@@ -175,8 +198,8 @@ Base: `/api/evaluations`
 | GET | `/teacher` | Listar evaluaciones propias |
 | GET | `/teacher/{evaluationId}` | Detalle de evaluación propia |
 | PUT | `/teacher/{evaluationId}` | Editar evaluación |
-| POST | `/teacher/{evaluationId}/questions` | Agregar pregunta con alternativas |
-| PUT | `/teacher/{evaluationId}/questions/{questionId}` | Editar pregunta y alternativas |
+| POST | `/teacher/{evaluationId}/questions` | Agregar pregunta (alternativa única con alternativas, o abierta con criterio opcional) |
+| PUT | `/teacher/{evaluationId}/questions/{questionId}` | Editar pregunta (incluye cambio de tipo) |
 | PATCH | `/teacher/{evaluationId}/questions/{questionId}/deactivate` | Desactivar pregunta |
 | PATCH | `/teacher/{evaluationId}/publish` | Publicar evaluación |
 | PATCH | `/teacher/{evaluationId}/archive` | Archivar evaluación |
@@ -184,8 +207,12 @@ Base: `/api/evaluations`
 | PATCH | `/teacher/{evaluationId}/assignments/{assignmentId}/deactivate` | Desactivar asignación |
 | GET | `/teacher/{evaluationId}/results` | Resultados de la evaluación (agregados + intentos) |
 | GET | `/teacher/{evaluationId}/results/summary` | Solo los agregados de resultados |
-| GET | `/teacher/attempts/{attemptId}/result` | Detalle del resultado de un intento (con alternativa correcta) |
+| GET | `/teacher/attempts/{attemptId}/result` | Detalle del resultado de un intento (con alternativa correcta y respuestas abiertas) |
 | GET | `/teacher/attempts/{attemptId}/traceability` | Trazabilidad del intento: resumen + línea de tiempo de eventos (sin respuestas ni claves) |
+| GET | `/teacher/manual-review` | Bandeja de intentos pendientes de revisión manual |
+| GET | `/teacher/attempts/{attemptId}/review` | Detalle de un intento para revisar sus respuestas abiertas (incluye el criterio de corrección) |
+| PATCH | `/teacher/attempts/{attemptId}/answers/{answerId}/manual-grade` | Asignar puntaje y retroalimentación a una respuesta abierta |
+| PATCH | `/teacher/attempts/{attemptId}/complete-review` | Cerrar la revisión del intento y recalcular la nota final |
 
 ### Estudiante (`/student`)
 | Método | Ruta | Acción |
@@ -194,8 +221,8 @@ Base: `/api/evaluations`
 | GET | `/student/{evaluationId}` | Ver detalle de evaluación asignada |
 | POST | `/student/{evaluationId}/attempts` | Iniciar intento |
 | GET | `/student/attempts/{attemptId}` | Ver intento |
-| POST | `/student/attempts/{attemptId}/answers` | Guardar/actualizar una respuesta |
-| POST | `/student/attempts/{attemptId}/submit` | Enviar intento |
+| POST | `/student/attempts/{attemptId}/answers` | Guardar/actualizar una respuesta (alternativa o texto en las abiertas) |
+| POST | `/student/attempts/{attemptId}/submit` | Enviar intento (queda `GRADED` o `PENDING_MANUAL_REVIEW` si hay abiertas) |
 | POST | `/student/attempts/{attemptId}/exit` | Salir del intento: lo finaliza (GRADED) con lo guardado; no retomable |
 | POST | `/student/attempts/{attemptId}/events` | Registrar evento del intento: incidencia de foco (solo si `trackTabExit`), uso de herramienta (`TOOL_OPENED`/`TOOL_RETURNED`) o intento de salida (`EXIT_ATTEMPTED`) |
 | GET | `/student/results` | Listar sus resultados/calificaciones |
@@ -218,7 +245,12 @@ Base: `/api/evaluations`
   (`Authentication.getName()`), nunca desde identificadores enviados por el cliente.
 - Un docente solo puede ver y modificar **sus propias** evaluaciones.
 - El estudiante solo ve evaluaciones publicadas asignadas a su grado/sección y
-  **no recibe** el campo `correct` de las alternativas.
+  **no recibe** el campo `correct` de las alternativas ni el `expectedAnswer`/criterio de
+  corrección de las preguntas abiertas.
+- La revisión manual de un intento solo la puede hacer el docente **dueño** de la
+  evaluación; no puede revisar intentos de evaluaciones ajenas.
+- El estudiante no ve el puntaje ni la retroalimentación de una respuesta abierta hasta
+  que el docente la revisa.
 
 ## Validaciones de negocio
 
@@ -226,9 +258,16 @@ Base: `/api/evaluations`
 - El título es obligatorio; `1 <= maxAttempts <= 10`; `timeLimitMinutes` entre 1 y 240 si se envía.
 - La configuración avanzada (`allowChemicalCalculator`, `trackTabExit`,
   `questionDisplayMode`) toma valores por defecto seguros si no se envía.
-- No publicar sin preguntas activas, ni con preguntas sin alternativas.
-- Cada pregunta de alternativa única debe tener exactamente una alternativa correcta.
+- Toda pregunta exige enunciado y puntaje mayor a 0.
+- Una pregunta de **alternativa única** debe tener al menos dos alternativas y exactamente
+  una correcta.
+- Una pregunta **abierta** no puede llevar alternativas; su `expectedAnswer` es opcional
+  (máx. 3000) y solo lo ve el docente.
+- Al publicar, no se exige alternativas a las preguntas abiertas (sí a las de alternativa
+  única); no se publica sin preguntas activas.
 - No asignar una evaluación archivada ni duplicar una asignación activa en la misma sección.
+- En la revisión manual, el puntaje asignado a una respuesta abierta debe estar entre 0 y
+  el puntaje máximo de la pregunta; la retroalimentación es opcional (máx. 2000).
 
 **Estudiante**
 - No iniciar un intento si la evaluación no está asignada a su sección.
@@ -236,6 +275,8 @@ Base: `/api/evaluations`
 - Si la asignación tiene `dueAt` vencido, se bloquea el inicio del intento.
 - No responder preguntas ajenas a la evaluación ni elegir alternativas ajenas a la pregunta.
 - No enviar un intento ya enviado.
+- No enviar a tiempo un intento con una pregunta abierta **obligatoria** en blanco
+  (un cierre por tiempo agotado o por salida no bloquea: esas preguntas quedan en 0/pendiente).
 - No guardar ni enviar respuestas una vez vencido el tiempo (con su margen de gracia).
 - Solo registrar incidencias de salida de pestaña de su **propio** intento y únicamente
   si la evaluación tiene `trackTabExit` activo.
@@ -255,6 +296,17 @@ evaluación, nunca preguntas, claves ni respuestas):
 - `EVALUATION_PUBLISHED` y `EVALUATION_ASSIGNED` — publicación y asignación (ya existían).
 - `EVALUATION_ATTEMPT_SUBMITTED` — envío del intento; los envíos fuera de tiempo añaden
   `outOfTime=true` en su metadato.
+- `EVALUATION_OPEN_QUESTION_SAVED` — creación o edición de una pregunta abierta (sin
+  enunciado ni criterio en la descripción).
+- `EVALUATION_ATTEMPT_PENDING_REVIEW` — el intento quedó pendiente de revisión manual.
+- `EVALUATION_ANSWER_REVIEWED` — el docente revisó una respuesta abierta (metadato solo con
+  `attemptId`/`answerId`; **nunca** el texto de la respuesta ni la retroalimentación).
+- `EVALUATION_REVIEW_COMPLETED` — se completó la revisión manual y se recalculó la nota final.
+
+Estos logs usan descripciones seguras del tipo «El docente revisó una respuesta abierta de
+la evaluación "Nombre".» o «Se actualizó la calificación manual de un intento.». **No** se
+registran el texto de la respuesta del estudiante, la retroalimentación completa, los
+criterios de corrección, las claves ni el payload.
 
 Las **incidencias de salida de pestaña** se registran como eventos del intento
 (`evaluation_attempt_events`), **no** como logs globales de auditoría, para no saturar el
@@ -457,11 +509,67 @@ Al enviar un intento, el servicio ejecuta la calificación automática encapsula
   activas** (las inactivas no se cuentan); nunca se otorga puntaje negativo.
 - `percentage` = `score / maxScore * 100` (0 si `maxScore` es 0), redondeado a un decimal.
 
-Como la corrección de alternativa única es automática y completa, el intento pasa
-directamente a estado `GRADED` y se registra `gradedAt`. Si por compatibilidad
-existiera un intento terminal antiguo sin `score`, al consultar su resultado se
-recalcula de forma segura (`ensureScored`) sin duplicar respuestas ni tocar intentos
-en progreso.
+Si la evaluación es **solo de alternativa única**, la corrección es automática y completa:
+el intento pasa directamente a estado `GRADED` y se registra `gradedAt`. Si por
+compatibilidad existiera un intento terminal antiguo sin `score`, al consultar su resultado
+se recalcula de forma segura (`ensureScored`) sin duplicar respuestas ni tocar intentos en
+progreso.
+
+## Preguntas abiertas y calificación manual
+
+Una pregunta **abierta** (`OPEN_TEXT`) no tiene alternativas: el estudiante responde con
+texto (máx. 3000 caracteres, sin editor enriquecido ni archivos) y el docente la califica
+manualmente. Puede llevar un criterio de corrección (`expectedAnswer`) visible **solo para
+el docente**.
+
+**Al enviar un intento con preguntas abiertas:**
+
+- las preguntas de alternativa única se califican automáticamente (puntaje parcial);
+- por cada pregunta abierta se garantiza una fila de respuesta (aunque vaya en blanco) para
+  que el docente pueda calificarla;
+- si queda al menos una abierta sin revisar, el intento pasa a **`PENDING_MANUAL_REVIEW`**
+  con `gradedAt = null`: la nota aún **no es definitiva**.
+
+**Revisión manual del docente:**
+
+- `GET /teacher/manual-review` lista los intentos de sus evaluaciones en
+  `PENDING_MANUAL_REVIEW` (estudiante, evaluación, fecha de envío, cuántas abiertas faltan).
+- `GET /teacher/attempts/{attemptId}/review` muestra, por cada pregunta abierta, el texto
+  del estudiante, el puntaje máximo, el criterio de corrección y el puntaje/retroalimentación
+  si ya se asignó.
+- `PATCH …/answers/{answerId}/manual-grade` asigna un puntaje (entre 0 y el máximo de la
+  pregunta) y una retroalimentación opcional. Tras guardar, **recalcula** la nota del
+  intento; cuando ya no quedan abiertas pendientes, el intento pasa a **`GRADED`** y se fija
+  `gradedAt`.
+- `PATCH …/complete-review` cierra explícitamente la revisión (exige que no queden abiertas
+  pendientes) y recalcula la nota final. Es idempotente si el intento ya estaba `GRADED`;
+  permite además **ajustar** un puntaje ya asignado y vuelve a recalcular.
+
+**Cálculo de la nota final.** El sistema usa puntaje por pregunta: `maxScore` es la suma de
+los `points` de todas las preguntas activas (de cualquier tipo) y `score` es la suma de lo
+obtenido (automático en alternativa única + puntaje manual de las abiertas ya revisadas).
+El `percentage = score / maxScore * 100` (un decimal). Las preguntas abiertas sin revisar
+aportan 0 mientras están pendientes, por lo que el puntaje mostrado en
+`PENDING_MANUAL_REVIEW` es **parcial** y no debe tomarse como final hasta el estado `GRADED`.
+
+> Escala: el módulo trabaja con **puntaje por pregunta y porcentaje** (no una escala fija
+> 0–20). La nota final se obtiene proporcionalmente como `score / maxScore`; si se requiere
+> expresarla sobre una escala (p. ej. 0–20), se multiplica ese cociente por el tope de la
+> escala.
+
+### Estados del intento
+
+| Estado | Cuándo |
+|--------|--------|
+| `IN_PROGRESS` | Intento iniciado; admite guardar respuestas |
+| `PENDING_MANUAL_REVIEW` | Enviado con preguntas abiertas sin calificar; nota parcial, no definitiva |
+| `GRADED` | Calificación final: directa en intentos solo de alternativa única, o tras completar la revisión manual |
+| `SUBMITTED` | Estado heredado/de transición (los intentos pasan a `GRADED` o `PENDING_MANUAL_REVIEW`) |
+
+Un intento cerrado por **salida** (abandono) o por **tiempo agotado** sigue la misma regla:
+si tiene abiertas sin revisar, queda `PENDING_MANUAL_REVIEW` (el docente las calificará,
+normalmente con 0 si quedaron en blanco); si no, queda `GRADED`. El abandono no se confunde
+con la revisión pendiente: son situaciones independientes que pueden coincidir.
 
 ## Resultados y retroalimentación
 
@@ -472,14 +580,20 @@ en progreso.
 - Agregados de la evaluación: total de intentos, promedio de puntaje, porcentaje
   promedio, mayor y menor puntaje, y conteo de aprobados/desaprobados (umbral de
   aprobación: 60 %, usado solo para esos contadores).
-- Detalle de un intento: corrección pregunta a pregunta con la **alternativa
-  seleccionada, la alternativa correcta**, si fue correcta, puntaje obtenido/máximo y
-  la explicación.
+- Detalle de un intento: corrección pregunta a pregunta. En alternativa única, la
+  **alternativa seleccionada, la alternativa correcta**, si fue correcta, puntaje
+  obtenido/máximo y la explicación. En preguntas abiertas, el **texto del estudiante**, el
+  puntaje asignado, la retroalimentación y si ya fue revisada.
+- Bandeja de **revisión manual**: intentos pendientes y, por cada uno, las respuestas
+  abiertas a calificar (ver sección anterior).
 
 **Qué ve el estudiante**
-- Siempre: título, `score`, `maxScore`, porcentaje, número de intento, estado y fecha
-  de envío de sus propios intentos.
-- Detalle por pregunta: su respuesta, si fue correcta y el puntaje obtenido.
+- Siempre: título, `score`, `maxScore`, porcentaje, número de intento, **estado** y fecha
+  de envío de sus propios intentos. Si el intento está `PENDING_MANUAL_REVIEW`, ve el estado
+  "pendiente de revisión" y la nota **no** se presenta como definitiva.
+- Detalle por pregunta: su respuesta (alternativa elegida o su propio texto), si fue
+  correcta (alternativa única) y el puntaje obtenido. En preguntas abiertas, el puntaje y la
+  **retroalimentación** del docente aparecen solo una vez que esa respuesta fue **revisada**.
 
 **Criterio de retroalimentación con más de un intento**
 

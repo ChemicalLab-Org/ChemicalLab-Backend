@@ -5,7 +5,9 @@ import com.morales.chemicallab.entity.QuestionType;
 import java.util.List;
 
 /**
- * Pregunta vista por el docente, con sus alternativas (incluyendo cuál es correcta).
+ * Pregunta vista por el docente. Para alternativa única incluye sus alternativas
+ * (con cuál es la correcta); para preguntas abiertas incluye {@code expectedAnswer}
+ * (criterio de corrección, solo docente) y la lista de alternativas va vacía.
  */
 public record QuestionResponse(
         Long id,
@@ -14,5 +16,7 @@ public record QuestionResponse(
         Integer points,
         Integer orderIndex,
         String explanation,
+        String expectedAnswer,
+        Boolean required,
         List<OptionResponse> options
 ) {}
