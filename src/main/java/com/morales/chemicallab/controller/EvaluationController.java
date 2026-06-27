@@ -138,6 +138,19 @@ public class EvaluationController {
         return evaluationService.getTeacherAttemptResult(authentication.getName(), attemptId);
     }
 
+    /**
+     * Trazabilidad del intento para el docente: resumen (tiempo usado, estado final,
+     * salidas/regresos de pestaña, intentos de salida, herramientas consultadas) y línea
+     * de tiempo de eventos. El docente solo puede consultar intentos de sus propias
+     * evaluaciones; nunca se exponen respuestas ni claves.
+     */
+    @GetMapping("/teacher/attempts/{attemptId}/traceability")
+    public AttemptTraceabilityResponse verTrazabilidadIntento(
+            Authentication authentication,
+            @PathVariable Long attemptId) {
+        return evaluationService.getAttemptTraceability(authentication.getName(), attemptId);
+    }
+
     // =========================================================================
     // ESTUDIANTE
     // =========================================================================

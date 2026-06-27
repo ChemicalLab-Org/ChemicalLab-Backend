@@ -104,8 +104,7 @@ Intento de un estudiante sobre una evaluación.
 | `active` | Marca de actividad |
 
 ### EvaluationAttemptEvent
-Incidencia de foco registrada durante un intento (salida/retorno de pestaña o ventana),
-solo cuando la evaluación tiene `trackTabExit = true`. Es trazabilidad **a nivel de
+Evento de trazabilidad registrado durante un intento. Es trazabilidad **a nivel de
 intento**, no un log global de auditoría: vive en su propia tabla
 (`evaluation_attempt_events`) para no saturar el visor de logs administrativos.
 
@@ -113,13 +112,24 @@ intento**, no un log global de auditoría: vive en su propia tabla
 |-------|-------------|
 | `id` | Identificador |
 | `attempt` | Intento al que pertenece |
-| `eventType` | Tipo (`AttemptEventType`: `TAB_HIDDEN`, `TAB_VISIBLE`, `WINDOW_BLUR`, `WINDOW_FOCUS`, `NAVIGATION_BLOCKED`) |
+| `eventType` | Tipo (`AttemptEventType`, ver abajo) |
 | `description` | Descripción breve y no sensible (opcional, máx. 200) |
-| `occurredAt` | Momento de la incidencia |
+| `metadata` | Metadata segura y acotada (opcional, máx. 255): `tool=PERIODIC_TABLE`, `source=VISIBILITY_CHANGE`, `reason=USER_CONFIRMED_EXIT`… |
+| `occurredAt` | Momento del evento |
 
-Se considera una **"salida"** un evento `TAB_HIDDEN` o `WINDOW_BLUR`. Nunca se almacena
-contenido de otras pestañas, capturas de pantalla, historial del navegador, IP ni datos
-sensibles.
+Tipos de evento (`AttemptEventType`):
+
+| Grupo | Valores | Quién lo registra |
+|-------|---------|-------------------|
+| Incidencias de foco (solo si `trackTabExit`) | `TAB_HIDDEN`, `TAB_VISIBLE`, `WINDOW_BLUR`, `WINDOW_FOCUS` | Frontend → endpoint de eventos |
+| Trazabilidad del intento | `NAVIGATION_BLOCKED`, `TOOL_OPENED`, `TOOL_RETURNED`, `EXIT_ATTEMPTED` | Frontend → endpoint de eventos |
+| Hitos del ciclo de vida | `ATTEMPT_STARTED`, `ATTEMPT_SUBMITTED`, `TIME_EXPIRED`, `ATTEMPT_EXITED` | Backend (al iniciar/enviar/salir) |
+
+Se considera una **"salida" de pestaña** un evento `TAB_HIDDEN` o `WINDOW_BLUR`, y un
+**"regreso"** un `TAB_VISIBLE` o `WINDOW_FOCUS`. Los hitos del ciclo de vida los registra
+**solo el backend**: el cliente no puede falsificarlos (se rechazan si llegan por el
+endpoint de eventos). Nunca se almacena contenido de otras pestañas, capturas de pantalla,
+historial del navegador, respuestas, claves, tokens, IP ni datos sensibles.
 
 ### EvaluationAnswer
 Respuesta de un estudiante a una pregunta dentro de un intento.
@@ -175,6 +185,7 @@ Base: `/api/evaluations`
 | GET | `/teacher/{evaluationId}/results` | Resultados de la evaluación (agregados + intentos) |
 | GET | `/teacher/{evaluationId}/results/summary` | Solo los agregados de resultados |
 | GET | `/teacher/attempts/{attemptId}/result` | Detalle del resultado de un intento (con alternativa correcta) |
+| GET | `/teacher/attempts/{attemptId}/traceability` | Trazabilidad del intento: resumen + línea de tiempo de eventos (sin respuestas ni claves) |
 
 ### Estudiante (`/student`)
 | Método | Ruta | Acción |
@@ -186,7 +197,7 @@ Base: `/api/evaluations`
 | POST | `/student/attempts/{attemptId}/answers` | Guardar/actualizar una respuesta |
 | POST | `/student/attempts/{attemptId}/submit` | Enviar intento |
 | POST | `/student/attempts/{attemptId}/exit` | Salir del intento: lo finaliza (GRADED) con lo guardado; no retomable |
-| POST | `/student/attempts/{attemptId}/events` | Registrar incidencia de salida de pestaña (solo si `trackTabExit`) |
+| POST | `/student/attempts/{attemptId}/events` | Registrar evento del intento: incidencia de foco (solo si `trackTabExit`), uso de herramienta (`TOOL_OPENED`/`TOOL_RETURNED`) o intento de salida (`EXIT_ATTEMPTED`) |
 | GET | `/student/results` | Listar sus resultados/calificaciones |
 | GET | `/student/attempts/{attemptId}/result` | Detalle del resultado de un intento propio |
 
@@ -358,20 +369,66 @@ la evaluación tiene `trackTabExit` activo, un intento de navegación interna ta
 registrarse como evento `NAVIGATION_BLOCKED` (no cuenta como "salida de pestaña" ni satura
 el log global de auditoría).
 
-### Detección de salida de pestaña
+### Trazabilidad del intento
 
-Cuando `trackTabExit` está activo, el frontend detecta `visibilitychange` y `blur/focus`
-y reporta el evento al endpoint `POST /student/attempts/{attemptId}/events`. El backend:
+El sistema registra los **eventos importantes** ocurridos durante un intento para que el
+docente revise incidencias básicas. Es trazabilidad **del comportamiento del intento**,
+separada por completo de los logs generales de auditoría (`/api/admin/logs`) y de la
+corrección de respuestas. Vive en su propia tabla (`evaluation_attempt_events`) para no
+saturar el visor administrativo.
 
-- registra solo `attemptId`, tipo de evento, momento y una descripción breve;
-- descarta duplicados idénticos dentro de una ventana corta (throttling simple);
-- rechaza el registro si la evaluación no tiene `trackTabExit` o si el intento no es del
-  estudiante autenticado.
+**Qué se registra**
 
-Es una **detección básica** de pérdida de foco del navegador, no un bloqueo ni una
-vigilancia perfecta. El docente ve un **contador simple** de salidas por intento en sus
-resultados (`tabExitCount`); no hay todavía un panel de trazabilidad detallado (queda
-para una sesión futura).
+- **Inicio del intento** (`ATTEMPT_STARTED`): lo registra el backend al crear el intento.
+- **Salida/regreso de pestaña** (`TAB_HIDDEN`/`WINDOW_BLUR` y `TAB_VISIBLE`/`WINDOW_FOCUS`):
+  solo si `trackTabExit` está activo. El frontend detecta `visibilitychange` y `blur/focus`.
+- **Uso de herramientas permitidas** (`TOOL_OPENED`/`TOOL_RETURNED`): cuando el estudiante
+  abre la tabla periódica o formación de compuestos durante el intento. La herramienta
+  concreta viaja en `metadata` (`tool=PERIODIC_TABLE` o `tool=COMPOUND_FORMATION`); nunca
+  se registra qué elemento consultó ni qué fórmula formó.
+- **Intento de salida** (`EXIT_ATTEMPTED`): cuando pulsa "Salir del intento" (intención,
+  puede cancelarse).
+- **Envío** (`ATTEMPT_SUBMITTED`) y **salida confirmada/abandono** (`ATTEMPT_EXITED`): los
+  registra el backend al enviar o salir.
+- **Tiempo agotado** (`TIME_EXPIRED`): lo registra el backend si el envío llega fuera de tiempo.
+- **Tiempo usado** y **estado final**: se exponen en el resumen de trazabilidad.
+
+**Qué NO se registra (privacidad)**
+
+Nunca se almacenan respuestas correctas, claves de evaluación, alternativas elegidas
+completas, payloads completos, contenido de preguntas o de otras pestañas, capturas de
+pantalla, historial del navegador, contraseñas, tokens ni datos sensibles. La única
+metadata permitida es segura y acotada: la herramienta (enum cerrado) y un `source`/`reason`
+corto que el backend **sanitiza** (solo letras, dígitos y guion bajo, máx. 60).
+
+**Reglas de registro**
+
+- Los **hitos del ciclo de vida** (`ATTEMPT_STARTED`, `ATTEMPT_SUBMITTED`, `TIME_EXPIRED`,
+  `ATTEMPT_EXITED`) los registra **solo el backend**; si llegan por el endpoint de eventos
+  se rechazan, para que el cliente no pueda falsificarlos.
+- Las **incidencias de foco** solo se registran si la evaluación tiene `trackTabExit`
+  activo; si está desactivado, esos eventos se rechazan (no se registran incidencias de
+  pestaña), pero los eventos de herramientas, intento de salida e hitos del ciclo de vida
+  sí se siguen registrando, porque no son detección de pérdida de foco.
+- Se descartan **duplicados** idénticos dentro de una ventana corta (throttling simple).
+- El estudiante solo puede registrar eventos de **su propio** intento y mientras esté en
+  progreso.
+
+**Cálculo del tiempo usado**
+
+El tiempo usado se calcula **en el backend** con los timestamps del propio intento
+(`startedAt`/`submittedAt`), nunca solo con el contador del frontend. Si el intento se
+abandona o vence el tiempo, se mide hasta el momento de cierre (`submittedAt`); si sigue en
+progreso, hasta el momento actual. Nunca es negativo.
+
+**Qué ve el docente**
+
+`GET /teacher/attempts/{attemptId}/traceability` devuelve, solo para intentos de **sus
+propias** evaluaciones, un resumen (estado final, inicio, finalización, tiempo usado,
+salidas de pestaña, regresos, intentos de salida y herramientas consultadas) y una **línea
+de tiempo simple** de eventos. Además, sigue disponible el **contador** de salidas de
+pestaña (`tabExitCount`) en las filas y el detalle de resultados. No expone respuestas ni
+claves, ni existe exportación a PDF/Excel.
 
 ### Control de tiempo
 

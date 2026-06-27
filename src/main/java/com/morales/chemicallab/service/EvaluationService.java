@@ -8,10 +8,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -72,9 +74,24 @@ public class EvaluationService {
     // ráfagas de eventos duplicados (control simple de throttling).
     private static final long EVENT_THROTTLE_SECONDS = 2;
 
-    // Tipos de incidencia que se consideran una "salida" de la evaluación.
+    // Tipos de incidencia que se consideran una "salida" de pestaña/ventana.
     private static final Set<AttemptEventType> EXIT_EVENT_TYPES =
             EnumSet.of(AttemptEventType.TAB_HIDDEN, AttemptEventType.WINDOW_BLUR);
+
+    // Tipos de incidencia que se consideran un "regreso" a la pestaña/ventana.
+    private static final Set<AttemptEventType> RETURN_EVENT_TYPES =
+            EnumSet.of(AttemptEventType.TAB_VISIBLE, AttemptEventType.WINDOW_FOCUS);
+
+    // Eventos de foco del navegador: solo se registran si la evaluación activa trackTabExit.
+    private static final Set<AttemptEventType> FOCUS_EVENT_TYPES =
+            EnumSet.of(AttemptEventType.TAB_HIDDEN, AttemptEventType.TAB_VISIBLE,
+                    AttemptEventType.WINDOW_BLUR, AttemptEventType.WINDOW_FOCUS);
+
+    // Hitos del ciclo de vida del intento: los registra el backend en sus propios métodos
+    // (iniciar/enviar/salir), nunca el cliente, para que no puedan falsificarse.
+    private static final Set<AttemptEventType> BACKEND_ONLY_EVENT_TYPES =
+            EnumSet.of(AttemptEventType.ATTEMPT_STARTED, AttemptEventType.ATTEMPT_SUBMITTED,
+                    AttemptEventType.TIME_EXPIRED, AttemptEventType.ATTEMPT_EXITED);
 
     // =========================================================================
     // DOCENTE — evaluaciones
@@ -371,6 +388,12 @@ public class EvaluationService {
                 .build();
         attemptRepository.save(attempt);
 
+        // Trazabilidad del intento: el inicio se registra desde el backend al crear el
+        // intento (no depende del frontend), como ancla de la línea de tiempo. Se registra
+        // siempre, aunque la detección de salida de pestaña esté desactivada.
+        recordLifecycleEvent(attempt, AttemptEventType.ATTEMPT_STARTED,
+                "El estudiante inició el intento.", null);
+
         return toAttemptResponse(attempt);
     }
 
@@ -465,6 +488,16 @@ public class EvaluationService {
         attempt.setGradedAt(now);
         attemptRepository.save(attempt);
 
+        // Trazabilidad del intento: si el envío llega fuera de tiempo, se deja constancia
+        // de que el tiempo se agotó antes de marcar el envío. Nunca se registran respuestas.
+        if (pastTimeLimit) {
+            recordLifecycleEvent(attempt, AttemptEventType.TIME_EXPIRED,
+                    "El tiempo de la evaluación se agotó.", "source=TIME_LIMIT");
+        }
+        recordLifecycleEvent(attempt, AttemptEventType.ATTEMPT_SUBMITTED,
+                "El estudiante envió el intento.",
+                pastTimeLimit ? "source=TIME_LIMIT" : "source=USER_SUBMIT");
+
         // Solo se registra el envío del intento; nunca las respuestas individuales.
         Evaluation evaluation = attempt.getEvaluation();
         auditLogService.recordInfo(LogEventType.EVALUATION_ATTEMPT_SUBMITTED, TARGET_EVALUATION,
@@ -506,17 +539,13 @@ public class EvaluationService {
 
         Evaluation evaluation = attempt.getEvaluation();
 
-        // Trazabilidad del intento: si la evaluación registra incidencias del intento, se
-        // deja constancia de la salida voluntaria. No cuenta como "salida de pestaña" y no
-        // guarda contenido sensible: solo el tipo de evento y el momento.
-        if (Boolean.TRUE.equals(evaluation.getTrackTabExit())
-                && !isDuplicateEvent(attempt, AttemptEventType.ATTEMPT_EXITED)) {
-            attemptEventRepository.save(EvaluationAttemptEvent.builder()
-                    .attempt(attempt)
-                    .eventType(AttemptEventType.ATTEMPT_EXITED)
-                    .description("El estudiante salió del intento y se dio por finalizado.")
-                    .build());
-        }
+        // Trazabilidad del intento: se deja constancia de la salida voluntaria (abandono)
+        // como hito del ciclo de vida, siempre (no depende de trackTabExit). No cuenta como
+        // "salida de pestaña" y no guarda contenido sensible: solo el tipo, el momento y un
+        // motivo seguro.
+        recordLifecycleEvent(attempt, AttemptEventType.ATTEMPT_EXITED,
+                "El estudiante salió del intento y se dio por finalizado.",
+                "reason=USER_CONFIRMED_EXIT");
 
         // Log de auditoría agregado: solo identifica la evaluación y marca que fue una
         // salida; nunca registra respuestas ni payloads.
@@ -530,14 +559,26 @@ public class EvaluationService {
     }
 
     /**
-     * Registra una incidencia de foco (salida/retorno de pestaña o ventana) durante un
-     * intento. Solo procede si la evaluación tiene activada la detección de salida de
-     * pestaña, el intento pertenece al estudiante autenticado y sigue en progreso.
+     * Registra un evento de trazabilidad reportado por el frontend durante un intento:
+     * incidencia de foco (salida/retorno de pestaña o ventana), intento de salida
+     * ({@code EXIT_ATTEMPTED}) o uso de una herramienta permitida ({@code TOOL_OPENED}/
+     * {@code TOOL_RETURNED}). Solo procede si el intento pertenece al estudiante
+     * autenticado y sigue en progreso.
      *
-     * <p>Aplica un control simple de duplicados: descarta el evento si es idéntico al
-     * último registrado dentro de una ventana corta de tiempo. No guarda contenido de
-     * otras pestañas, capturas ni datos sensibles: solo el tipo de evento, el momento y
-     * una descripción breve. Es trazabilidad del intento, no un log global de auditoría.</p>
+     * <p>Reglas de registro:</p>
+     * <ul>
+     *   <li>Los hitos del ciclo de vida (inicio, envío, expiración, salida confirmada) los
+     *       registra el backend en sus propios métodos: el cliente no puede falsificarlos.</li>
+     *   <li>Las incidencias de foco solo se registran si la evaluación activa
+     *       {@code trackTabExit}; el resto (intento de salida, herramientas) se registra
+     *       siempre, porque es trazabilidad del intento, no detección de pérdida de foco.</li>
+     * </ul>
+     *
+     * <p>Aplica un control simple de duplicados (descarta un evento idéntico al último
+     * dentro de una ventana corta) y solo guarda metadata segura y acotada
+     * ({@code tool}/{@code source}). No guarda respuestas, claves, contenido de otras
+     * pestañas, capturas ni datos sensibles. Es trazabilidad del intento, no un log global
+     * de auditoría.</p>
      */
     public AttemptEventSummaryResponse registerAttemptEvent(String username, Long attemptId,
                                                             RegisterAttemptEventRequest request) {
@@ -545,18 +586,25 @@ public class EvaluationService {
         EvaluationAttempt attempt = requireOwnedAttempt(attemptId, student);
         requireInProgress(attempt);
 
+        AttemptEventType type = request.eventType();
+        if (BACKEND_ONLY_EVENT_TYPES.contains(type)) {
+            throw new IllegalArgumentException(
+                    "Ese tipo de evento lo registra el sistema, no el cliente.");
+        }
+
         Evaluation evaluation = attempt.getEvaluation();
-        if (!Boolean.TRUE.equals(evaluation.getTrackTabExit())) {
+        if (FOCUS_EVENT_TYPES.contains(type) && !Boolean.TRUE.equals(evaluation.getTrackTabExit())) {
             throw new IllegalArgumentException(
                     "La detección de salida de pestaña no está activada para esta evaluación.");
         }
 
         boolean recorded = false;
-        if (!isDuplicateEvent(attempt, request.eventType())) {
+        if (!isDuplicateEvent(attempt, type)) {
             EvaluationAttemptEvent event = EvaluationAttemptEvent.builder()
                     .attempt(attempt)
-                    .eventType(request.eventType())
+                    .eventType(type)
                     .description(trimOrNull(request.description()))
+                    .metadata(buildSafeMetadata(request.tool(), request.source()))
                     .build();
             attemptEventRepository.save(event);
             recorded = true;
@@ -566,6 +614,60 @@ public class EvaluationService {
                 attempt.getId(), recorded,
                 attemptEventRepository.countByAttempt(attempt),
                 attemptEventRepository.countByAttemptAndEventTypeIn(attempt, EXIT_EVENT_TYPES));
+    }
+
+    /**
+     * Trazabilidad completa de un intento para el docente: resumen (tiempo usado, estado
+     * final, salidas/regresos de pestaña, intentos de salida, herramientas consultadas) y
+     * la línea de tiempo de eventos. Solo accesible si el intento pertenece a una
+     * evaluación creada por el docente autenticado. Nunca expone respuestas ni claves.
+     */
+    @Transactional(readOnly = true)
+    public AttemptTraceabilityResponse getAttemptTraceability(String username, Long attemptId) {
+        TeacherProfile teacher = requireTeacher(username);
+        EvaluationAttempt attempt = attemptRepository.findById(attemptId)
+                .orElseThrow(() -> new EntityNotFoundException("El intento no existe."));
+
+        Evaluation evaluation = attempt.getEvaluation();
+        if (!evaluation.getCreatedByTeacher().getId().equals(teacher.getId())) {
+            throw new IllegalArgumentException("No tienes permiso para ver este intento.");
+        }
+
+        List<EvaluationAttemptEvent> events =
+                attemptEventRepository.findByAttemptOrderByOccurredAtAsc(attempt);
+
+        long tabExit = 0;
+        long tabReturn = 0;
+        long exitAttempts = 0;
+        LinkedHashSet<String> tools = new LinkedHashSet<>();
+        List<AttemptEventResponse> timeline = new ArrayList<>(events.size());
+
+        for (EvaluationAttemptEvent e : events) {
+            AttemptEventType t = e.getEventType();
+            if (EXIT_EVENT_TYPES.contains(t)) {
+                tabExit++;
+            } else if (RETURN_EVENT_TYPES.contains(t)) {
+                tabReturn++;
+            } else if (t == AttemptEventType.EXIT_ATTEMPTED) {
+                exitAttempts++;
+            } else if (t == AttemptEventType.TOOL_OPENED) {
+                String tool = toolFromMetadata(e.getMetadata());
+                if (tool != null) {
+                    tools.add(tool);
+                }
+            }
+            timeline.add(new AttemptEventResponse(
+                    e.getId(), t, e.getDescription(), e.getMetadata(), e.getOccurredAt()));
+        }
+
+        StudentProfile s = attempt.getStudent();
+        return new AttemptTraceabilityResponse(
+                attempt.getId(), evaluation.getId(), evaluation.getTitle(),
+                s.getId(), s.getStudentCode(), fullName(s),
+                attempt.getStatus(), attempt.getStartedAt(), attempt.getSubmittedAt(),
+                timeUsedSecondsOf(attempt), Boolean.TRUE.equals(evaluation.getTrackTabExit()),
+                events.size(), tabExit, tabReturn, exitAttempts,
+                new ArrayList<>(tools), timeline);
     }
 
     // =========================================================================
@@ -854,6 +956,85 @@ public class EvaluationService {
     /** Cantidad de "salidas" (pestaña oculta o ventana sin foco) registradas en el intento. */
     private long tabExitCountOf(EvaluationAttempt attempt) {
         return attemptEventRepository.countByAttemptAndEventTypeIn(attempt, EXIT_EVENT_TYPES);
+    }
+
+    /**
+     * Tiempo usado por el intento, en segundos, calculado en el backend con los timestamps
+     * del propio intento (no con el contador del frontend). Si el intento ya terminó, se
+     * mide hasta {@code submittedAt} (también cubre el cierre por salida o por tiempo); si
+     * sigue en progreso, hasta el momento actual. Nunca devuelve un valor negativo.
+     */
+    private Long timeUsedSecondsOf(EvaluationAttempt attempt) {
+        if (attempt.getStartedAt() == null) {
+            return null;
+        }
+        LocalDateTime end = attempt.getSubmittedAt() != null
+                ? attempt.getSubmittedAt() : LocalDateTime.now();
+        return Math.max(0, Duration.between(attempt.getStartedAt(), end).getSeconds());
+    }
+
+    /**
+     * Registra un hito del ciclo de vida del intento (inicio, envío, expiración, salida).
+     * Lo emite el backend, no el cliente, y se guarda siempre (no depende de
+     * {@code trackTabExit}) para que la línea de tiempo del intento quede completa. Solo
+     * persiste tipo, descripción breve y metadata segura.
+     */
+    private void recordLifecycleEvent(EvaluationAttempt attempt, AttemptEventType type,
+                                      String description, String metadata) {
+        attemptEventRepository.save(EvaluationAttemptEvent.builder()
+                .attempt(attempt)
+                .eventType(type)
+                .description(description)
+                .metadata(metadata)
+                .build());
+    }
+
+    /**
+     * Construye una metadata segura y acotada a partir de los únicos datos permitidos:
+     * la herramienta (enum cerrado) y un origen corto sanitizado. Devuelve null si no hay
+     * nada que guardar. Por diseño no puede transportar respuestas, claves ni texto libre.
+     */
+    private String buildSafeMetadata(AttemptTool tool, String source) {
+        List<String> parts = new ArrayList<>();
+        if (tool != null) {
+            parts.add("tool=" + tool.name());
+        }
+        String safeSource = sanitizeMetadataToken(source);
+        if (safeSource != null) {
+            parts.add("source=" + safeSource);
+        }
+        return parts.isEmpty() ? null : String.join(";", parts);
+    }
+
+    /**
+     * Limpia un valor de metadata enviado por el cliente: conserva solo letras, dígitos y
+     * guion bajo, y lo acota a 60 caracteres. Así un valor con contenido inesperado o
+     * sensible queda reducido a una etiqueta corta e inocua (o null si queda vacío).
+     */
+    private String sanitizeMetadataToken(String value) {
+        if (value == null) {
+            return null;
+        }
+        String cleaned = value.trim().replaceAll("[^A-Za-z0-9_]", "");
+        if (cleaned.isEmpty()) {
+            return null;
+        }
+        return cleaned.length() > 60 ? cleaned.substring(0, 60) : cleaned;
+    }
+
+    /** Extrae el nombre de la herramienta de una metadata "tool=...". Devuelve null si no hay. */
+    private String toolFromMetadata(String metadata) {
+        if (metadata == null) {
+            return null;
+        }
+        for (String part : metadata.split(";")) {
+            String trimmed = part.trim();
+            if (trimmed.startsWith("tool=")) {
+                String value = trimmed.substring("tool=".length()).trim();
+                return value.isEmpty() ? null : value;
+            }
+        }
+        return null;
     }
 
     private Double percentageOf(EvaluationAttempt attempt) {

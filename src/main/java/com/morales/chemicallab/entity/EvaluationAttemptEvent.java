@@ -6,14 +6,16 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 /**
- * Incidencia de foco registrada durante un intento de evaluación (salida/retorno de
- * pestaña o ventana). Se registra solo cuando la evaluación tiene activada la detección
- * de salida de pestaña ({@code trackTabExit}) y siempre asociada al intento del propio
- * estudiante.
+ * Evento de trazabilidad registrado durante un intento de evaluación: incidencias de
+ * foco (salida/retorno de pestaña o ventana, solo si la evaluación activa
+ * {@code trackTabExit}), hitos del ciclo de vida (inicio, envío, salida) y uso de
+ * herramientas permitidas. Siempre asociado al intento del propio estudiante.
  *
- * <p>Por diseño guarda lo mínimo: el intento, el tipo de evento, el momento y una
- * descripción corta y segura. Nunca almacena contenido de otras pestañas, capturas de
- * pantalla, historial del navegador ni datos sensibles.</p>
+ * <p>Por diseño guarda lo mínimo: el intento, el tipo de evento, el momento, una
+ * descripción corta y, como mucho, una {@code metadata} segura y acotada (p. ej.
+ * {@code tool=PERIODIC_TABLE} o {@code source=VISIBILITY_CHANGE}). Nunca almacena
+ * respuestas, claves, contenido de otras pestañas, capturas de pantalla, historial del
+ * navegador, tokens ni datos sensibles.</p>
  *
  * <p>Es trazabilidad a nivel de intento, no un log global de auditoría: vive en su
  * propia tabla para no saturar el visor de logs administrativos.</p>
@@ -41,6 +43,11 @@ public class EvaluationAttemptEvent {
 
     @Column(length = 200)
     private String description;
+
+    // Metadata segura y acotada del evento (p. ej. "tool=PERIODIC_TABLE" o
+    // "source=VISIBILITY_CHANGE"). Solo claves/valores controlados; nunca datos sensibles.
+    @Column(length = 255)
+    private String metadata;
 
     private LocalDateTime occurredAt;
 
