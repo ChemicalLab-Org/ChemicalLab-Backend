@@ -23,5 +23,7 @@ public enum UsageEventType {
     /** Se abrió el detalle de un elemento de la tabla periódica. */
     PERIODIC_ELEMENT_VIEWED,
     /** Se visualizaron resultados de evaluación. */
-    RESULTS_VIEWED
+    RESULTS_VIEWED,
+    /** Un estudiante se unió a una sesión de pizarra en vivo. */
+    WHITEBOARD_SESSION_JOINED
 }
