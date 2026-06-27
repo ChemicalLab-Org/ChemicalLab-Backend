@@ -2,6 +2,7 @@ package com.morales.chemicallab.dto;
 
 import com.morales.chemicallab.entity.AttemptStatus;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -20,6 +21,10 @@ public record StudentResultSummaryResponse(
         Integer score,
         Integer maxScore,
         Double percentage,
+        // Nota final en escala 0–20 (con ajustes), null mientras la calificación no esté cerrada.
+        BigDecimal finalScore,
+        // Indica si la calificación del intento ya fue cerrada (nota final definitiva).
+        boolean gradeClosed,
         LocalDateTime submittedAt,
         boolean canViewDetailedFeedback,
         int attemptsUsed,

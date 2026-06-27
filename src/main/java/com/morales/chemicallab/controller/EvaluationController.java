@@ -187,6 +187,43 @@ public class EvaluationController {
         return evaluationService.completeReview(authentication.getName(), attemptId);
     }
 
+    /** Agrega un ajuste manual de puntaje (bonificación o penalización) al intento. */
+    @PostMapping("/teacher/attempts/{attemptId}/adjustments")
+    public ResponseEntity<TeacherAttemptReviewResponse> agregarAjuste(
+            Authentication authentication,
+            @PathVariable Long attemptId,
+            @Valid @RequestBody CreateAdjustmentRequest request) {
+        TeacherAttemptReviewResponse response =
+                evaluationService.addAdjustment(authentication.getName(), attemptId, request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    /** Anula un ajuste manual de puntaje previamente aplicado al intento. */
+    @DeleteMapping("/teacher/attempts/{attemptId}/adjustments/{adjustmentId}")
+    public TeacherAttemptReviewResponse anularAjuste(
+            Authentication authentication,
+            @PathVariable Long attemptId,
+            @PathVariable Long adjustmentId) {
+        return evaluationService.deleteAdjustment(authentication.getName(), attemptId, adjustmentId);
+    }
+
+    /** Guarda la retroalimentación general del intento para el estudiante. */
+    @PatchMapping("/teacher/attempts/{attemptId}/feedback")
+    public TeacherAttemptReviewResponse actualizarRetroalimentacion(
+            Authentication authentication,
+            @PathVariable Long attemptId,
+            @Valid @RequestBody UpdateAttemptFeedbackRequest request) {
+        return evaluationService.updateOverallFeedback(authentication.getName(), attemptId, request);
+    }
+
+    /** Cierra la calificación del intento: fija la nota final y la deja visible al estudiante. */
+    @PatchMapping("/teacher/attempts/{attemptId}/close-grade")
+    public TeacherAttemptReviewResponse cerrarCalificacion(
+            Authentication authentication,
+            @PathVariable Long attemptId) {
+        return evaluationService.closeGrade(authentication.getName(), attemptId);
+    }
+
     // =========================================================================
     // ESTUDIANTE
     // =========================================================================

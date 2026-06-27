@@ -51,6 +51,14 @@ public enum LogEventType {
     EVALUATION_ANSWER_REVIEWED(LogCategory.EVALUATION),
     // Se completó la revisión manual de un intento y se recalculó la nota final.
     EVALUATION_REVIEW_COMPLETED(LogCategory.EVALUATION),
+    // El docente agregó un ajuste manual de puntaje (bonificación o penalización) al intento.
+    EVALUATION_ADJUSTMENT_ADDED(LogCategory.EVALUATION),
+    // El docente anuló un ajuste manual de puntaje previamente aplicado.
+    EVALUATION_ADJUSTMENT_REMOVED(LogCategory.EVALUATION),
+    // El docente agregó o actualizó la retroalimentación general de un intento.
+    EVALUATION_FEEDBACK_UPDATED(LogCategory.EVALUATION),
+    // El docente cerró la calificación de un intento (nota final visible para el estudiante).
+    EVALUATION_GRADE_CLOSED(LogCategory.EVALUATION),
 
     // Resultados
     RESULT_VIEWED(LogCategory.RESULTS),
