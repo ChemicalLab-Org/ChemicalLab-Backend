@@ -4,6 +4,7 @@ import com.morales.chemicallab.entity.AttemptStatus;
 import com.morales.chemicallab.entity.Evaluation;
 import com.morales.chemicallab.entity.EvaluationAttempt;
 import com.morales.chemicallab.entity.StudentProfile;
+import com.morales.chemicallab.entity.TeacherProfile;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -41,4 +42,9 @@ public interface EvaluationAttemptRepository extends JpaRepository<EvaluationAtt
     // del más reciente al más antiguo por fecha de envío.
     List<EvaluationAttempt> findByStudentAndStatusInOrderBySubmittedAtDesc(StudentProfile student,
                                                                            Collection<AttemptStatus> statuses);
+
+    // Bandeja de revisión manual del docente: intentos de cualquiera de sus evaluaciones
+    // en un estado concreto (p. ej. PENDING_MANUAL_REVIEW), del más reciente al más antiguo.
+    List<EvaluationAttempt> findByEvaluation_CreatedByTeacherAndStatusOrderBySubmittedAtDesc(
+            TeacherProfile teacher, AttemptStatus status);
 }

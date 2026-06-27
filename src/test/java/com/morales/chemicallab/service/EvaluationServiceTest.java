@@ -169,7 +169,7 @@ class EvaluationServiceTest {
                 .thenReturn(List.of(option(31L, q, false), option(32L, q, true)));
 
         var request = new CreateQuestionRequest(
-                "¿Cuál es la fórmula del óxido de calcio?", QuestionType.MULTIPLE_CHOICE, 1, 0, null,
+                "¿Cuál es la fórmula del óxido de calcio?", QuestionType.MULTIPLE_CHOICE, 1, 0, null, null, true,
                 List.of(new CreateOptionRequest("Ca2O", false, 0), new CreateOptionRequest("CaO", true, 1)));
 
         QuestionResponse response = service.addQuestion("docente1", 10L, request);
@@ -464,7 +464,7 @@ class EvaluationServiceTest {
         when(answerRepository.findByAttemptOrderByAnsweredAtAsc(attempt)).thenReturn(List.of());
 
         AttemptResponse response = service.saveAnswer(
-                "EST0001", 50L, new SubmitEvaluationAnswerRequest(20L, 32L));
+                "EST0001", 50L, new SubmitEvaluationAnswerRequest(20L, 32L, null));
 
         assertThat(response.id()).isEqualTo(50L);
         verify(answerRepository).save(any(EvaluationAnswer.class));
@@ -491,7 +491,7 @@ class EvaluationServiceTest {
         when(optionRepository.findById(99L)).thenReturn(Optional.of(optDeOtra));
 
         assertThatThrownBy(() -> service.saveAnswer(
-                "EST0001", 50L, new SubmitEvaluationAnswerRequest(20L, 99L)))
+                "EST0001", 50L, new SubmitEvaluationAnswerRequest(20L, 99L, null)))
                 .hasMessageContaining("no pertenece a la pregunta");
     }
 
@@ -1012,7 +1012,7 @@ class EvaluationServiceTest {
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
 
         assertThatThrownBy(() -> service.saveAnswer(
-                "EST0001", 50L, new SubmitEvaluationAnswerRequest(20L, 32L)))
+                "EST0001", 50L, new SubmitEvaluationAnswerRequest(20L, 32L, null)))
                 .hasMessageContaining("tiempo de la evaluación ya finalizó");
         verify(answerRepository, never()).save(any(EvaluationAnswer.class));
     }
@@ -1038,7 +1038,7 @@ class EvaluationServiceTest {
 
         AttemptResponse response = service.submitAttempt(
                 "EST0001", 50L, new SubmitEvaluationAttemptRequest(
-                        List.of(new SubmitEvaluationAnswerRequest(20L, 32L))));
+                        List.of(new SubmitEvaluationAnswerRequest(20L, 32L, null))));
 
         // El intento se cierra (GRADED) pero la respuesta tardía no se persiste.
         assertThat(response.status()).isEqualTo(AttemptStatus.GRADED);
@@ -1129,7 +1129,7 @@ class EvaluationServiceTest {
         when(answerRepository.findByAttemptOrderByAnsweredAtAsc(attempt)).thenReturn(List.of());
 
         AttemptResponse response = service.saveAnswer(
-                "EST0001", 50L, new SubmitEvaluationAnswerRequest(20L, 32L));
+                "EST0001", 50L, new SubmitEvaluationAnswerRequest(20L, 32L, null));
 
         assertThat(response.currentQuestionIndex()).isEqualTo(1);
         verify(answerRepository).save(any(EvaluationAnswer.class));
@@ -1153,7 +1153,7 @@ class EvaluationServiceTest {
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
 
         assertThatThrownBy(() -> service.saveAnswer(
-                "EST0001", 50L, new SubmitEvaluationAnswerRequest(20L, 32L)))
+                "EST0001", 50L, new SubmitEvaluationAnswerRequest(20L, 32L, null)))
                 .hasMessageContaining("volver a una pregunta anterior");
         verify(answerRepository, never()).save(any(EvaluationAnswer.class));
     }
@@ -1176,7 +1176,7 @@ class EvaluationServiceTest {
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
 
         assertThatThrownBy(() -> service.saveAnswer(
-                "EST0001", 50L, new SubmitEvaluationAnswerRequest(22L, 99L)))
+                "EST0001", 50L, new SubmitEvaluationAnswerRequest(22L, 99L, null)))
                 .hasMessageContaining("en orden");
         verify(answerRepository, never()).save(any(EvaluationAnswer.class));
     }
@@ -1231,7 +1231,7 @@ class EvaluationServiceTest {
         when(answerRepository.save(any(EvaluationAnswer.class))).thenAnswer(inv -> inv.getArgument(0));
         when(answerRepository.findByAttemptOrderByAnsweredAtAsc(attempt)).thenReturn(List.of(previa));
 
-        service.saveAnswer("EST0001", 50L, new SubmitEvaluationAnswerRequest(20L, 31L));
+        service.saveAnswer("EST0001", 50L, new SubmitEvaluationAnswerRequest(20L, 31L, null));
 
         // La respuesta se actualiza a la nueva alternativa y no se avanza ningún índice.
         assertThat(previa.getSelectedOption().getId()).isEqualTo(31L);
@@ -1256,7 +1256,7 @@ class EvaluationServiceTest {
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
 
         assertThatThrownBy(() -> service.saveAnswer(
-                "EST0002", 50L, new SubmitEvaluationAnswerRequest(20L, 32L)))
+                "EST0002", 50L, new SubmitEvaluationAnswerRequest(20L, 32L, null)))
                 .hasMessageContaining("No tienes permiso");
         verify(answerRepository, never()).save(any(EvaluationAnswer.class));
     }
@@ -1638,5 +1638,240 @@ class EvaluationServiceTest {
         assertThatThrownBy(() -> service.getAttemptTraceability("docente2", 50L))
                 .hasMessageContaining("No tienes permiso");
         verify(attemptEventRepository, never()).findByAttemptOrderByOccurredAtAsc(any());
+    }
+
+    // =========================================================================
+    // PREGUNTAS ABIERTAS Y CALIFICACIÓN MANUAL
+    // =========================================================================
+
+    private EvaluationQuestion openQuestion(Long id, Evaluation evaluation, int points, boolean required) {
+        return EvaluationQuestion.builder()
+                .id(id).evaluation(evaluation).questionText("Explica la formación del óxido de calcio.")
+                .questionType(QuestionType.OPEN_TEXT).points(points).orderIndex(1)
+                .expectedAnswer("Debe mencionar la reacción del metal con oxígeno.")
+                .required(required).active(true).build();
+    }
+
+    @Test
+    void docenteCreaPreguntaAbiertaSinAlternativas() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        stubTeacher(docente);
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.DRAFT, 1);
+        when(evaluationRepository.findById(10L)).thenReturn(Optional.of(eval));
+        when(questionRepository.save(any(EvaluationQuestion.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(optionRepository.findByQuestionAndActiveTrueOrderByOrderIndexAsc(any())).thenReturn(List.of());
+
+        var request = new CreateQuestionRequest(
+                "Explica la formación del óxido de calcio.", QuestionType.OPEN_TEXT, 5, 1,
+                null, "Debe mencionar metal + oxígeno.", true, null);
+
+        QuestionResponse response = service.addQuestion("docente1", 10L, request);
+
+        assertThat(response.questionType()).isEqualTo(QuestionType.OPEN_TEXT);
+        assertThat(response.expectedAnswer()).isEqualTo("Debe mencionar metal + oxígeno.");
+        assertThat(response.options()).isEmpty();
+        // No se crean alternativas para una pregunta abierta.
+        verify(optionRepository, never()).save(any(EvaluationOption.class));
+    }
+
+    @Test
+    void rechazaPreguntaAbiertaConAlternativas() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        stubTeacher(docente);
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.DRAFT, 1);
+        when(evaluationRepository.findById(10L)).thenReturn(Optional.of(eval));
+
+        var request = new CreateQuestionRequest(
+                "Explica la formación del óxido de calcio.", QuestionType.OPEN_TEXT, 5, 1, null, null, true,
+                List.of(new CreateOptionRequest("CaO", true, 0), new CreateOptionRequest("Ca2O", false, 1)));
+
+        assertThatThrownBy(() -> service.addQuestion("docente1", 10L, request))
+                .hasMessageContaining("no puede tener alternativas");
+        verify(questionRepository, never()).save(any(EvaluationQuestion.class));
+    }
+
+    @Test
+    void rechazaAlternativaUnicaSinSuficientesAlternativas() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        stubTeacher(docente);
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.DRAFT, 1);
+        when(evaluationRepository.findById(10L)).thenReturn(Optional.of(eval));
+
+        var request = new CreateQuestionRequest(
+                "¿Fórmula del óxido de calcio?", QuestionType.MULTIPLE_CHOICE, 1, 0, null, null, true,
+                List.of(new CreateOptionRequest("CaO", true, 0)));
+
+        assertThatThrownBy(() -> service.addQuestion("docente1", 10L, request))
+                .hasMessageContaining("al menos dos alternativas");
+        verify(questionRepository, never()).save(any(EvaluationQuestion.class));
+    }
+
+    @Test
+    void intentoMixtoQuedaPendienteDeRevisionManual() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
+        EvaluationQuestion mc = question(20L, eval, 2);
+        EvaluationQuestion open = openQuestion(21L, eval, 3, false);
+        EvaluationOption correcta = option(32L, mc, true);
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .status(AttemptStatus.IN_PROGRESS).active(true).build();
+        EvaluationAnswer mcAnswer = EvaluationAnswer.builder()
+                .id(60L).attempt(attempt).question(mc).selectedOption(correcta).reviewed(true).build();
+        EvaluationAnswer openAnswer = EvaluationAnswer.builder()
+                .id(61L).attempt(attempt).question(open).answerText("El calcio reacciona con oxígeno.")
+                .reviewed(false).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+        when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval))
+                .thenReturn(List.of(mc, open));
+        when(answerRepository.findByAttemptAndQuestion(attempt, mc)).thenReturn(Optional.of(mcAnswer));
+        when(answerRepository.findByAttemptAndQuestion(attempt, open)).thenReturn(Optional.of(openAnswer));
+        when(answerRepository.save(any(EvaluationAnswer.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(attemptRepository.save(any(EvaluationAttempt.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(answerRepository.findByAttemptOrderByAnsweredAtAsc(attempt))
+                .thenReturn(List.of(mcAnswer, openAnswer));
+
+        AttemptResponse response = service.submitAttempt(
+                "EST0001", 50L, new SubmitEvaluationAttemptRequest(null));
+
+        // La parte de alternativa única se califica (2 pts); la abierta queda pendiente.
+        assertThat(response.status()).isEqualTo(AttemptStatus.PENDING_MANUAL_REVIEW);
+        assertThat(response.score()).isEqualTo(2);
+        assertThat(response.maxScore()).isEqualTo(5);
+        assertThat(attempt.getGradedAt()).isNull();
+        verify(auditLogService).recordInfo(eq(LogEventType.EVALUATION_ATTEMPT_PENDING_REVIEW),
+                any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void rechazaEnviarAbiertaObligatoriaEnBlanco() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
+        EvaluationQuestion open = openQuestion(21L, eval, 3, true);
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .status(AttemptStatus.IN_PROGRESS).active(true).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+        when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval))
+                .thenReturn(List.of(open));
+        when(answerRepository.findByAttemptAndQuestion(attempt, open)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.submitAttempt(
+                "EST0001", 50L, new SubmitEvaluationAttemptRequest(null)))
+                .hasMessageContaining("obligatorias");
+        verify(attemptRepository, never()).save(any(EvaluationAttempt.class));
+    }
+
+    @Test
+    void docenteCalificaRespuestaAbiertaYSeRecalculaNota() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        stubTeacher(docente);
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
+        EvaluationQuestion mc = question(20L, eval, 2);
+        EvaluationQuestion open = openQuestion(21L, eval, 3, false);
+        EvaluationOption correcta = option(32L, mc, true);
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .status(AttemptStatus.PENDING_MANUAL_REVIEW).score(2).maxScore(5)
+                .startedAt(LocalDateTime.now()).submittedAt(LocalDateTime.now()).active(true).build();
+        EvaluationAnswer mcAnswer = EvaluationAnswer.builder()
+                .id(60L).attempt(attempt).question(mc).selectedOption(correcta).reviewed(true).build();
+        EvaluationAnswer openAnswer = EvaluationAnswer.builder()
+                .id(61L).attempt(attempt).question(open).answerText("El calcio reacciona con oxígeno.")
+                .reviewed(false).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+        when(answerRepository.findById(61L)).thenReturn(Optional.of(openAnswer));
+        when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval))
+                .thenReturn(List.of(mc, open));
+        when(answerRepository.findByAttemptAndQuestion(attempt, mc)).thenReturn(Optional.of(mcAnswer));
+        when(answerRepository.findByAttemptAndQuestion(attempt, open)).thenReturn(Optional.of(openAnswer));
+        when(answerRepository.save(any(EvaluationAnswer.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(attemptRepository.save(any(EvaluationAttempt.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TeacherAttemptReviewResponse response = service.manualGradeAnswer(
+                "docente1", 50L, 61L, new ManualGradeRequest(3, "Respuesta correcta."));
+
+        // Al revisar la única abierta, el intento pasa a GRADED con nota completa (2 + 3).
+        assertThat(response.status()).isEqualTo(AttemptStatus.GRADED);
+        assertThat(response.score()).isEqualTo(5);
+        assertThat(response.maxScore()).isEqualTo(5);
+        assertThat(response.pendingOpenCount()).isZero();
+        assertThat(openAnswer.getReviewed()).isTrue();
+        assertThat(openAnswer.getPointsAwarded()).isEqualTo(3);
+        // Se registran logs seguros: revisión de la respuesta y cierre de la revisión.
+        ArgumentCaptor<String> metadata = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).recordInfo(eq(LogEventType.EVALUATION_ANSWER_REVIEWED),
+                any(), any(), any(), any(), any(), metadata.capture());
+        // El log no contiene el texto de la respuesta del estudiante, solo identificadores.
+        assertThat(metadata.getValue()).contains("attemptId=50").contains("answerId=61");
+        assertThat(metadata.getValue()).doesNotContain("calcio");
+        verify(auditLogService).recordInfo(eq(LogEventType.EVALUATION_REVIEW_COMPLETED),
+                any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void rechazaPuntajeManualMayorAlMaximo() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        stubTeacher(docente);
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
+        EvaluationQuestion open = openQuestion(21L, eval, 3, false);
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .status(AttemptStatus.PENDING_MANUAL_REVIEW).score(0).maxScore(3).active(true).build();
+        EvaluationAnswer openAnswer = EvaluationAnswer.builder()
+                .id(61L).attempt(attempt).question(open).answerText("Texto").reviewed(false).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+        when(answerRepository.findById(61L)).thenReturn(Optional.of(openAnswer));
+
+        assertThatThrownBy(() -> service.manualGradeAnswer(
+                "docente1", 50L, 61L, new ManualGradeRequest(4, null)))
+                .hasMessageContaining("no puede superar el máximo");
+        verify(answerRepository, never()).save(any(EvaluationAnswer.class));
+    }
+
+    @Test
+    void docenteNoRevisaIntentoDeEvaluacionAjena() {
+        TeacherProfile docenteDueno = teacher(1L, "docente1");
+        TeacherProfile otroDocente = teacher(2L, "docente2");
+        stubTeacher(otroDocente);
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        Evaluation eval = evaluation(10L, docenteDueno, EvaluationStatus.PUBLISHED, 1);
+        EvaluationAttempt attempt = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .status(AttemptStatus.PENDING_MANUAL_REVIEW).active(true).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+
+        assertThatThrownBy(() -> service.getAttemptReview("docente2", 50L))
+                .hasMessageContaining("No tienes permiso");
+    }
+
+    @Test
+    void estudianteNoRecibeCriterioDeCorreccionDePreguntaAbierta() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        EvaluationAssignment asig = assignment(40L, eval, docente, "3", "A");
+        EvaluationQuestion open = openQuestion(21L, eval, 3, true);
+        when(assignmentRepository.findActiveForSectionByEvaluation(10L, "3", "A", EvaluationStatus.PUBLISHED))
+                .thenReturn(Optional.of(asig));
+        when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval))
+                .thenReturn(List.of(open));
+        when(optionRepository.findByQuestionAndActiveTrueOrderByOrderIndexAsc(open)).thenReturn(List.of());
+
+        StudentEvaluationDetailResponse response = service.getStudentEvaluationDetail("EST0001", 10L);
+
+        StudentQuestionResponse q = response.questions().get(0);
+        // El estudiante ve el tipo y la obligatoriedad, pero la pregunta abierta no trae
+        // alternativas y el DTO no expone el criterio de corrección (expectedAnswer).
+        assertThat(q.questionType()).isEqualTo(QuestionType.OPEN_TEXT);
+        assertThat(q.required()).isTrue();
+        assertThat(q.options()).isEmpty();
     }
 }

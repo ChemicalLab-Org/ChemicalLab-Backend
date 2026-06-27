@@ -152,6 +152,42 @@ public class EvaluationController {
     }
 
     // =========================================================================
+    // DOCENTE — revisión manual de preguntas abiertas
+    // =========================================================================
+
+    /** Bandeja de intentos del docente pendientes de revisión manual. */
+    @GetMapping("/teacher/manual-review")
+    public List<PendingReviewAttemptResponse> listarPendientesRevision(Authentication authentication) {
+        return evaluationService.listPendingManualReview(authentication.getName());
+    }
+
+    /** Detalle de un intento para revisar sus respuestas abiertas. */
+    @GetMapping("/teacher/attempts/{attemptId}/review")
+    public TeacherAttemptReviewResponse verRevisionIntento(
+            Authentication authentication,
+            @PathVariable Long attemptId) {
+        return evaluationService.getAttemptReview(authentication.getName(), attemptId);
+    }
+
+    /** Asigna puntaje y retroalimentación a una respuesta abierta. */
+    @PatchMapping("/teacher/attempts/{attemptId}/answers/{answerId}/manual-grade")
+    public TeacherAttemptReviewResponse calificarRespuestaAbierta(
+            Authentication authentication,
+            @PathVariable Long attemptId,
+            @PathVariable Long answerId,
+            @Valid @RequestBody ManualGradeRequest request) {
+        return evaluationService.manualGradeAnswer(authentication.getName(), attemptId, answerId, request);
+    }
+
+    /** Cierra la revisión de un intento y recalcula su nota final. */
+    @PatchMapping("/teacher/attempts/{attemptId}/complete-review")
+    public TeacherAttemptReviewResponse completarRevisionIntento(
+            Authentication authentication,
+            @PathVariable Long attemptId) {
+        return evaluationService.completeReview(authentication.getName(), attemptId);
+    }
+
+    // =========================================================================
     // ESTUDIANTE
     // =========================================================================
 

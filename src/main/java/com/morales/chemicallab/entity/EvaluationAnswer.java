@@ -7,9 +7,12 @@ import java.time.LocalDateTime;
 
 /**
  * Respuesta de un estudiante a una pregunta dentro de un {@link EvaluationAttempt}.
- * Para alternativa única basta con {@code selectedOption}. Los campos {@code correct}
- * y {@code pointsAwarded} se rellenan al enviar el intento con un cálculo básico
- * encapsulado; {@code answerText} queda disponible para futuros tipos de pregunta.
+ * Para alternativa única basta con {@code selectedOption}, y {@code correct}/
+ * {@code pointsAwarded} se rellenan automáticamente al enviar el intento. Para
+ * preguntas abiertas el estudiante escribe en {@code answerText} y el docente la
+ * califica manualmente: {@code reviewed} marca que ya fue revisada, {@code pointsAwarded}
+ * guarda el puntaje asignado, {@code teacherFeedback} la retroalimentación opcional y
+ * {@code reviewedAt}/{@code reviewedBy} el momento y autor de la revisión.
  */
 @Entity
 @Table(name = "evaluation_answers")
@@ -39,10 +42,32 @@ public class EvaluationAnswer {
     @Column(columnDefinition = "TEXT")
     private String answerText;
 
-    // Resultado de la corrección. Null mientras el intento no se ha enviado.
+    // Resultado de la corrección. En alternativa única se rellena al enviar; en preguntas
+    // abiertas queda null (no hay clave automática).
     private Boolean correct;
 
     private Integer pointsAwarded;
+
+    // Revisión manual de preguntas abiertas. En alternativa única queda siempre true (la
+    // corrección es automática); en preguntas abiertas pasa a true cuando el docente la
+    // califica. Mientras sea false, el puntaje de esta respuesta no es definitivo.
+    // columnDefinition con default para que ddl-auto=update pueda agregar la columna a
+    // tablas con datos previos (las respuestas existentes quedan como ya revisadas, pues
+    // corresponden a alternativa única con corrección automática).
+    @Builder.Default
+    @Column(nullable = false, columnDefinition = "boolean default true")
+    private Boolean reviewed = true;
+
+    // Retroalimentación opcional del docente para una respuesta abierta.
+    @Column(columnDefinition = "TEXT")
+    private String teacherFeedback;
+
+    private LocalDateTime reviewedAt;
+
+    // Docente que realizó la revisión manual (null mientras no se haya revisado).
+    @ManyToOne
+    @JoinColumn(name = "reviewed_by")
+    private TeacherProfile reviewedBy;
 
     private LocalDateTime answeredAt;
 

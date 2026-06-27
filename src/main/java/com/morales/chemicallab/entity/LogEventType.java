@@ -41,8 +41,16 @@ public enum LogEventType {
     EVALUATION_PUBLISHED(LogCategory.EVALUATION),
     EVALUATION_ARCHIVED(LogCategory.EVALUATION),
     EVALUATION_ASSIGNED(LogCategory.EVALUATION),
+    // El docente creó o editó una pregunta abierta (revisión manual).
+    EVALUATION_OPEN_QUESTION_SAVED(LogCategory.EVALUATION),
     EVALUATION_ATTEMPT_STARTED(LogCategory.EVALUATION),
     EVALUATION_ATTEMPT_SUBMITTED(LogCategory.EVALUATION),
+    // El intento quedó pendiente de revisión manual por contener preguntas abiertas.
+    EVALUATION_ATTEMPT_PENDING_REVIEW(LogCategory.EVALUATION),
+    // El docente revisó/calificó manualmente una respuesta abierta.
+    EVALUATION_ANSWER_REVIEWED(LogCategory.EVALUATION),
+    // Se completó la revisión manual de un intento y se recalculó la nota final.
+    EVALUATION_REVIEW_COMPLETED(LogCategory.EVALUATION),
 
     // Resultados
     RESULT_VIEWED(LogCategory.RESULTS),
