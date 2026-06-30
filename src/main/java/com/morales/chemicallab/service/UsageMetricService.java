@@ -17,6 +17,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -60,8 +61,14 @@ public class UsageMetricService {
      * Registra un evento de uso a nombre del usuario autenticado. El {@code username}
      * proviene del token (resuelto en el controlador); el rol y el id se toman de la cuenta,
      * no de la petición. La metadata se sanitiza antes de almacenarse.
+     *
+     * <p>Se ejecuta en una transacción <strong>independiente</strong> ({@code REQUIRES_NEW}):
+     * la métrica es de mejor esfuerzo y nunca debe afectar a la operación que la dispara. Así, si
+     * el guardado falla (p. ej. por una restricción de la BD), solo se revierte esta transacción y
+     * el llamador puede capturar la excepción sin que su propia transacción quede marcada para
+     * rollback (lo que provocaría un 500 al hacer commit aunque su lógica fuera correcta).</p>
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordEvent(String username, RecordUsageEventRequest request) {
         UserAccount user = userAccountRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalArgumentException("El usuario autenticado no existe."));
