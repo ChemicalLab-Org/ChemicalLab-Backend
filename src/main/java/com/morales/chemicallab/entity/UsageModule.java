@@ -14,6 +14,7 @@ public enum UsageModule {
     COMPOUNDS,
     CONCEPTS,
     EVALUATIONS,
+    WHITEBOARD,
     RESULTS,
     ADMIN,
     USERS,

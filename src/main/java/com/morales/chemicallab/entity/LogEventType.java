@@ -63,6 +63,14 @@ public enum LogEventType {
     // Resultados
     RESULT_VIEWED(LogCategory.RESULTS),
 
+    // Pizarra interactiva en vivo
+    WHITEBOARD_SESSION_CREATED(LogCategory.WHITEBOARD),
+    WHITEBOARD_SESSION_PAUSED(LogCategory.WHITEBOARD),
+    WHITEBOARD_SESSION_RESUMED(LogCategory.WHITEBOARD),
+    WHITEBOARD_SESSION_CLOSED(LogCategory.WHITEBOARD),
+    WHITEBOARD_INTERACTION_UPDATED(LogCategory.WHITEBOARD),
+    WHITEBOARD_PARTICIPANT_INTERACTION_UPDATED(LogCategory.WHITEBOARD),
+
     // Sistema / administración
     SYSTEM_HEALTH_CHECK(LogCategory.SYSTEM),
     ADMIN_ACTION(LogCategory.ADMIN);

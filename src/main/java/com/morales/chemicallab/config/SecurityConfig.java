@@ -64,6 +64,10 @@ public class SecurityConfig {
                         // Documentación Swagger / OpenAPI — útil en desarrollo
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
 
+                        // Handshake WebSocket/STOMP de la pizarra — la autenticación real
+                        // ocurre en el frame STOMP CONNECT (JWT) vía ChannelInterceptor.
+                        .requestMatchers("/ws/**").permitAll()
+
                         // Restablecimiento de contraseña de estudiante — solo DOCENTE
                         // (debe ir antes que la regla de docente para no quedar sombreado)
                         .requestMatchers(HttpMethod.PATCH, "/api/users/teachers/*/students/*/reset-password").hasRole(DOCENTE)
@@ -111,6 +115,11 @@ public class SecurityConfig {
                         .requestMatchers("/api/evaluations/teacher/**").hasRole(DOCENTE)
                         .requestMatchers("/api/evaluations/student/**").hasRole(ESTUDIANTE)
                         .requestMatchers("/api/evaluations/admin/**").hasRole(ADMIN)
+
+                        // Pizarra interactiva en vivo — acceso segmentado por rol
+                        .requestMatchers("/api/whiteboards/teacher/**").hasRole(DOCENTE)
+                        .requestMatchers("/api/whiteboards/student/**").hasRole(ESTUDIANTE)
+                        .requestMatchers("/api/whiteboards/admin/**").hasRole(ADMIN)
 
                         // Cualquier otro endpoint requiere autenticación
                         .anyRequest().authenticated()

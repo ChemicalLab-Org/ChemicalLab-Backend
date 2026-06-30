@@ -445,3 +445,69 @@ Debe incluir:
 Quedan fuera de esa sesión: exportación PDF, imágenes externas, motor químico, plantillas avanzadas,
 edición de sesiones cerradas, varios docentes simultáneos y la configuración detallada de despliegue
 LAN (solo se deja preparada la compatibilidad).
+
+## 17. Implementación backend inicial (sesión 15.1)
+
+> **Estado actualizado:** la sesión 15.1 **implementó el backend** del MVP descrito arriba. El diseño
+> de las secciones 1–15 se respetó; abajo se anota cómo quedó plasmado en código. La interfaz Angular
+> (docente y estudiante) se construirá en sesiones posteriores (15.2+).
+
+### Dependencia
+
+- Se agregó `spring-boot-starter-websocket` al `pom.xml` (no se añadieron librerías externas).
+
+### Entidades y enums
+
+- `WhiteboardSession` y `WhiteboardParticipant` (paquete `entity`). La sesión guarda la **captura
+  final** como bytes en PostgreSQL (`bytea`, columnas `final_snapshot_data`/`_content_type`/
+  `_file_name`/`_size`), con los bytes `LAZY` para que no viajen en listados.
+- Enums `WhiteboardSessionStatus` (`ACTIVE`/`PAUSED`/`CLOSED`) y `WhiteboardInteractionOverride`
+  (`FOLLOW_GLOBAL`/`ALLOWED`/`BLOCKED`).
+- Se ampliaron `LogCategory` (nuevo `WHITEBOARD`), `LogEventType` (eventos de sesión/pausa/reanudación/
+  interacción/cierre), `UsageModule` (`WHITEBOARD`) y `UsageEventType` (`WHITEBOARD_SESSION_JOINED`).
+
+### Permiso de interacción (global + individual)
+
+- El permiso global vive en `WhiteboardSession.interactionEnabled`; el individual en
+  `WhiteboardParticipant.interactionOverride`. La regla efectiva la centraliza
+  `WhiteboardInteractionPolicy`: `ALLOWED` → puede; `BLOCKED` → no puede; `FOLLOW_GLOBAL` → sigue el
+  global. Así se puede bloquear a un alumno aunque el global esté activo y habilitar a uno aunque esté
+  desactivado.
+
+### REST (`/api/whiteboards/{teacher|student|admin}/...`)
+
+- Docente: listar, crear, detalle, `pause`, `resume`, `close` (multipart con la captura),
+  `PATCH .../interaction` (global), `PATCH .../participants/{studentId}/interaction` (individual),
+  listar participantes y `GET .../snapshot`.
+- Estudiante: `GET .../active`, `POST .../{id}/join` (idempotente), `GET .../history`,
+  `GET .../{id}`, `GET .../{id}/snapshot`.
+- Administrador: `GET .../summary` y `GET .../admin` (solo metadata).
+
+### WebSocket/STOMP
+
+- Endpoint `/ws` (SockJS). Suscripción `/topic/whiteboards/{sessionId}`; envío
+  `/app/whiteboards/{sessionId}/draw` y `/presence`. Colas privadas de error en `/user/queue/...`.
+- Autenticación en el `CONNECT` con el JWT del proyecto vía `WhiteboardStompAuthChannelInterceptor`
+  (cabecera `Authorization: Bearer <token>`). No se permite dibujar de forma anónima.
+- Eventos de control (`SESSION_PAUSED`/`RESUMED`/`CLOSED`, `INTERACTION_UPDATED`,
+  `PARTICIPANT_PERMISSION_UPDATED`) se difunden al canal cuando el docente actúa por REST.
+
+### Validación, seguridad y captura
+
+- Cada evento de dibujo valida sesión existente y `ACTIVE`, propiedad (docente) o unión + permiso
+  efectivo (estudiante); `CLEAR` solo docente; color hex, tamaños y cantidad de puntos acotados.
+- `CLOSED` es terminal: no se reabre, no se dibuja, no se cambian permisos ni la captura.
+- La captura final solo admite PNG/JPG, no vacía y ≤ 5 MB.
+
+### Logs y migración
+
+- Se registran logs seguros de creación, pausa, reanudación, cambio de interacción global/individual y
+  cierre. **No** se registran trazos ni el payload de dibujo. La unión del estudiante se registra como
+  **métrica de uso** (`WHITEBOARD_SESSION_JOINED`).
+- `WhiteboardSchemaMigration` elimina de forma idempotente los CHECK heredados de los enums persistidos
+  (mismo patrón preventivo que evaluaciones con `ddl-auto=update`).
+
+### Pruebas
+
+- `WhiteboardInteractionPolicyTest`, `WhiteboardSessionServiceTest` y `WhiteboardDrawEventServiceTest`
+  cubren creación/estados/participantes/permisos/captura/seguridad y la validación de eventos.
