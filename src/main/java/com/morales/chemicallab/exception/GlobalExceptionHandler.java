@@ -11,6 +11,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -94,6 +96,26 @@ public class GlobalExceptionHandler {
                 HttpStatus.UNAUTHORIZED.value(),
                 "Cuenta inactiva",
                 ex.getMessage(),
+                request.getRequestURI(),
+                null
+        ));
+    }
+
+    /**
+     * Ruta inexistente. Desde Spring Boot 3.2 (este proyecto usa Boot 4), una petición que no
+     * coincide con ningún controlador ni recurso estático lanza {@link NoResourceFoundException} /
+     * {@link NoHandlerFoundException}, cuyo significado es <strong>404</strong>. Sin este manejador
+     * caerían en el {@code handleGeneral(Exception)} de abajo y se devolverían como 500 engañoso
+     * (p. ej. el frontend llamando a un endpoint que aún no está desplegado). Aquí se mapean a 404
+     * claro.
+     */
+    @ExceptionHandler({NoResourceFoundException.class, NoHandlerFoundException.class})
+    public ResponseEntity<ErrorResponse> handleNoHandler(Exception ex, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ErrorResponse(
+                LocalDateTime.now(),
+                HttpStatus.NOT_FOUND.value(),
+                "Recurso no encontrado",
+                "La ruta solicitada no existe.",
                 request.getRequestURI(),
                 null
         ));
