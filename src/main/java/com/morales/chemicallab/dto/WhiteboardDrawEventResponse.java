@@ -23,6 +23,9 @@ public record WhiteboardDrawEventResponse(
         Role actorRole,
         String actorDisplayName,
         String clientEventId,
-        LocalDateTime occurredAt
+        LocalDateTime occurredAt,
+        String textId,
+        Double fontSize,
+        List<WhiteboardTextRun> runs
 ) {
 }

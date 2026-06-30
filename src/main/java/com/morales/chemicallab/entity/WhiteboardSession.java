@@ -62,6 +62,17 @@ public class WhiteboardSession {
     @Column(nullable = false)
     private Boolean interactionEnabled = false;
 
+    // Estado actual del lienzo de una sesión EN VIVO (trazos + textos) como JSON, para que un
+    // estudiante que entra tarde o recarga reconstruya lo ya dibujado. Lo mantiene el frontend
+    // docente de forma debounced; el backend solo lo guarda/devuelve (no interpreta su contenido)
+    // y nunca lo registra en los logs de auditoría. La captura final (imagen) se mantiene aparte
+    // para las sesiones CLOSED.
+    @Column(name = "current_state_json", columnDefinition = "TEXT")
+    private String currentStateJson;
+
+    @Column(name = "state_updated_at")
+    private LocalDateTime stateUpdatedAt;
+
     // --- Captura final (solo presente cuando la sesión está CLOSED) ---
 
     @Basic(fetch = FetchType.LAZY)
