@@ -304,6 +304,12 @@ class WhiteboardSessionServiceTest {
         service.joinSession("EST0001", 10L);
 
         verify(participantRepository).save(any(WhiteboardParticipant.class));
+        // La primera unión avisa al canal para refrescar el panel de participantes del docente.
+        ArgumentCaptor<WhiteboardControlEventResponse> ctrl =
+                ArgumentCaptor.forClass(WhiteboardControlEventResponse.class);
+        verify(broadcastService).broadcastControl(ctrl.capture());
+        assertThat(ctrl.getValue().eventType()).isEqualTo(WhiteboardControlEventType.PARTICIPANT_JOINED);
+        assertThat(ctrl.getValue().targetStudentId()).isEqualTo(5L);
     }
 
     @Test
@@ -350,6 +356,80 @@ class WhiteboardSessionServiceTest {
         ArgumentCaptor<WhiteboardParticipant> captor = ArgumentCaptor.forClass(WhiteboardParticipant.class);
         verify(participantRepository, times(1)).save(captor.capture());
         assertThat(captor.getValue().getId()).isEqualTo(99L); // se reutiliza, no se crea otro
+        // Re-unión idempotente: no se emite PARTICIPANT_JOINED de nuevo.
+        verify(broadcastService, never()).broadcastControl(any());
+    }
+
+    // ---------------------------------------------------------------- estado del lienzo
+
+    @Test
+    void docenteGuardaEstadoDelLienzo() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        stubTeacher(docente);
+        WhiteboardSession s = session(10L, docente, WhiteboardSessionStatus.ACTIVE, "3", "A");
+        when(sessionRepository.findById(10L)).thenReturn(Optional.of(s));
+        when(sessionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        WhiteboardBoardStateResponse response = service.saveBoardState("docente1", 10L,
+                new WhiteboardBoardStateRequest("{\"strokes\":[],\"texts\":[]}"));
+
+        assertThat(response.stateJson()).contains("strokes");
+        assertThat(s.getCurrentStateJson()).contains("texts");
+        assertThat(s.getStateUpdatedAt()).isNotNull();
+    }
+
+    @Test
+    void noGuardaEstadoEnSesionCerrada() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        stubTeacher(docente);
+        WhiteboardSession s = session(10L, docente, WhiteboardSessionStatus.CLOSED, "3", "A");
+        when(sessionRepository.findById(10L)).thenReturn(Optional.of(s));
+
+        assertThatThrownBy(() -> service.saveBoardState("docente1", 10L,
+                new WhiteboardBoardStateRequest("{}")))
+                .hasMessageContaining("finalizada");
+        verify(sessionRepository, never()).save(any());
+    }
+
+    @Test
+    void rechazaEstadoDemasiadoGrande() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        stubTeacher(docente);
+        WhiteboardSession s = session(10L, docente, WhiteboardSessionStatus.ACTIVE, "3", "A");
+        when(sessionRepository.findById(10L)).thenReturn(Optional.of(s));
+
+        String big = "x".repeat(2_000_001);
+        assertThatThrownBy(() -> service.saveBoardState("docente1", 10L,
+                new WhiteboardBoardStateRequest(big)))
+                .hasMessageContaining("tamaño");
+        verify(sessionRepository, never()).save(any());
+    }
+
+    @Test
+    void estudianteDeLaSeccionObtieneEstadoActual() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        WhiteboardSession s = session(10L, docente, WhiteboardSessionStatus.ACTIVE, "3", "A");
+        s.setCurrentStateJson("{\"strokes\":[1]}");
+        when(sessionRepository.findById(10L)).thenReturn(Optional.of(s));
+
+        WhiteboardBoardStateResponse response = service.getStudentBoardState("EST0001", 10L);
+
+        assertThat(response.stateJson()).contains("strokes");
+        assertThat(response.status()).isEqualTo(WhiteboardSessionStatus.ACTIVE);
+    }
+
+    @Test
+    void estudianteDeOtraSeccionNoObtieneEstado() {
+        StudentProfile alumno = student(6L, "EST0002", "3", "B");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        when(sessionRepository.findById(10L))
+                .thenReturn(Optional.of(session(10L, docente, WhiteboardSessionStatus.ACTIVE, "3", "A")));
+
+        assertThatThrownBy(() -> service.getStudentBoardState("EST0002", 10L))
+                .isInstanceOf(EntityNotFoundException.class);
     }
 
     // ---------------------------------------------------------------- interacción

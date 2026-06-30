@@ -10,5 +10,7 @@ public enum WhiteboardControlEventType {
     SESSION_RESUMED,
     SESSION_CLOSED,
     INTERACTION_UPDATED,
-    PARTICIPANT_PERMISSION_UPDATED
+    PARTICIPANT_PERMISSION_UPDATED,
+    /** Un estudiante se unió a la sesión (para refrescar el panel de participantes del docente). */
+    PARTICIPANT_JOINED
 }

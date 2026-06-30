@@ -5,6 +5,7 @@ import com.morales.chemicallab.dto.WhiteboardDrawEventResponse;
 import com.morales.chemicallab.dto.WhiteboardDrawEventType;
 import com.morales.chemicallab.dto.WhiteboardDrawTool;
 import com.morales.chemicallab.dto.WhiteboardPoint;
+import com.morales.chemicallab.dto.WhiteboardTextRun;
 import com.morales.chemicallab.entity.Role;
 import com.morales.chemicallab.entity.StudentProfile;
 import com.morales.chemicallab.entity.TeacherProfile;
@@ -25,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -54,6 +56,17 @@ public class WhiteboardDrawEventService {
     private static final double MAX_STROKE_WIDTH = 100.0;
     private static final double MAX_ERASER_SIZE = 200.0;
     private static final Pattern HEX_COLOR = Pattern.compile("^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$");
+
+    // Texto: tope de fragmentos y de longitud total para acotar el payload.
+    private static final int MAX_TEXT_RUNS = 200;
+    private static final int MAX_TEXT_LENGTH = 5000;
+    private static final double MIN_FONT_SIZE = 4.0;
+    private static final double MAX_FONT_SIZE = 400.0;
+    // Eventos que solo puede originar el docente (limpiar y manejar texto de la pizarra).
+    private static final Set<WhiteboardDrawEventType> TEACHER_ONLY_EVENTS = Set.of(
+            WhiteboardDrawEventType.CLEAR,
+            WhiteboardDrawEventType.TEXT,
+            WhiteboardDrawEventType.TEXT_DELETE);
 
     private final WhiteboardSessionRepository sessionRepository;
     private final WhiteboardParticipantRepository participantRepository;
@@ -112,33 +125,100 @@ public class WhiteboardDrawEventService {
                 if (!canInteract) {
                     throw new IllegalArgumentException("No tienes permiso de interacción en esta sesión.");
                 }
-                // Limpiar toda la pizarra queda reservado al docente.
-                if (eventType == WhiteboardDrawEventType.CLEAR) {
-                    throw new IllegalArgumentException("Solo el docente puede limpiar toda la pizarra.");
+                // Limpiar toda la pizarra y el manejo de texto quedan reservados al docente.
+                if (TEACHER_ONLY_EVENTS.contains(eventType)) {
+                    throw new IllegalArgumentException(
+                            "Esta acción de la pizarra está reservada al docente.");
                 }
                 actorDisplayName = student.getNames() + " " + student.getLastNames();
             }
             default -> throw new IllegalArgumentException("El rol del usuario no permite dibujar.");
         }
 
-        List<WhiteboardPoint> points = validatePayload(eventType, request);
-        String color = validateColor(request.color());
-
-        WhiteboardDrawEventResponse response = new WhiteboardDrawEventResponse(
-                session.getId(),
-                eventType,
-                tool,
-                color,
-                request.strokeWidth(),
-                request.eraserSize(),
-                points,
-                actorRole,
-                actorDisplayName,
-                request.clientEventId(),
-                LocalDateTime.now());
+        // Los eventos de texto (TEXT/TEXT_DELETE) viajan por el mismo canal con su propio payload;
+        // el resto (DRAW/ERASE/CLEAR) conservan exactamente la validación anterior.
+        WhiteboardDrawEventResponse response = (eventType == WhiteboardDrawEventType.TEXT
+                || eventType == WhiteboardDrawEventType.TEXT_DELETE)
+                ? buildTextResponse(session, eventType, tool, request, actorRole, actorDisplayName)
+                : buildDrawResponse(session, eventType, tool, request, actorRole, actorDisplayName);
 
         broadcastService.broadcastDraw(response);
         return response;
+    }
+
+    private WhiteboardDrawEventResponse buildDrawResponse(WhiteboardSession session,
+                                                          WhiteboardDrawEventType eventType,
+                                                          WhiteboardDrawTool tool,
+                                                          WhiteboardDrawEventRequest request,
+                                                          Role actorRole, String actorDisplayName) {
+        List<WhiteboardPoint> points = validatePayload(eventType, request);
+        String color = validateColor(request.color());
+        return new WhiteboardDrawEventResponse(
+                session.getId(), eventType, tool, color,
+                request.strokeWidth(), request.eraserSize(), points,
+                actorRole, actorDisplayName, request.clientEventId(), LocalDateTime.now(),
+                null, null, null);
+    }
+
+    /**
+     * Construye un evento de texto validado. TEXT exige posición (un punto), tamaño y fragmentos de
+     * texto acotados; TEXT_DELETE solo exige el identificador del bloque a eliminar.
+     */
+    private WhiteboardDrawEventResponse buildTextResponse(WhiteboardSession session,
+                                                          WhiteboardDrawEventType eventType,
+                                                          WhiteboardDrawTool tool,
+                                                          WhiteboardDrawEventRequest request,
+                                                          Role actorRole, String actorDisplayName) {
+        String textId = request.textId();
+        if (textId == null || textId.isBlank() || textId.length() > 100) {
+            throw new IllegalArgumentException("El identificador del texto es obligatorio.");
+        }
+
+        if (eventType == WhiteboardDrawEventType.TEXT_DELETE) {
+            return new WhiteboardDrawEventResponse(
+                    session.getId(), eventType, tool, null, null, null, null,
+                    actorRole, actorDisplayName, request.clientEventId(), LocalDateTime.now(),
+                    textId, null, null);
+        }
+
+        List<WhiteboardPoint> points = request.points();
+        if (points == null || points.size() != 1 || points.get(0) == null
+                || points.get(0).x() == null || points.get(0).y() == null) {
+            throw new IllegalArgumentException("El texto debe incluir su posición (un punto).");
+        }
+        Double fontSize = request.fontSize();
+        if (fontSize == null || fontSize < MIN_FONT_SIZE || fontSize > MAX_FONT_SIZE) {
+            throw new IllegalArgumentException("El tamaño del texto no es válido.");
+        }
+        List<WhiteboardTextRun> runs = validateRuns(request.runs());
+        String color = validateColor(request.color());
+        return new WhiteboardDrawEventResponse(
+                session.getId(), eventType, tool, color, null, null, List.copyOf(points),
+                actorRole, actorDisplayName, request.clientEventId(), LocalDateTime.now(),
+                textId, fontSize, runs);
+    }
+
+    private List<WhiteboardTextRun> validateRuns(List<WhiteboardTextRun> runs) {
+        if (runs == null || runs.isEmpty()) {
+            throw new IllegalArgumentException("El texto no puede estar vacío.");
+        }
+        if (runs.size() > MAX_TEXT_RUNS) {
+            throw new IllegalArgumentException("El texto tiene demasiados fragmentos de formato.");
+        }
+        int total = 0;
+        for (WhiteboardTextRun run : runs) {
+            if (run == null || run.text() == null) {
+                throw new IllegalArgumentException("Cada fragmento de texto debe tener contenido.");
+            }
+            total += run.text().length();
+        }
+        if (total == 0) {
+            throw new IllegalArgumentException("El texto no puede estar vacío.");
+        }
+        if (total > MAX_TEXT_LENGTH) {
+            throw new IllegalArgumentException("El texto supera la longitud máxima permitida.");
+        }
+        return List.copyOf(runs);
     }
 
     // =========================================================================

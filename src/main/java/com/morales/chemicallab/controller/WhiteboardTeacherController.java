@@ -96,6 +96,21 @@ public class WhiteboardTeacherController {
         return whiteboardSessionService.listParticipants(authentication.getName(), id);
     }
 
+    @PutMapping("/{id}/state")
+    public WhiteboardBoardStateResponse guardarEstado(
+            Authentication authentication,
+            @PathVariable Long id,
+            @RequestBody WhiteboardBoardStateRequest request) {
+        return whiteboardSessionService.saveBoardState(authentication.getName(), id, request);
+    }
+
+    @GetMapping("/{id}/state")
+    public WhiteboardBoardStateResponse obtenerEstado(
+            Authentication authentication,
+            @PathVariable Long id) {
+        return whiteboardSessionService.getTeacherBoardState(authentication.getName(), id);
+    }
+
     @GetMapping("/{id}/snapshot")
     public ResponseEntity<byte[]> obtenerCaptura(
             Authentication authentication,
