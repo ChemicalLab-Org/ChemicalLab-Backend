@@ -10,5 +10,9 @@ public enum WhiteboardDrawEventType {
     /** Borrado parcial con el borrador. */
     ERASE,
     /** Limpiar toda la pizarra (reservado al docente). */
-    CLEAR
+    CLEAR,
+    /** Crear o actualizar un objeto de texto (reservado al docente). */
+    TEXT,
+    /** Eliminar un objeto de texto por su identificador (reservado al docente). */
+    TEXT_DELETE
 }

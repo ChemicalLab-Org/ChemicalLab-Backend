@@ -51,6 +51,10 @@ public class WhiteboardSessionService {
     private static final long MAX_SNAPSHOT_BYTES = 5L * 1024 * 1024;
     private static final Set<String> ALLOWED_SNAPSHOT_TYPES = Set.of("image/png", "image/jpeg");
 
+    // Estado actual del lienzo en vivo (JSON con trazos + textos): tope de tamaño para evitar
+    // payloads enormes. ~2 MB de texto cubre con holgura una pizarra de clase.
+    private static final int MAX_STATE_JSON_CHARS = 2_000_000;
+
     // Estados visibles para el estudiante (sesiones disponibles para unirse/ver en vivo).
     private static final Set<WhiteboardSessionStatus> LIVE_STATUSES =
             Set.of(WhiteboardSessionStatus.ACTIVE, WhiteboardSessionStatus.PAUSED);
@@ -244,6 +248,35 @@ public class WhiteboardSessionService {
         return requireSnapshot(session);
     }
 
+    /**
+     * Guarda el estado actual del lienzo (trazos + textos serializados) de una sesión en vivo. Lo
+     * envía el docente propietario de forma debounced. No se permite en sesiones CLOSED (la captura
+     * final es la representación terminal). No se interpreta ni se registra en auditoría.
+     */
+    public WhiteboardBoardStateResponse saveBoardState(String username, Long sessionId,
+                                                       WhiteboardBoardStateRequest request) {
+        TeacherProfile teacher = requireTeacher(username);
+        WhiteboardSession session = requireOwnedSession(sessionId, teacher);
+        if (session.getStatus() == WhiteboardSessionStatus.CLOSED) {
+            throw new IllegalArgumentException("La sesión está finalizada: no se puede actualizar su estado.");
+        }
+        String stateJson = request == null ? null : request.stateJson();
+        if (stateJson != null && stateJson.length() > MAX_STATE_JSON_CHARS) {
+            throw new IllegalArgumentException("El estado de la pizarra supera el tamaño máximo permitido.");
+        }
+        session.setCurrentStateJson(stateJson);
+        session.setStateUpdatedAt(LocalDateTime.now());
+        sessionRepository.save(session);
+        return toBoardState(session);
+    }
+
+    @Transactional(readOnly = true)
+    public WhiteboardBoardStateResponse getTeacherBoardState(String username, Long sessionId) {
+        TeacherProfile teacher = requireTeacher(username);
+        WhiteboardSession session = requireOwnedSession(sessionId, teacher);
+        return toBoardState(session);
+    }
+
     // =========================================================================
     // ESTUDIANTE
     // =========================================================================
@@ -276,7 +309,8 @@ public class WhiteboardSessionService {
         WhiteboardParticipant participant = participantRepository
                 .findBySessionAndStudent(session, student)
                 .orElse(null);
-        if (participant == null) {
+        boolean newlyJoined = participant == null;
+        if (newlyJoined) {
             participant = WhiteboardParticipant.builder()
                     .session(session)
                     .student(student)
@@ -288,6 +322,13 @@ public class WhiteboardSessionService {
         participantRepository.save(participant);
 
         recordJoinMetric(username, session);
+
+        // Avisa al canal de la sesión para que el panel de participantes del docente se actualice
+        // sin recargar. Solo en la primera unión (no en re-uniones idempotentes) para no generar ruido.
+        if (newlyJoined) {
+            broadcastService.broadcastControl(
+                    controlEvent(session, WhiteboardControlEventType.PARTICIPANT_JOINED, student.getId()));
+        }
         return toStudentResponse(session, student);
     }
 
@@ -315,6 +356,18 @@ public class WhiteboardSessionService {
                         student.getGrade(), student.getSection(), WhiteboardSessionStatus.CLOSED).stream()
                 .map(this::toHistoryItem)
                 .toList();
+    }
+
+    /**
+     * Estado actual del lienzo en vivo para un estudiante de la sesión (su grado/sección). Permite
+     * reconstruir lo ya dibujado al unirse tarde o recargar, antes de seguir con los eventos en
+     * vivo. Para sesiones CLOSED se usa la captura final, no este estado.
+     */
+    @Transactional(readOnly = true)
+    public WhiteboardBoardStateResponse getStudentBoardState(String username, Long sessionId) {
+        StudentProfile student = requireStudent(username);
+        WhiteboardSession session = requireVisibleToStudent(sessionId, student);
+        return toBoardState(session);
     }
 
     @Transactional(readOnly = true)
@@ -565,6 +618,14 @@ public class WhiteboardSessionService {
                 session.getCreatedAt(),
                 session.getStartedAt(),
                 session.getClosedAt());
+    }
+
+    private WhiteboardBoardStateResponse toBoardState(WhiteboardSession session) {
+        return new WhiteboardBoardStateResponse(
+                session.getId(),
+                session.getStatus(),
+                session.getCurrentStateJson(),
+                session.getStateUpdatedAt());
     }
 
     private WhiteboardHistoryItemResponse toHistoryItem(WhiteboardSession session) {

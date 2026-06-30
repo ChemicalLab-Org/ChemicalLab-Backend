@@ -1,5 +1,6 @@
 package com.morales.chemicallab.controller;
 
+import com.morales.chemicallab.dto.WhiteboardBoardStateResponse;
 import com.morales.chemicallab.dto.WhiteboardHistoryItemResponse;
 import com.morales.chemicallab.dto.WhiteboardSnapshotDownload;
 import com.morales.chemicallab.dto.WhiteboardStudentSessionResponse;
@@ -45,6 +46,13 @@ public class WhiteboardStudentController {
             Authentication authentication,
             @PathVariable Long id) {
         return whiteboardSessionService.getStudentSessionDetail(authentication.getName(), id);
+    }
+
+    @GetMapping("/{id}/state")
+    public WhiteboardBoardStateResponse obtenerEstado(
+            Authentication authentication,
+            @PathVariable Long id) {
+        return whiteboardSessionService.getStudentBoardState(authentication.getName(), id);
     }
 
     @GetMapping("/{id}/snapshot")

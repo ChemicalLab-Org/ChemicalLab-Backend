@@ -6,5 +6,6 @@ package com.morales.chemicallab.dto;
 public enum WhiteboardDrawTool {
     PEN,
     ERASER,
-    CLEAR
+    CLEAR,
+    TEXT
 }
