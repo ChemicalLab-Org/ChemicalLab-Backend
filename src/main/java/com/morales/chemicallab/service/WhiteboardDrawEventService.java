@@ -62,11 +62,11 @@ public class WhiteboardDrawEventService {
     private static final int MAX_TEXT_LENGTH = 5000;
     private static final double MIN_FONT_SIZE = 4.0;
     private static final double MAX_FONT_SIZE = 400.0;
-    // Eventos que solo puede originar el docente (limpiar y manejar texto de la pizarra).
+    // Evento reservado al docente: limpiar TODA la pizarra. El texto (TEXT/TEXT_DELETE) sí lo puede
+    // originar un estudiante con permiso de interacción, igual que un trazo (lo valida la regla de
+    // permiso efectivo de más abajo). Cada cliente solo puede borrar su propio texto vía TEXT_DELETE.
     private static final Set<WhiteboardDrawEventType> TEACHER_ONLY_EVENTS = Set.of(
-            WhiteboardDrawEventType.CLEAR,
-            WhiteboardDrawEventType.TEXT,
-            WhiteboardDrawEventType.TEXT_DELETE);
+            WhiteboardDrawEventType.CLEAR);
 
     private final WhiteboardSessionRepository sessionRepository;
     private final WhiteboardParticipantRepository participantRepository;

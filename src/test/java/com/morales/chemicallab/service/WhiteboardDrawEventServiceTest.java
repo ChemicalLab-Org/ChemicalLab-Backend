@@ -275,10 +275,10 @@ class WhiteboardDrawEventServiceTest {
     }
 
     @Test
-    void estudianteNoPuedeEnviarTexto() {
+    void estudianteConPermisoPuedeEnviarTexto() {
         TeacherProfile docente = teacher(1L, "docente1");
         StudentProfile alumno = student(5L, "EST0001");
-        WhiteboardSession s = session(10L, docente, WhiteboardSessionStatus.ACTIVE, true);
+        WhiteboardSession s = session(10L, docente, WhiteboardSessionStatus.ACTIVE, true); // global activo
         when(userAccountRepository.findByUsername("EST0001")).thenReturn(Optional.of(alumno.getUser()));
         when(studentProfileRepository.findByStudentCode("EST0001")).thenReturn(Optional.of(alumno));
         when(sessionRepository.findById(10L)).thenReturn(Optional.of(s));
@@ -292,8 +292,34 @@ class WhiteboardDrawEventServiceTest {
                 List.of(new WhiteboardPoint(120.0, 80.0)), "t-3", "txt-9", 32.0,
                 List.of(new WhiteboardTextRun("Hola", false, false, false)));
 
+        WhiteboardDrawEventResponse response = service.processDrawEvent("EST0001", 10L, text);
+
+        assertThat(response.eventType()).isEqualTo(WhiteboardDrawEventType.TEXT);
+        assertThat(response.actorRole()).isEqualTo(Role.ESTUDIANTE);
+        assertThat(response.textId()).isEqualTo("txt-9");
+        verify(broadcastService).broadcastDraw(any());
+    }
+
+    @Test
+    void estudianteSinPermisoNoPuedeEnviarTexto() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        StudentProfile alumno = student(5L, "EST0001");
+        WhiteboardSession s = session(10L, docente, WhiteboardSessionStatus.ACTIVE, false); // global inactivo
+        when(userAccountRepository.findByUsername("EST0001")).thenReturn(Optional.of(alumno.getUser()));
+        when(studentProfileRepository.findByStudentCode("EST0001")).thenReturn(Optional.of(alumno));
+        when(sessionRepository.findById(10L)).thenReturn(Optional.of(s));
+        when(participantRepository.findBySessionAndStudent(s, alumno))
+                .thenReturn(Optional.of(WhiteboardParticipant.builder()
+                        .id(99L).session(s).student(alumno)
+                        .interactionOverride(WhiteboardInteractionOverride.FOLLOW_GLOBAL).build()));
+
+        WhiteboardDrawEventRequest text = new WhiteboardDrawEventRequest(
+                WhiteboardDrawEventType.TEXT, WhiteboardDrawTool.TEXT, "#1d9e75", null, null,
+                List.of(new WhiteboardPoint(120.0, 80.0)), "t-4", "txt-10", 32.0,
+                List.of(new WhiteboardTextRun("Hola", false, false, false)));
+
         assertThatThrownBy(() -> service.processDrawEvent("EST0001", 10L, text))
-                .hasMessageContaining("docente");
+                .hasMessageContaining("permiso");
         verify(broadcastService, never()).broadcastDraw(any());
     }
 }
