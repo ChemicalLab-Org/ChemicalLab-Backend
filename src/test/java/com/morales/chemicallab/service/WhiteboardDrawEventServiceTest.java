@@ -322,4 +322,71 @@ class WhiteboardDrawEventServiceTest {
                 .hasMessageContaining("permiso");
         verify(broadcastService, never()).broadcastDraw(any());
     }
+
+    @Test
+    void docentePuedeEnviarFormaEnVivo() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        when(userAccountRepository.findByUsername("docente1")).thenReturn(Optional.of(docente.getUser()));
+        when(teacherProfileRepository.findByUser(docente.getUser())).thenReturn(Optional.of(docente));
+        when(sessionRepository.findById(10L))
+                .thenReturn(Optional.of(session(10L, docente, WhiteboardSessionStatus.ACTIVE, false)));
+
+        WhiteboardDrawEventRequest shape = new WhiteboardDrawEventRequest(
+                WhiteboardDrawEventType.SHAPE, WhiteboardDrawTool.RECTANGLE, "#1d9e75", 4.0, null,
+                List.of(new WhiteboardPoint(20.0, 30.0), new WhiteboardPoint(120.0, 90.0)),
+                "s-1", null, null, null, "shape-1");
+
+        WhiteboardDrawEventResponse response = service.processDrawEvent("docente1", 10L, shape);
+
+        assertThat(response.eventType()).isEqualTo(WhiteboardDrawEventType.SHAPE);
+        assertThat(response.tool()).isEqualTo(WhiteboardDrawTool.RECTANGLE);
+        assertThat(response.shapeId()).isEqualTo("shape-1");
+        assertThat(response.points()).hasSize(2);
+        verify(broadcastService).broadcastDraw(any());
+    }
+
+    @Test
+    void estudianteConPermisoPuedeEnviarFormaEnVivo() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        StudentProfile alumno = student(5L, "EST0001");
+        WhiteboardSession s = session(10L, docente, WhiteboardSessionStatus.ACTIVE, true);
+        when(userAccountRepository.findByUsername("EST0001")).thenReturn(Optional.of(alumno.getUser()));
+        when(studentProfileRepository.findByStudentCode("EST0001")).thenReturn(Optional.of(alumno));
+        when(sessionRepository.findById(10L)).thenReturn(Optional.of(s));
+        when(participantRepository.findBySessionAndStudent(s, alumno))
+                .thenReturn(Optional.of(WhiteboardParticipant.builder()
+                        .id(99L).session(s).student(alumno)
+                        .interactionOverride(WhiteboardInteractionOverride.ALLOWED).build()));
+
+        WhiteboardDrawEventRequest shape = new WhiteboardDrawEventRequest(
+                WhiteboardDrawEventType.SHAPE, WhiteboardDrawTool.ARROW, "#1d9e75", 3.0, null,
+                List.of(new WhiteboardPoint(20.0, 30.0), new WhiteboardPoint(120.0, 90.0)),
+                "s-2", null, null, null, "shape-2");
+
+        WhiteboardDrawEventResponse response = service.processDrawEvent("EST0001", 10L, shape);
+
+        assertThat(response.eventType()).isEqualTo(WhiteboardDrawEventType.SHAPE);
+        assertThat(response.actorRole()).isEqualTo(Role.ESTUDIANTE);
+        assertThat(response.shapeId()).isEqualTo("shape-2");
+        verify(broadcastService).broadcastDraw(any());
+    }
+
+    @Test
+    void puedeEliminarFormaPorIdentificador() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        when(userAccountRepository.findByUsername("docente1")).thenReturn(Optional.of(docente.getUser()));
+        when(teacherProfileRepository.findByUser(docente.getUser())).thenReturn(Optional.of(docente));
+        when(sessionRepository.findById(10L))
+                .thenReturn(Optional.of(session(10L, docente, WhiteboardSessionStatus.ACTIVE, false)));
+
+        WhiteboardDrawEventRequest deleteShape = new WhiteboardDrawEventRequest(
+                WhiteboardDrawEventType.SHAPE_DELETE, WhiteboardDrawTool.RECTANGLE, null, null, null,
+                null, "s-3", null, null, null, "shape-1");
+
+        WhiteboardDrawEventResponse response = service.processDrawEvent("docente1", 10L, deleteShape);
+
+        assertThat(response.eventType()).isEqualTo(WhiteboardDrawEventType.SHAPE_DELETE);
+        assertThat(response.shapeId()).isEqualTo("shape-1");
+        verify(broadcastService).broadcastDraw(any());
+    }
 }

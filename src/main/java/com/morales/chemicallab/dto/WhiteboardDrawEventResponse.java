@@ -26,6 +26,24 @@ public record WhiteboardDrawEventResponse(
         LocalDateTime occurredAt,
         String textId,
         Double fontSize,
-        List<WhiteboardTextRun> runs
+        List<WhiteboardTextRun> runs,
+        String shapeId
 ) {
+    public WhiteboardDrawEventResponse(Long sessionId,
+                                       WhiteboardDrawEventType eventType,
+                                       WhiteboardDrawTool tool,
+                                       String color,
+                                       Double strokeWidth,
+                                       Double eraserSize,
+                                       List<WhiteboardPoint> points,
+                                       Role actorRole,
+                                       String actorDisplayName,
+                                       String clientEventId,
+                                       LocalDateTime occurredAt,
+                                       String textId,
+                                       Double fontSize,
+                                       List<WhiteboardTextRun> runs) {
+        this(sessionId, eventType, tool, color, strokeWidth, eraserSize, points, actorRole,
+                actorDisplayName, clientEventId, occurredAt, textId, fontSize, runs, null);
+    }
 }

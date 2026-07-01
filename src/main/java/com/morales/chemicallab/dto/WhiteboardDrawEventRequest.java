@@ -27,6 +27,20 @@ public record WhiteboardDrawEventRequest(
         String clientEventId,
         String textId,
         Double fontSize,
-        List<WhiteboardTextRun> runs
+        List<WhiteboardTextRun> runs,
+        String shapeId
 ) {
+    public WhiteboardDrawEventRequest(WhiteboardDrawEventType eventType,
+                                      WhiteboardDrawTool tool,
+                                      String color,
+                                      Double strokeWidth,
+                                      Double eraserSize,
+                                      List<WhiteboardPoint> points,
+                                      String clientEventId,
+                                      String textId,
+                                      Double fontSize,
+                                      List<WhiteboardTextRun> runs) {
+        this(eventType, tool, color, strokeWidth, eraserSize, points, clientEventId,
+                textId, fontSize, runs, null);
+    }
 }
