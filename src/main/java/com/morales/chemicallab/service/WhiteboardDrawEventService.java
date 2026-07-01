@@ -62,6 +62,11 @@ public class WhiteboardDrawEventService {
     private static final int MAX_TEXT_LENGTH = 5000;
     private static final double MIN_FONT_SIZE = 4.0;
     private static final double MAX_FONT_SIZE = 400.0;
+    private static final Set<WhiteboardDrawTool> SHAPE_TOOLS = Set.of(
+            WhiteboardDrawTool.RECTANGLE,
+            WhiteboardDrawTool.CIRCLE,
+            WhiteboardDrawTool.LINE,
+            WhiteboardDrawTool.ARROW);
     // Evento reservado al docente: limpiar TODA la pizarra. El texto (TEXT/TEXT_DELETE) sí lo puede
     // originar un estudiante con permiso de interacción, igual que un trazo (lo valida la regla de
     // permiso efectivo de más abajo). Cada cliente solo puede borrar su propio texto vía TEXT_DELETE.
@@ -137,10 +142,16 @@ public class WhiteboardDrawEventService {
 
         // Los eventos de texto (TEXT/TEXT_DELETE) viajan por el mismo canal con su propio payload;
         // el resto (DRAW/ERASE/CLEAR) conservan exactamente la validación anterior.
-        WhiteboardDrawEventResponse response = (eventType == WhiteboardDrawEventType.TEXT
-                || eventType == WhiteboardDrawEventType.TEXT_DELETE)
-                ? buildTextResponse(session, eventType, tool, request, actorRole, actorDisplayName)
-                : buildDrawResponse(session, eventType, tool, request, actorRole, actorDisplayName);
+        WhiteboardDrawEventResponse response;
+        if (eventType == WhiteboardDrawEventType.TEXT
+                || eventType == WhiteboardDrawEventType.TEXT_DELETE) {
+            response = buildTextResponse(session, eventType, tool, request, actorRole, actorDisplayName);
+        } else if (eventType == WhiteboardDrawEventType.SHAPE
+                || eventType == WhiteboardDrawEventType.SHAPE_DELETE) {
+            response = buildShapeResponse(session, eventType, tool, request, actorRole, actorDisplayName);
+        } else {
+            response = buildDrawResponse(session, eventType, tool, request, actorRole, actorDisplayName);
+        }
 
         broadcastService.broadcastDraw(response);
         return response;
@@ -157,7 +168,7 @@ public class WhiteboardDrawEventService {
                 session.getId(), eventType, tool, color,
                 request.strokeWidth(), request.eraserSize(), points,
                 actorRole, actorDisplayName, request.clientEventId(), LocalDateTime.now(),
-                null, null, null);
+                null, null, null, null);
     }
 
     /**
@@ -178,7 +189,7 @@ public class WhiteboardDrawEventService {
             return new WhiteboardDrawEventResponse(
                     session.getId(), eventType, tool, null, null, null, null,
                     actorRole, actorDisplayName, request.clientEventId(), LocalDateTime.now(),
-                    textId, null, null);
+                    textId, null, null, null);
         }
 
         List<WhiteboardPoint> points = request.points();
@@ -195,7 +206,39 @@ public class WhiteboardDrawEventService {
         return new WhiteboardDrawEventResponse(
                 session.getId(), eventType, tool, color, null, null, List.copyOf(points),
                 actorRole, actorDisplayName, request.clientEventId(), LocalDateTime.now(),
-                textId, fontSize, runs);
+                textId, fontSize, runs, null);
+    }
+
+    private WhiteboardDrawEventResponse buildShapeResponse(WhiteboardSession session,
+                                                           WhiteboardDrawEventType eventType,
+                                                           WhiteboardDrawTool tool,
+                                                           WhiteboardDrawEventRequest request,
+                                                           Role actorRole, String actorDisplayName) {
+        String shapeId = request.shapeId();
+        if (shapeId == null || shapeId.isBlank() || shapeId.length() > 100) {
+            throw new IllegalArgumentException("El identificador de la forma es obligatorio.");
+        }
+        if (!SHAPE_TOOLS.contains(tool)) {
+            throw new IllegalArgumentException("La herramienta de forma no es valida.");
+        }
+        if (eventType == WhiteboardDrawEventType.SHAPE_DELETE) {
+            return new WhiteboardDrawEventResponse(
+                    session.getId(), eventType, tool, null, null, null, null,
+                    actorRole, actorDisplayName, request.clientEventId(), LocalDateTime.now(),
+                    null, null, null, shapeId);
+        }
+        List<WhiteboardPoint> points = request.points();
+        if (points == null || points.size() != 2 || points.get(0) == null || points.get(1) == null
+                || points.get(0).x() == null || points.get(0).y() == null
+                || points.get(1).x() == null || points.get(1).y() == null) {
+            throw new IllegalArgumentException("La forma debe incluir punto inicial y punto final.");
+        }
+        validateMeasure(request.strokeWidth(), MAX_STROKE_WIDTH, "El grosor de la forma");
+        String color = validateColor(request.color());
+        return new WhiteboardDrawEventResponse(
+                session.getId(), eventType, tool, color, request.strokeWidth(), null, List.copyOf(points),
+                actorRole, actorDisplayName, request.clientEventId(), LocalDateTime.now(),
+                null, null, null, shapeId);
     }
 
     private List<WhiteboardTextRun> validateRuns(List<WhiteboardTextRun> runs) {

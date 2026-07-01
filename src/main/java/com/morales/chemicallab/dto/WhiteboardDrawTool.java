@@ -7,5 +7,9 @@ public enum WhiteboardDrawTool {
     PEN,
     ERASER,
     CLEAR,
-    TEXT
+    TEXT,
+    RECTANGLE,
+    CIRCLE,
+    LINE,
+    ARROW
 }

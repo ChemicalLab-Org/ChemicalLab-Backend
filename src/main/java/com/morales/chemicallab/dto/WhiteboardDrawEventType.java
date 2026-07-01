@@ -14,5 +14,9 @@ public enum WhiteboardDrawEventType {
     /** Crear o actualizar un objeto de texto (reservado al docente). */
     TEXT,
     /** Eliminar un objeto de texto por su identificador (reservado al docente). */
-    TEXT_DELETE
+    TEXT_DELETE,
+    /** Crear, actualizar o mover una forma estructurada. */
+    SHAPE,
+    /** Eliminar una forma estructurada por su identificador. */
+    SHAPE_DELETE
 }
