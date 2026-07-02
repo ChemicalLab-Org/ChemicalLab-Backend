@@ -1,5 +1,6 @@
 package com.morales.chemicallab.service;
 
+import com.morales.chemicallab.dto.CreateStudentRequest;
 import com.morales.chemicallab.dto.UpdateStudentRequest;
 import com.morales.chemicallab.entity.LogEventType;
 import com.morales.chemicallab.entity.Role;
@@ -9,14 +10,18 @@ import com.morales.chemicallab.entity.UserAccount;
 import com.morales.chemicallab.repository.StudentProfileRepository;
 import com.morales.chemicallab.repository.TeacherProfileRepository;
 import com.morales.chemicallab.repository.UserAccountRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,6 +55,11 @@ class UserManagementServiceTest {
     @InjectMocks
     private UserManagementService service;
 
+    @AfterEach
+    void limpiarContextoSeguridad() {
+        SecurityContextHolder.clearContext();
+    }
+
     private TeacherProfile teacher(Long userId) {
         UserAccount user = UserAccount.builder()
                 .id(userId).username("doc" + userId).role(Role.DOCENTE).active(true).build();
@@ -64,11 +74,19 @@ class UserManagementServiceTest {
                 .names("Ana").lastNames("Mendoza").grade("3").section("A").build();
     }
 
+    private void setAuthenticatedTeacher(TeacherProfile teacher) {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(teacher.getUser().getUsername(), null, List.of()));
+        when(userAccountRepository.findByUsername(teacher.getUser().getUsername()))
+                .thenReturn(Optional.of(teacher.getUser()));
+    }
+
     @Test
     void updateStudent_registraLogDeAuditoriaSinDatosSensibles() {
         TeacherProfile teacher = teacher(2L);
         StudentProfile student = student(3L, "EST0003", teacher);
 
+        setAuthenticatedTeacher(teacher);
         when(userAccountRepository.findById(2L)).thenReturn(Optional.of(teacher.getUser()));
         when(teacherProfileRepository.findByUser(teacher.getUser())).thenReturn(Optional.of(teacher));
         when(studentProfileRepository.findById(3L)).thenReturn(Optional.of(student));
@@ -104,6 +122,7 @@ class UserManagementServiceTest {
         TeacherProfile otroDocente = teacher(9L);
         StudentProfile student = student(3L, "EST0003", otroDocente);
 
+        setAuthenticatedTeacher(teacher);
         when(userAccountRepository.findById(2L)).thenReturn(Optional.of(teacher.getUser()));
         when(teacherProfileRepository.findByUser(teacher.getUser())).thenReturn(Optional.of(teacher));
         when(studentProfileRepository.findById(3L)).thenReturn(Optional.of(student));
@@ -118,5 +137,79 @@ class UserManagementServiceTest {
 
         // Una edición fallida nunca debe registrarse como exitosa.
         verify(auditLogService, never()).recordInfo(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void createStudent_conTeacherUserIdDeOtroDocente_rechazaOperacion() {
+        TeacherProfile teacher = teacher(2L);
+        setAuthenticatedTeacher(teacher);
+
+        CreateStudentRequest request = new CreateStudentRequest(
+                "Ana", "Mendoza", null, "Temporal123", "3", "A");
+
+        assertThatThrownBy(() -> service.createStudent(9L, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("otro docente");
+
+        verify(userAccountRepository, never()).save(any());
+        verify(studentProfileRepository, never()).save(any());
+        verify(auditLogService, never()).recordInfo(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void listStudentsByTeacher_conTeacherUserIdDeOtroDocente_rechazaOperacion() {
+        TeacherProfile teacher = teacher(2L);
+        setAuthenticatedTeacher(teacher);
+
+        assertThatThrownBy(() -> service.listStudentsByTeacher(9L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("otro docente");
+
+        verify(studentProfileRepository, never()).findByTeacher(any());
+    }
+
+    @Test
+    void updateStudent_conTeacherUserIdDeOtroDocente_rechazaAntesDeModificar() {
+        TeacherProfile teacher = teacher(2L);
+        setAuthenticatedTeacher(teacher);
+        UpdateStudentRequest request = new UpdateStudentRequest(
+                "Mario", "Mendoza", null, "3", "B", true);
+
+        assertThatThrownBy(() -> service.updateStudent(9L, 3L, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("otro docente");
+
+        verify(studentProfileRepository, never()).findById(any());
+        verify(userAccountRepository, never()).save(any());
+        verify(auditLogService, never()).recordInfo(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void deactivateStudent_conTeacherUserIdDeOtroDocente_rechazaAntesDeModificar() {
+        TeacherProfile teacher = teacher(2L);
+        setAuthenticatedTeacher(teacher);
+
+        assertThatThrownBy(() -> service.deactivateStudent(9L, 3L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("otro docente");
+
+        verify(studentProfileRepository, never()).findById(any());
+        verify(userAccountRepository, never()).save(any());
+        verify(auditLogService, never()).recordWarning(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void deactivateUser_ultimoAdminActivo_rechazaOperacion() {
+        UserAccount admin = UserAccount.builder()
+                .id(1L).username("admin").role(Role.ADMINISTRADOR).active(true).build();
+        when(userAccountRepository.findById(1L)).thenReturn(Optional.of(admin));
+        when(userAccountRepository.countByRoleAndActive(Role.ADMINISTRADOR, true)).thenReturn(1L);
+
+        assertThatThrownBy(() -> service.deactivateUser(1L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("último administrador activo");
+
+        verify(userAccountRepository, never()).save(any());
+        verify(auditLogService, never()).recordWarning(any(), any(), any(), any(), any(), any(), any());
     }
 }
