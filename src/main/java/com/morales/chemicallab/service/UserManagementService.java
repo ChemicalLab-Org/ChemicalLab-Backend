@@ -129,6 +129,7 @@ public class UserManagementService {
     // =========================================================================
 
     public StudentResponse createStudent(Long teacherUserId, CreateStudentRequest request) {
+        validateAuthenticatedTeacher(teacherUserId);
         TeacherProfile teacher = findTeacherProfileByUserId(teacherUserId);
 
         String grade = StudentValidation.normalizedGrade(request.grade());
@@ -179,6 +180,7 @@ public class UserManagementService {
 
     @Transactional(readOnly = true)
     public List<StudentResponse> listStudentsByTeacher(Long teacherUserId) {
+        validateAuthenticatedTeacher(teacherUserId);
         TeacherProfile teacher = findTeacherProfileByUserId(teacherUserId);
         return studentProfileRepository.findByTeacher(teacher)
                 .stream()
@@ -187,6 +189,7 @@ public class UserManagementService {
     }
 
     public StudentResponse updateStudent(Long teacherUserId, Long studentId, UpdateStudentRequest request) {
+        validateAuthenticatedTeacher(teacherUserId);
         TeacherProfile teacher = findTeacherProfileByUserId(teacherUserId);
 
         StudentProfile student = studentProfileRepository.findById(studentId)
@@ -251,6 +254,7 @@ public class UserManagementService {
     }
 
     public StudentResponse deactivateStudent(Long teacherUserId, Long studentId) {
+        validateAuthenticatedTeacher(teacherUserId);
         TeacherProfile teacher = findTeacherProfileByUserId(teacherUserId);
 
         StudentProfile student = studentProfileRepository.findById(studentId)
@@ -310,6 +314,11 @@ public class UserManagementService {
         UserAccount current = findAuthenticatedUser();
         if (current != null && current.getId().equals(user.getId())) {
             throw new IllegalArgumentException("No puede desactivar su propia cuenta de administrador.");
+        }
+
+        if (user.getRole() == Role.ADMINISTRADOR && Boolean.TRUE.equals(user.getActive())
+                && userAccountRepository.countByRoleAndActive(Role.ADMINISTRADOR, true) <= 1) {
+            throw new IllegalArgumentException("No puede desactivar al último administrador activo.");
         }
 
         user.setActive(false);
@@ -424,7 +433,7 @@ public class UserManagementService {
                 .orElseThrow(() -> new IllegalArgumentException("No fue posible identificar al docente autenticado."));
 
         if (!authenticatedUser.getId().equals(teacherUserId)) {
-            throw new IllegalArgumentException("No puede restablecer contraseñas de estudiantes de otro docente.");
+            throw new IllegalArgumentException("No puede gestionar estudiantes de otro docente.");
         }
     }
 
