@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
  * valores inválidos aunque la validación del frontend falle o se omita.
  *
  * <ul>
- *   <li><strong>Grado:</strong> entero del 1 al 6. Rechaza 0, 7, negativos, decimales,
+ *   <li><strong>Grado:</strong> entero del 1 al 5. Rechaza 0, 6, 7, negativos, decimales,
  *       texto y vacío.</li>
  *   <li><strong>Sección:</strong> exactamente una letra (A-Z). Rechaza números, espacios
  *       internos y combinaciones como «3 C», «AA» o «A1». Se normaliza a mayúscula.</li>
@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
  */
 final class StudentValidation {
 
-    private static final Pattern GRADE_PATTERN = Pattern.compile("^[1-6]$");
+    private static final Pattern GRADE_PATTERN = Pattern.compile("^[1-5]$");
     private static final Pattern SECTION_PATTERN = Pattern.compile("^[A-Za-z]$");
 
     private StudentValidation() {
@@ -27,7 +27,7 @@ final class StudentValidation {
     static String normalizedGrade(String grade) {
         String trimmed = grade == null ? "" : grade.trim();
         if (!GRADE_PATTERN.matcher(trimmed).matches()) {
-            throw new IllegalArgumentException("El grado debe ser un número entero del 1 al 6.");
+            throw new IllegalArgumentException("El grado debe ser un número entero del 1 al 5.");
         }
         return trimmed;
     }
