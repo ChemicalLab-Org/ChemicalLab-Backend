@@ -327,7 +327,7 @@ class AdminServiceTest {
 
         assertThatThrownBy(() -> service.createUser(request))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("del 1 al 6");
+                .hasMessageContaining("del 1 al 5");
         verify(studentProfileRepository, never()).save(any());
     }
 

@@ -16,8 +16,8 @@ class StudentValidationTest {
     // ===================== GRADO =====================
 
     @ParameterizedTest
-    @ValueSource(strings = {"1", "2", "3", "4", "5", "6"})
-    void grado_aceptaEnterosDel1Al6(String grade) {
+    @ValueSource(strings = {"1", "2", "3", "4", "5"})
+    void grado_aceptaEnterosDel1Al5(String grade) {
         assertThat(StudentValidation.normalizedGrade(grade)).isEqualTo(grade);
     }
 
@@ -27,11 +27,11 @@ class StudentValidationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"0", "7", "-1", "1.5", "tercero", "12", "1 2"})
+    @ValueSource(strings = {"0", "6", "7", "-1", "1.5", "tercero", "12", "1 2"})
     void grado_rechazaValoresInvalidos(String grade) {
         assertThatThrownBy(() -> StudentValidation.normalizedGrade(grade))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("del 1 al 6");
+                .hasMessageContaining("del 1 al 5");
     }
 
     @Test

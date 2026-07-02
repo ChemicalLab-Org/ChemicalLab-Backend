@@ -8,6 +8,8 @@ public record AuthResponse(
         Long userId,
         String username,
         String email,
+        String names,
+        String lastNames,
         Role role,
         Boolean active,
         Boolean temporaryPassword
