@@ -132,12 +132,13 @@ public class UsageMetricService {
     }
 
     /**
-     * Últimos eventos de uso (más recientes primero), con filtros opcionales por módulo y
-     * rol. Devuelve siempre un DTO seguro sin datos sensibles.
+     * Últimos eventos de uso (más recientes primero), con filtros opcionales por módulo,
+     * tipo de interacción y rol. Devuelve siempre un DTO seguro sin datos sensibles.
      */
-    public List<UsageEventResponse> getRecentEvents(int limit, UsageModule module, Role role) {
+    public List<UsageEventResponse> getRecentEvents(int limit, UsageModule module,
+                                                    UsageEventType eventType, Role role) {
         int safeLimit = Math.min(Math.max(limit, 1), MAX_RECENT);
-        Specification<UsageEvent> spec = buildSpecification(module, null, role, null, null);
+        Specification<UsageEvent> spec = buildSpecification(module, eventType, role, null, null);
         PageRequest pageable = PageRequest.of(0, safeLimit, Sort.by(Sort.Direction.DESC, "occurredAt"));
         return usageEventRepository.findAll(spec, pageable).map(this::toResponse).getContent();
     }
