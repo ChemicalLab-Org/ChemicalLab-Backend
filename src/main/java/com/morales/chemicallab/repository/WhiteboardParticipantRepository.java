@@ -4,6 +4,7 @@ import com.morales.chemicallab.entity.StudentProfile;
 import com.morales.chemicallab.entity.WhiteboardParticipant;
 import com.morales.chemicallab.entity.WhiteboardSession;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -24,4 +25,8 @@ public interface WhiteboardParticipantRepository extends JpaRepository<Whiteboar
 
     // Total de participantes (resumen institucional del administrador).
     long count();
+
+    // Estudiantes distintos que se han unido al menos a una sesión de pizarra.
+    @Query("select count(distinct p.student.id) from WhiteboardParticipant p")
+    long countDistinctStudents();
 }

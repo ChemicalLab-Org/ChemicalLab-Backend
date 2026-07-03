@@ -29,4 +29,7 @@ public interface WhiteboardSessionRepository extends JpaRepository<WhiteboardSes
 
     // Conteos para el resumen institucional del administrador.
     long countByStatus(WhiteboardSessionStatus status);
+
+    // Sesiones cerradas que conservan una captura final (evidencia del panel de métricas).
+    long countByFinalSnapshotSizeGreaterThan(long minSize);
 }

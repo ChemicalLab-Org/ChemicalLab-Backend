@@ -3,9 +3,12 @@ package com.morales.chemicallab.controller;
 import com.morales.chemicallab.dto.UsageCountResponse;
 import com.morales.chemicallab.dto.UsageEventResponse;
 import com.morales.chemicallab.dto.UsageMetricsSummaryResponse;
+import com.morales.chemicallab.dto.UsagePanelResponse;
 import com.morales.chemicallab.entity.Role;
+import com.morales.chemicallab.entity.UsageEventType;
 import com.morales.chemicallab.entity.UsageModule;
 import com.morales.chemicallab.service.UsageMetricService;
+import com.morales.chemicallab.service.UsagePanelService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,6 +30,16 @@ import java.util.List;
 public class AdminUsageMetricController {
 
     private final UsageMetricService usageMetricService;
+    private final UsagePanelService usagePanelService;
+
+    /**
+     * Indicadores agregados (histórico total) para el panel administrativo: actividad
+     * general, pizarra, evaluaciones y trazabilidad. Son solo conteos sobre datos reales.
+     */
+    @GetMapping("/panel")
+    public UsagePanelResponse panel() {
+        return usagePanelService.getPanel();
+    }
 
     @GetMapping("/summary")
     public UsageMetricsSummaryResponse resumen(
@@ -41,8 +54,9 @@ public class AdminUsageMetricController {
     public List<UsageEventResponse> recientes(
             @RequestParam(defaultValue = "20") int limit,
             @RequestParam(required = false) UsageModule module,
+            @RequestParam(required = false) UsageEventType eventType,
             @RequestParam(required = false) Role role) {
-        return usageMetricService.getRecentEvents(limit, module, role);
+        return usageMetricService.getRecentEvents(limit, module, eventType, role);
     }
 
     @GetMapping("/by-module")
