@@ -18,5 +18,7 @@ public enum WhiteboardDrawEventType {
     /** Crear, actualizar o mover una forma estructurada. */
     SHAPE,
     /** Eliminar una forma estructurada por su identificador. */
-    SHAPE_DELETE
+    SHAPE_DELETE,
+    /** Eliminar un trazo (DRAW/ERASE) por su identificador estable (deshacer/rehacer). */
+    STROKE_DELETE
 }

@@ -389,4 +389,102 @@ class WhiteboardDrawEventServiceTest {
         assertThat(response.shapeId()).isEqualTo("shape-1");
         verify(broadcastService).broadcastDraw(any());
     }
+
+    @Test
+    void drawConservaIdentificadorYPosicionDeTrazo() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        when(userAccountRepository.findByUsername("docente1")).thenReturn(Optional.of(docente.getUser()));
+        when(teacherProfileRepository.findByUser(docente.getUser())).thenReturn(Optional.of(docente));
+        when(sessionRepository.findById(10L))
+                .thenReturn(Optional.of(session(10L, docente, WhiteboardSessionStatus.ACTIVE, false)));
+
+        WhiteboardDrawEventRequest draw = new WhiteboardDrawEventRequest(
+                WhiteboardDrawEventType.DRAW, WhiteboardDrawTool.PEN, "#112233", 2.0, null,
+                List.of(new WhiteboardPoint(1.0, 2.0), new WhiteboardPoint(3.0, 4.0)),
+                "c-10", null, null, null, null, "stroke-1", 3);
+
+        WhiteboardDrawEventResponse response = service.processDrawEvent("docente1", 10L, draw);
+
+        assertThat(response.strokeId()).isEqualTo("stroke-1");
+        assertThat(response.strokeIndex()).isEqualTo(3);
+        verify(broadcastService).broadcastDraw(any());
+    }
+
+    @Test
+    void docentePuedeEliminarTrazoPorIdentificador() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        when(userAccountRepository.findByUsername("docente1")).thenReturn(Optional.of(docente.getUser()));
+        when(teacherProfileRepository.findByUser(docente.getUser())).thenReturn(Optional.of(docente));
+        when(sessionRepository.findById(10L))
+                .thenReturn(Optional.of(session(10L, docente, WhiteboardSessionStatus.ACTIVE, false)));
+
+        WhiteboardDrawEventRequest deleteStroke = new WhiteboardDrawEventRequest(
+                WhiteboardDrawEventType.STROKE_DELETE, WhiteboardDrawTool.PEN, null, null, null,
+                null, "c-11", null, null, null, null, "stroke-1", null);
+
+        WhiteboardDrawEventResponse response = service.processDrawEvent("docente1", 10L, deleteStroke);
+
+        assertThat(response.eventType()).isEqualTo(WhiteboardDrawEventType.STROKE_DELETE);
+        assertThat(response.strokeId()).isEqualTo("stroke-1");
+        verify(broadcastService).broadcastDraw(any());
+    }
+
+    @Test
+    void estudianteConPermisoPuedeEliminarTrazo() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        StudentProfile alumno = student(5L, "EST0001");
+        WhiteboardSession s = session(10L, docente, WhiteboardSessionStatus.ACTIVE, true);
+        when(userAccountRepository.findByUsername("EST0001")).thenReturn(Optional.of(alumno.getUser()));
+        when(studentProfileRepository.findByStudentCode("EST0001")).thenReturn(Optional.of(alumno));
+        when(sessionRepository.findById(10L)).thenReturn(Optional.of(s));
+        when(participantRepository.findBySessionAndStudent(s, alumno))
+                .thenReturn(Optional.of(WhiteboardParticipant.builder()
+                        .id(99L).session(s).student(alumno)
+                        .interactionOverride(WhiteboardInteractionOverride.ALLOWED).build()));
+
+        WhiteboardDrawEventRequest deleteStroke = new WhiteboardDrawEventRequest(
+                WhiteboardDrawEventType.STROKE_DELETE, WhiteboardDrawTool.ERASER, null, null, null,
+                null, "c-12", null, null, null, null, "stroke-2", null);
+
+        WhiteboardDrawEventResponse response = service.processDrawEvent("EST0001", 10L, deleteStroke);
+
+        assertThat(response.eventType()).isEqualTo(WhiteboardDrawEventType.STROKE_DELETE);
+        assertThat(response.actorRole()).isEqualTo(Role.ESTUDIANTE);
+        assertThat(response.strokeId()).isEqualTo("stroke-2");
+        verify(broadcastService).broadcastDraw(any());
+    }
+
+    @Test
+    void strokeDeleteSinIdentificadorSeRechaza() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        when(userAccountRepository.findByUsername("docente1")).thenReturn(Optional.of(docente.getUser()));
+        when(teacherProfileRepository.findByUser(docente.getUser())).thenReturn(Optional.of(docente));
+        when(sessionRepository.findById(10L))
+                .thenReturn(Optional.of(session(10L, docente, WhiteboardSessionStatus.ACTIVE, false)));
+
+        WhiteboardDrawEventRequest deleteStroke = new WhiteboardDrawEventRequest(
+                WhiteboardDrawEventType.STROKE_DELETE, WhiteboardDrawTool.PEN, null, null, null,
+                null, "c-13", null, null, null, null, null, null);
+
+        assertThatThrownBy(() -> service.processDrawEvent("docente1", 10L, deleteStroke))
+                .hasMessageContaining("identificador del trazo");
+        verify(broadcastService, never()).broadcastDraw(any());
+    }
+
+    @Test
+    void rechazaPosicionDeTrazoNegativa() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        when(userAccountRepository.findByUsername("docente1")).thenReturn(Optional.of(docente.getUser()));
+        when(teacherProfileRepository.findByUser(docente.getUser())).thenReturn(Optional.of(docente));
+        when(sessionRepository.findById(10L))
+                .thenReturn(Optional.of(session(10L, docente, WhiteboardSessionStatus.ACTIVE, false)));
+
+        WhiteboardDrawEventRequest draw = new WhiteboardDrawEventRequest(
+                WhiteboardDrawEventType.DRAW, WhiteboardDrawTool.PEN, "#112233", 2.0, null,
+                List.of(new WhiteboardPoint(1.0, 2.0)), "c-14", null, null, null, null, "stroke-3", -1);
+
+        assertThatThrownBy(() -> service.processDrawEvent("docente1", 10L, draw))
+                .hasMessageContaining("posición del trazo");
+        verify(broadcastService, never()).broadcastDraw(any());
+    }
 }

@@ -16,6 +16,11 @@ import java.util.List;
  *
  * @param clientEventId identificador del evento generado por el cliente, útil para
  *                      deduplicar/reconciliar en el frontend (opcional).
+ * @param strokeId      identificador estable del trazo en DRAW/ERASE/STROKE_DELETE. Permite a
+ *                      todos los clientes referirse al mismo trazo (deshacer/rehacer). Opcional
+ *                      en DRAW/ERASE; obligatorio en STROKE_DELETE.
+ * @param strokeIndex   posición del trazo dentro del lienzo al restaurarlo (rehacer). Opcional;
+ *                      si falta, el trazo se añade al final.
  */
 public record WhiteboardDrawEventRequest(
         WhiteboardDrawEventType eventType,
@@ -28,8 +33,25 @@ public record WhiteboardDrawEventRequest(
         String textId,
         Double fontSize,
         List<WhiteboardTextRun> runs,
-        String shapeId
+        String shapeId,
+        String strokeId,
+        Integer strokeIndex
 ) {
+    public WhiteboardDrawEventRequest(WhiteboardDrawEventType eventType,
+                                      WhiteboardDrawTool tool,
+                                      String color,
+                                      Double strokeWidth,
+                                      Double eraserSize,
+                                      List<WhiteboardPoint> points,
+                                      String clientEventId,
+                                      String textId,
+                                      Double fontSize,
+                                      List<WhiteboardTextRun> runs,
+                                      String shapeId) {
+        this(eventType, tool, color, strokeWidth, eraserSize, points, clientEventId,
+                textId, fontSize, runs, shapeId, null, null);
+    }
+
     public WhiteboardDrawEventRequest(WhiteboardDrawEventType eventType,
                                       WhiteboardDrawTool tool,
                                       String color,
@@ -41,6 +63,6 @@ public record WhiteboardDrawEventRequest(
                                       Double fontSize,
                                       List<WhiteboardTextRun> runs) {
         this(eventType, tool, color, strokeWidth, eraserSize, points, clientEventId,
-                textId, fontSize, runs, null);
+                textId, fontSize, runs, null, null, null);
     }
 }

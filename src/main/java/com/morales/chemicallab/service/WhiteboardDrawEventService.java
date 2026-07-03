@@ -57,6 +57,10 @@ public class WhiteboardDrawEventService {
     private static final double MAX_ERASER_SIZE = 200.0;
     private static final Pattern HEX_COLOR = Pattern.compile("^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$");
 
+    // Identidad y posición de trazos (deshacer/rehacer): acotadas para evitar abusos.
+    private static final int MAX_STROKE_ID_LENGTH = 100;
+    private static final int MAX_STROKE_INDEX = 100_000;
+
     // Texto: tope de fragmentos y de longitud total para acotar el payload.
     private static final int MAX_TEXT_RUNS = 200;
     private static final int MAX_TEXT_LENGTH = 5000;
@@ -149,6 +153,8 @@ public class WhiteboardDrawEventService {
         } else if (eventType == WhiteboardDrawEventType.SHAPE
                 || eventType == WhiteboardDrawEventType.SHAPE_DELETE) {
             response = buildShapeResponse(session, eventType, tool, request, actorRole, actorDisplayName);
+        } else if (eventType == WhiteboardDrawEventType.STROKE_DELETE) {
+            response = buildStrokeDeleteResponse(session, eventType, tool, request, actorRole, actorDisplayName);
         } else {
             response = buildDrawResponse(session, eventType, tool, request, actorRole, actorDisplayName);
         }
@@ -164,11 +170,33 @@ public class WhiteboardDrawEventService {
                                                           Role actorRole, String actorDisplayName) {
         List<WhiteboardPoint> points = validatePayload(eventType, request);
         String color = validateColor(request.color());
+        String strokeId = validateOptionalStrokeId(request.strokeId());
+        Integer strokeIndex = validateStrokeIndex(request.strokeIndex());
         return new WhiteboardDrawEventResponse(
                 session.getId(), eventType, tool, color,
                 request.strokeWidth(), request.eraserSize(), points,
                 actorRole, actorDisplayName, request.clientEventId(), LocalDateTime.now(),
-                null, null, null, null);
+                null, null, null, null, strokeId, strokeIndex);
+    }
+
+    /**
+     * Construye un evento de eliminación de trazo por identificador estable. Lo origina el
+     * deshacer/rehacer de un participante sobre sus propios trazos; el permiso efectivo es el
+     * mismo que para dibujar (ya validado arriba).
+     */
+    private WhiteboardDrawEventResponse buildStrokeDeleteResponse(WhiteboardSession session,
+                                                                  WhiteboardDrawEventType eventType,
+                                                                  WhiteboardDrawTool tool,
+                                                                  WhiteboardDrawEventRequest request,
+                                                                  Role actorRole, String actorDisplayName) {
+        String strokeId = request.strokeId();
+        if (strokeId == null || strokeId.isBlank() || strokeId.length() > MAX_STROKE_ID_LENGTH) {
+            throw new IllegalArgumentException("El identificador del trazo es obligatorio.");
+        }
+        return new WhiteboardDrawEventResponse(
+                session.getId(), eventType, tool, null, null, null, null,
+                actorRole, actorDisplayName, request.clientEventId(), LocalDateTime.now(),
+                null, null, null, null, strokeId, null);
     }
 
     /**
@@ -319,6 +347,28 @@ public class WhiteboardDrawEventService {
         if (value <= 0 || value > max) {
             throw new IllegalArgumentException(label + " no es válido.");
         }
+    }
+
+    /** El identificador de trazo es opcional en DRAW/ERASE, pero si viene debe ser razonable. */
+    private String validateOptionalStrokeId(String strokeId) {
+        if (strokeId == null || strokeId.isBlank()) {
+            return null;
+        }
+        if (strokeId.length() > MAX_STROKE_ID_LENGTH) {
+            throw new IllegalArgumentException("El identificador del trazo no es válido.");
+        }
+        return strokeId;
+    }
+
+    /** La posición de restauración de un trazo es opcional; si viene debe estar acotada. */
+    private Integer validateStrokeIndex(Integer strokeIndex) {
+        if (strokeIndex == null) {
+            return null;
+        }
+        if (strokeIndex < 0 || strokeIndex > MAX_STROKE_INDEX) {
+            throw new IllegalArgumentException("La posición del trazo no es válida.");
+        }
+        return strokeIndex;
     }
 
     private String validateColor(String color) {
