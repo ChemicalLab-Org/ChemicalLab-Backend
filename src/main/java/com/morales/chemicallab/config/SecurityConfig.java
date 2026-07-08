@@ -96,6 +96,10 @@ public class SecurityConfig {
                         // (cubierto por /api/admin/** pero se declara explícito por claridad)
                         .requestMatchers("/api/admin/usage-metrics/**").hasRole(ADMIN)
 
+                        // Registro de uso por estudiante (instrumento de investigación) — solo
+                        // ADMINISTRADOR (cubierto por /api/admin/** pero se declara explícito por claridad)
+                        .requestMatchers("/api/admin/student-usage-records/**").hasRole(ADMIN)
+
                         // Panel administrativo (resumen, usuarios y actividad) — solo ADMINISTRADOR
                         .requestMatchers("/api/admin/**").hasRole(ADMIN)
 
