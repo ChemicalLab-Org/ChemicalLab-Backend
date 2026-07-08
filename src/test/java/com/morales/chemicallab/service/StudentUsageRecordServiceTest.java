@@ -141,8 +141,10 @@ class StudentUsageRecordServiceTest {
         assertThat(record.technicalIncidentsSummary()).isEqualTo("1 error");
         assertThat(record.lastActivityAt()).isEqualTo(NOW);
 
-        // Sin registro confiable de duración de sesión: nunca se inventa el tiempo de uso.
-        assertThat(record.totalUsageMinutes()).isNull();
+        // Tiempo estimado por sesiones (corte de inactividad de 30 min): la única sesión con
+        // duración va del inicio del intento calificado (NOW-1d menos 30 min) a su envío
+        // (NOW-1d); los demás momentos quedan aislados y aportan 0.
+        assertThat(record.totalUsageMinutes()).isEqualTo(30L);
 
         assertThat(response.summary().totalUsers()).isEqualTo(1);
         assertThat(response.summary().studentsWithActivity()).isEqualTo(1);
@@ -170,7 +172,7 @@ class StudentUsageRecordServiceTest {
         assertThat(record.assignedActivities()).isZero();
         assertThat(record.progressPercentage()).isNull();   // sin asignaciones no hay avance calculable
         assertThat(record.accuracyRate()).isNull();          // sin respuestas corregidas no hay tasa
-        assertThat(record.totalUsageMinutes()).isNull();
+        assertThat(record.totalUsageMinutes()).isZero();     // sin actividad registrada, suma de sesiones = 0
         assertThat(record.technicalIncidentsSummary()).isNull();
         assertThat(record.lastActivityAt()).isNull();
 
@@ -210,6 +212,38 @@ class StudentUsageRecordServiceTest {
         assertThat(record.incorrectAnswers()).isNull();
         assertThat(record.accuracyRate()).isNull();
         assertThat(record.feedbackReceived()).isNull();
+        // El tiempo estimado sí aplica a cualquier rol; con un solo instante de actividad es 0.
+        assertThat(record.totalUsageMinutes()).isZero();
+    }
+
+    @Test
+    void getRecords_estimaTiempoTotalDeUsoPorSesiones() {
+        UserAccount user = studentAccount(1L, "e001");
+        StudentProfile student = studentProfile(10L, user, "S001", "3", "B");
+        LocalDateTime morning = LocalDateTime.of(2026, 7, 2, 8, 0);
+        LocalDateTime noon = morning.plusHours(4); // 12:00
+
+        when(userAccountRepository.findAll()).thenReturn(List.of(user));
+        when(studentProfileRepository.findAll()).thenReturn(List.of(student));
+        when(usageEventRepository.findAll(ArgumentMatchers.<Specification<UsageEvent>>any()))
+                .thenReturn(List.of(
+                        usageEvent(1L, UsageModule.PERIODIC_TABLE, morning.plusMinutes(10)),
+                        usageEvent(1L, UsageModule.COMPOUNDS, morning.plusMinutes(25)),
+                        usageEvent(1L, UsageModule.CONCEPTS, noon),
+                        usageEvent(1L, UsageModule.EVALUATIONS, noon.plusMinutes(35))));
+        when(systemLogRepository.findAll(ArgumentMatchers.<Specification<SystemLog>>any()))
+                .thenReturn(List.of(
+                        login(1L, morning),
+                        login(1L, noon.plusMinutes(20))));
+
+        StudentUsageRecordsResponse response = service.getRecords(
+                null, null, null, null, null, null, null, null);
+
+        StudentUsageRecordResponse record = response.records().get(0);
+        // Sesión 1: 08:00 (login) → 08:25 (último evento con huecos ≤ 30 min) = 25 min.
+        // Sesión 2: 12:00 → 12:35 (el login de 12:20 encadena los eventos) = 35 min.
+        assertThat(record.totalUsageMinutes()).isEqualTo(60L);
+        assertThat(record.sessionsStarted()).isEqualTo(2L);
     }
 
     // =========================================================================
@@ -341,7 +375,8 @@ class StudentUsageRecordServiceTest {
         StudentUsageRecordDetailResponse detail = service.getDetail(1L);
 
         assertThat(detail.summary().code()).isEqualTo("S001");
-        assertThat(detail.summary().totalUsageMinutes()).isNull();
+        // Sesión estimada única: del inicio del intento (NOW menos 30 min) al envío/evento (NOW).
+        assertThat(detail.summary().totalUsageMinutes()).isEqualTo(30L);
 
         assertThat(detail.recentEvents()).hasSize(1);
         assertThat(detail.recentEvents().get(0).module()).isEqualTo(UsageModule.EVALUATIONS);

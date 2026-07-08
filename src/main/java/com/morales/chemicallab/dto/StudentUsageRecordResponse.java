@@ -12,9 +12,11 @@ import java.util.List;
  * (o no aplica al rol del usuario) viaja como {@code null} y el frontend lo muestra como
  * «No disponible», nunca como un cero engañoso.
  *
- * <p>{@code totalUsageMinutes} es siempre {@code null} en esta versión: la plataforma no
- * registra cierre de sesión ni duración de sesión, por lo que no existe base confiable
- * para calcular minutos acumulados sin inventar datos.</p>
+ * <p>{@code totalUsageMinutes} es un valor <strong>estimado</strong> con regla declarada:
+ * la plataforma no registra cierre de sesión, así que los momentos de actividad ya
+ * registrados (logins, eventos de uso e hitos de intentos) se agrupan en sesiones con un
+ * corte de inactividad de 30 minutos y se suman sus duraciones. Es conservador (la
+ * lectura sin interacción no se cuenta) y debe presentarse como estimación.</p>
  */
 public record StudentUsageRecordResponse(
         Long userId,

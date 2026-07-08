@@ -34,6 +34,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -61,10 +62,13 @@ import java.util.stream.Collectors;
  * técnicas (logs con severidad de advertencia o error).
  *
  * <p><strong>Sin datos inventados:</strong> cada indicador se calcula solo sobre registros
- * reales. El tiempo total de uso viaja siempre como {@code null} porque la plataforma no
- * registra cierre de sesión ni duración confiable; los promedios y tasas viajan como
- * {@code null} cuando no hay denominador. Los indicadores de evaluación no aplican a
- * docentes ni administradores y también viajan como {@code null} para esos roles.</p>
+ * reales. El tiempo total de uso es una <strong>estimación con regla declarada</strong>
+ * (ver {@link #estimateUsageMinutes}): la plataforma no registra cierre de sesión, así que
+ * los momentos de actividad registrados se agrupan en sesiones con un corte de inactividad
+ * y se suman sus duraciones; nunca se extrapola más allá de la actividad registrada. Los
+ * promedios y tasas viajan como {@code null} cuando no hay denominador, y los indicadores
+ * de evaluación no aplican a docentes ni administradores y viajan como {@code null} para
+ * esos roles.</p>
  *
  * <p>Solo lectura y pensado para el dataset de un colegio: las agrupaciones se resuelven
  * en memoria sobre consultas acotadas, siguiendo el estilo de {@link AcademicSupervisionService}.
@@ -82,6 +86,12 @@ public class StudentUsageRecordService {
     /** Severidades de log que cuentan como incidencia técnica. */
     private static final Set<LogSeverity> INCIDENT_SEVERITIES =
             Set.of(LogSeverity.WARNING, LogSeverity.ERROR);
+
+    /**
+     * Corte de inactividad de la estimación de tiempo de uso: un hueco mayor a este entre
+     * dos momentos de actividad registrados abre una sesión estimada nueva.
+     */
+    private static final Duration SESSION_INACTIVITY_CUTOFF = Duration.ofMinutes(30);
 
     private static final Pattern GRADE_PATTERN = Pattern.compile("^[1-5]$");
     private static final Pattern SECTION_PATTERN = Pattern.compile("^[A-Za-z]$");
@@ -475,13 +485,16 @@ public class StudentUsageRecordService {
         List<UsageEvent> events = context.eventsByUser.getOrDefault(userId, List.of());
         List<SystemLog> logins = context.loginsByUser.getOrDefault(userId, List.of());
         List<SystemLog> incidents = context.incidentsByUser.getOrDefault(userId, List.of());
+        List<EvaluationAttempt> userAttempts = student == null
+                ? List.of()
+                : context.attemptsByStudentId.getOrDefault(student.getId(), List.of());
 
         Set<String> visitedModules = events.stream()
                 .map(e -> e.getModule().name())
                 .collect(Collectors.toCollection(TreeSet::new));
 
-        LocalDateTime lastActivityAt = lastActivity(events, logins,
-                student == null ? List.of() : context.attemptsByStudentId.getOrDefault(student.getId(), List.of()));
+        LocalDateTime lastActivityAt = lastActivity(events, logins, userAttempts);
+        long estimatedUsageMinutes = estimateUsageMinutes(events, logins, userAttempts);
 
         // Indicadores de evaluación: solo aplican a estudiantes; para docentes y
         // administradores viajan como null (no como 0) para no simular datos.
@@ -495,8 +508,7 @@ public class StudentUsageRecordService {
         Long feedback = null;
 
         if (student != null && user.getRole() == Role.ESTUDIANTE) {
-            List<EvaluationAttempt> attempts =
-                    context.attemptsByStudentId.getOrDefault(student.getId(), List.of());
+            List<EvaluationAttempt> attempts = userAttempts;
             Set<Long> assignedIds = context.assignedEvaluationIds(student);
             Set<Long> completedIds = attempts.stream()
                     .filter(a -> SUBMITTED_STATUSES.contains(a.getStatus()))
@@ -532,7 +544,7 @@ public class StudentUsageRecordService {
                 user.getRole(),
                 student == null ? null : student.getGrade(),
                 student == null ? null : student.getSection(),
-                null, // tiempo total de uso: sin registro confiable de duración de sesión
+                estimatedUsageMinutes,
                 (long) logins.size(),
                 visitedModules.size(),
                 List.copyOf(visitedModules),
@@ -551,6 +563,47 @@ public class StudentUsageRecordService {
 
     private LocalDateTime lastActivity(List<UsageEvent> events, List<SystemLog> logins,
                                        List<EvaluationAttempt> attempts) {
+        return activityMoments(events, logins, attempts).stream()
+                .max(Comparator.naturalOrder())
+                .orElse(null);
+    }
+
+    /**
+     * Tiempo total de uso <strong>estimado</strong> en minutos, calculado con una regla
+     * explícita sobre los momentos de actividad ya registrados (logins, eventos de uso e
+     * hitos de intentos de evaluación): los momentos consecutivos separados por un hueco
+     * menor o igual al corte de inactividad ({@link #SESSION_INACTIVITY_CUTOFF}) forman una
+     * sesión estimada, cuya duración va del primer al último momento del grupo; el total es
+     * la suma de todas las sesiones. Es deliberadamente conservador: el tiempo de lectura
+     * sin interacción no genera eventos y no se cuenta, y nunca se extrapola más allá de la
+     * actividad registrada. Sin momentos registrados, el total es 0.
+     */
+    private long estimateUsageMinutes(List<UsageEvent> events, List<SystemLog> logins,
+                                      List<EvaluationAttempt> attempts) {
+        List<LocalDateTime> moments = activityMoments(events, logins, attempts).stream()
+                .sorted()
+                .toList();
+        if (moments.isEmpty()) {
+            return 0;
+        }
+
+        long totalMinutes = 0;
+        LocalDateTime sessionStart = moments.get(0);
+        LocalDateTime previous = sessionStart;
+        for (LocalDateTime moment : moments) {
+            if (Duration.between(previous, moment).compareTo(SESSION_INACTIVITY_CUTOFF) > 0) {
+                totalMinutes += Duration.between(sessionStart, previous).toMinutes();
+                sessionStart = moment;
+            }
+            previous = moment;
+        }
+        totalMinutes += Duration.between(sessionStart, previous).toMinutes();
+        return totalMinutes;
+    }
+
+    /** Momentos de actividad registrados del usuario, sin nulos y sin ordenar. */
+    private List<LocalDateTime> activityMoments(List<UsageEvent> events, List<SystemLog> logins,
+                                                List<EvaluationAttempt> attempts) {
         List<LocalDateTime> moments = new ArrayList<>();
         events.forEach(e -> moments.add(e.getOccurredAt()));
         logins.forEach(l -> moments.add(l.getCreatedAt()));
@@ -558,10 +611,8 @@ public class StudentUsageRecordService {
             moments.add(a.getStartedAt());
             moments.add(a.getSubmittedAt());
         });
-        return moments.stream()
-                .filter(Objects::nonNull)
-                .max(Comparator.naturalOrder())
-                .orElse(null);
+        moments.removeIf(Objects::isNull);
+        return moments;
     }
 
     private String fullName(StudentProfile student, TeacherProfile teacher) {
