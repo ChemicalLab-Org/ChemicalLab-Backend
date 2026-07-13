@@ -2,6 +2,7 @@ package com.morales.chemicallab.service;
 
 import com.morales.chemicallab.dto.AuthResponse;
 import com.morales.chemicallab.dto.ChangePasswordRequest;
+import com.morales.chemicallab.dto.CurrentUserResponse;
 import com.morales.chemicallab.dto.LoginRequest;
 import com.morales.chemicallab.dto.PasswordChangeResponse;
 import com.morales.chemicallab.entity.Role;
@@ -71,6 +72,41 @@ public class AuthService {
         userAccountRepository.save(user);
 
         return new PasswordChangeResponse("La contraseña fue actualizada correctamente.", false);
+    }
+
+    /**
+     * Devuelve los datos del usuario autenticado a partir del token JWT vigente. Lo usa el
+     * frontend al arrancar para validar que la sesión almacenada sigue siendo válida. Lanza
+     * BadCredentialsException si no hay autenticación (traducida a 401) y DisabledException si
+     * la cuenta quedó inactiva, de modo que el cliente limpie la sesión y exija un nuevo login.
+     * No expone el token, el hash de la contraseña ni ningún dato sensible.
+     */
+    public CurrentUserResponse getCurrentUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()
+                || authentication instanceof AnonymousAuthenticationToken) {
+            throw new BadCredentialsException("Usuario no autenticado.");
+        }
+
+        UserAccount user = userAccountRepository.findByUsername(authentication.getName())
+                .orElseThrow(() -> new EntityNotFoundException("Usuario no encontrado."));
+
+        if (Boolean.FALSE.equals(user.getActive())) {
+            throw new DisabledException("La cuenta se encuentra inactiva.");
+        }
+
+        ProfileNames profileNames = resolveProfileNames(user);
+
+        return new CurrentUserResponse(
+                user.getId(),
+                user.getUsername(),
+                user.getEmail(),
+                profileNames.names(),
+                profileNames.lastNames(),
+                user.getRole(),
+                user.getActive(),
+                user.getTemporaryPassword()
+        );
     }
 
     public AuthResponse login(LoginRequest request) {
