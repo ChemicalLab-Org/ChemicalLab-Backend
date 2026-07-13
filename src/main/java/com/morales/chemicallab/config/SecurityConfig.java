@@ -61,6 +61,9 @@ public class SecurityConfig {
                         // Cambio de contraseña temporal — requiere autenticación JWT
                         .requestMatchers(HttpMethod.PATCH, "/api/auth/change-temporary-password").authenticated()
 
+                        // Datos del usuario autenticado (validación de sesión) — requiere JWT
+                        .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
+
                         // Documentación Swagger / OpenAPI — útil en desarrollo
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
 
