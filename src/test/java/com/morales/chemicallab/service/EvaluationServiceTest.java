@@ -109,6 +109,31 @@ class EvaluationServiceTest {
                 .id(id).evaluation(evaluation).teacher(teacher).grade(grade).section(section).active(true).build();
     }
 
+    private EvaluationAssignment assignment(Long id, Evaluation evaluation, TeacherProfile teacher,
+                                            String grade, String section, LocalDateTime dueAt) {
+        return EvaluationAssignment.builder()
+                .id(id).evaluation(evaluation).teacher(teacher).grade(grade).section(section)
+                .dueAt(dueAt).active(true).build();
+    }
+
+    // Deja la evaluación con una asignación activa para (grade, section) y su lista de
+    // estudiantes con acceso, de modo que computeReviewAvailability pueda resolver el grupo.
+    private void stubGroup(Evaluation evaluation, EvaluationAssignment assignment,
+                           List<StudentProfile> sectionStudents) {
+        when(assignmentRepository.findByEvaluationOrderByAssignedAtDesc(evaluation))
+                .thenReturn(List.of(assignment));
+        when(studentProfileRepository.findByGradeAndSection(assignment.getGrade(), assignment.getSection()))
+                .thenReturn(sectionStudents);
+    }
+
+    // Estado individual del intento de una estudiante para la regla de finalización grupal:
+    // sin intento en progreso y con la cuenta de intentos usados indicada.
+    private void stubAttemptsUsed(Evaluation evaluation, StudentProfile student, long used) {
+        when(attemptRepository.findByEvaluationAndStudentAndStatus(
+                evaluation, student, AttemptStatus.IN_PROGRESS)).thenReturn(Optional.empty());
+        when(attemptRepository.countByEvaluationAndStudent(evaluation, student)).thenReturn(used);
+    }
+
     private EvaluationAttempt gradedAttempt(Long id, Evaluation evaluation, StudentProfile student,
                                             int attemptNumber, Integer score, Integer maxScore) {
         // Resultado de alternativa única: se califica y se cierra automáticamente al enviarse,
@@ -686,15 +711,24 @@ class EvaluationServiceTest {
         EvaluationAttempt at = gradedAttempt(50L, eval, alumno, 1, 2, 2);
         when(attemptRepository.findByStudentAndStatusInOrderBySubmittedAtDesc(eq(alumno), any()))
                 .thenReturn(List.of(at));
-        when(attemptRepository.countByEvaluationAndStudent(eval, alumno)).thenReturn(1L);
+        // El grupo es la sola alumna asignada y ya usó su único intento: la revisión abre y
+        // por tanto se expone su nota.
+        stubGroup(eval, assignment(40L, eval, docente, "3", "A"), List.of(alumno));
+        stubAttemptsUsed(eval, alumno, 1L);
 
         List<StudentResultSummaryResponse> res = service.listStudentResults("EST0001");
 
         assertThat(res).hasSize(1);
         assertThat(res.get(0).score()).isEqualTo(2);
         assertThat(res.get(0).percentage()).isEqualTo(100.0);
-        // maxAttempts 1 y attemptsUsed 1 → ya no quedan intentos: puede ver el detalle.
+        // Todas las asignadas finalizaron: la revisión está disponible.
+        assertThat(res.get(0).reviewAvailable()).isTrue();
         assertThat(res.get(0).canViewDetailedFeedback()).isTrue();
+        assertThat(res.get(0).reviewUnlockReason())
+                .isEqualTo(ReviewUnlockReason.ALL_ASSIGNED_STUDENTS_FINISHED);
+        assertThat(res.get(0).assignedStudentsCount()).isEqualTo(1);
+        assertThat(res.get(0).finishedStudentsCount()).isEqualTo(1);
+        assertThat(res.get(0).pendingStudentsCount()).isZero();
     }
 
     // =========================================================================
@@ -716,42 +750,42 @@ class EvaluationServiceTest {
     }
 
     // =========================================================================
-    // 25. Estudiante con intentos restantes no recibe la alternativa correcta
+    // 25. Con el grupo aún pendiente, la revisión se bloquea (Caso H: le quedan intentos)
     // =========================================================================
 
     @Test
-    void estudianteConIntentosRestantesNoRecibeAlternativaCorrecta() {
+    void estudianteConIntentosRestantesTieneRevisionBloqueada() {
         StudentProfile alumno = student(5L, "EST0001", "3", "A");
         stubStudent(alumno);
         TeacherProfile docente = teacher(1L, "docente1");
+        // maxAttempts 2: con solo 1 intento usado, la alumna aún no finaliza (Caso H) y el
+        // grupo sigue pendiente, por lo que la revisión no se habilita.
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
-        EvaluationQuestion q = question(20L, eval, 2);
-        EvaluationOption incorrecta = option(31L, q, false);
-        EvaluationOption correcta = option(32L, q, true);
         EvaluationAttempt at = gradedAttempt(50L, eval, alumno, 1, 2, 2);
-        EvaluationAnswer ans = EvaluationAnswer.builder()
-                .id(60L).attempt(at).question(q).selectedOption(correcta).correct(true).pointsAwarded(2).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(at));
-        when(attemptRepository.countByEvaluationAndStudent(eval, alumno)).thenReturn(1L);
-        when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval)).thenReturn(List.of(q));
-        when(optionRepository.findByQuestionAndActiveTrueOrderByOrderIndexAsc(q))
-                .thenReturn(List.of(incorrecta, correcta));
-        when(answerRepository.findByAttemptAndQuestion(at, q)).thenReturn(Optional.of(ans));
+        stubGroup(eval, assignment(40L, eval, docente, "3", "A"), List.of(alumno));
+        stubAttemptsUsed(eval, alumno, 1L);
 
         StudentAttemptResultDetailResponse res = service.getStudentAttemptResult("EST0001", 50L);
 
+        // Revisión bloqueada: sin respuestas, sin nota y con el mensaje de revisión pendiente.
+        assertThat(res.reviewAvailable()).isFalse();
+        assertThat(res.reviewLocked()).isTrue();
         assertThat(res.canViewDetailedFeedback()).isFalse();
-        assertThat(res.answers()).hasSize(1);
-        assertThat(res.answers().get(0).correct()).isTrue();
-        assertThat(res.answers().get(0).correctOptionText()).isNull();
+        assertThat(res.answers()).isEmpty();
+        assertThat(res.score()).isNull();
+        assertThat(res.finalScore()).isNull();
+        assertThat(res.reviewUnlockReason()).isEqualTo(ReviewUnlockReason.NO_DEADLINE);
+        assertThat(res.reviewMessage()).contains("La revisión estará disponible");
+        assertThat(res.pendingStudentsCount()).isEqualTo(1);
     }
 
     // =========================================================================
-    // 26. Estudiante sin intentos restantes sí recibe la alternativa correcta
+    // 26. Cuando todas las asignadas finalizaron, la revisión se habilita (Caso B)
     // =========================================================================
 
     @Test
-    void estudianteSinIntentosRestantesRecibeAlternativaCorrecta() {
+    void revisionDisponibleCuandoTodasFinalizaron() {
         StudentProfile alumno = student(5L, "EST0001", "3", "A");
         stubStudent(alumno);
         TeacherProfile docente = teacher(1L, "docente1");
@@ -763,7 +797,9 @@ class EvaluationServiceTest {
         EvaluationAnswer ans = EvaluationAnswer.builder()
                 .id(60L).attempt(at).question(q).selectedOption(correcta).correct(true).pointsAwarded(2).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(at));
-        when(attemptRepository.countByEvaluationAndStudent(eval, alumno)).thenReturn(1L);
+        // Grupo de una sola alumna que ya usó su único intento: todas finalizaron.
+        stubGroup(eval, assignment(40L, eval, docente, "3", "A"), List.of(alumno));
+        stubAttemptsUsed(eval, alumno, 1L);
         when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval)).thenReturn(List.of(q));
         when(optionRepository.findByQuestionAndActiveTrueOrderByOrderIndexAsc(q))
                 .thenReturn(List.of(incorrecta, correcta));
@@ -771,8 +807,111 @@ class EvaluationServiceTest {
 
         StudentAttemptResultDetailResponse res = service.getStudentAttemptResult("EST0001", 50L);
 
+        assertThat(res.reviewAvailable()).isTrue();
         assertThat(res.canViewDetailedFeedback()).isTrue();
+        assertThat(res.reviewUnlockReason()).isEqualTo(ReviewUnlockReason.ALL_ASSIGNED_STUDENTS_FINISHED);
         assertThat(res.answers().get(0).correctOptionText()).isEqualTo("CaO");
+        assertThat(res.score()).isEqualTo(2);
+    }
+
+    // =========================================================================
+    // 26b. Caso A/D: una alumna termina antes; con compañeras pendientes no ve la revisión
+    //      aunque llame directamente al endpoint (el backend no envía respuestas correctas).
+    // =========================================================================
+
+    @Test
+    void alumnaQueTerminaAntesNoVeRevisionSiFaltanCompaneras() {
+        StudentProfile alumnaA = student(5L, "EST0001", "3", "A");
+        StudentProfile alumnaB = student(6L, "EST0002", "3", "A");
+        stubStudent(alumnaA);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        EvaluationAttempt at = gradedAttempt(50L, eval, alumnaA, 1, 2, 2);
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(at));
+        // Grupo de dos alumnas: A ya usó su intento; B todavía no ha enviado (0 usados).
+        stubGroup(eval, assignment(40L, eval, docente, "3", "A"), List.of(alumnaA, alumnaB));
+        stubAttemptsUsed(eval, alumnaA, 1L);
+        stubAttemptsUsed(eval, alumnaB, 0L);
+
+        StudentAttemptResultDetailResponse res = service.getStudentAttemptResult("EST0001", 50L);
+
+        // El backend es la fuente de verdad: sin revisión disponible no expone corrección.
+        assertThat(res.reviewAvailable()).isFalse();
+        assertThat(res.answers()).isEmpty();
+        assertThat(res.score()).isNull();
+        // Solo se informan conteos del grupo, nunca nombres de compañeras pendientes.
+        assertThat(res.assignedStudentsCount()).isEqualTo(2);
+        assertThat(res.finishedStudentsCount()).isEqualTo(1);
+        assertThat(res.pendingStudentsCount()).isEqualTo(1);
+    }
+
+    // =========================================================================
+    // 26c. Caso C: vencida la fecha límite, quienes enviaron ven la revisión aunque
+    //      falten compañeras por finalizar.
+    // =========================================================================
+
+    @Test
+    void fechaLimiteVencidaHabilitaRevisionAunConPendientes() {
+        StudentProfile alumnaA = student(5L, "EST0001", "3", "A");
+        StudentProfile alumnaB = student(6L, "EST0002", "3", "A");
+        stubStudent(alumnaA);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        EvaluationQuestion q = question(20L, eval, 2);
+        EvaluationOption incorrecta = option(31L, q, false);
+        EvaluationOption correcta = option(32L, q, true);
+        EvaluationAttempt at = gradedAttempt(50L, eval, alumnaA, 1, 2, 2);
+        EvaluationAnswer ans = EvaluationAnswer.builder()
+                .id(60L).attempt(at).question(q).selectedOption(correcta).correct(true).pointsAwarded(2).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(at));
+        LocalDateTime dueAt = LocalDateTime.now().minusHours(1);
+        stubGroup(eval, assignment(40L, eval, docente, "3", "A", dueAt), List.of(alumnaA, alumnaB));
+        stubAttemptsUsed(eval, alumnaA, 1L);
+        stubAttemptsUsed(eval, alumnaB, 0L);
+        when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval)).thenReturn(List.of(q));
+        when(optionRepository.findByQuestionAndActiveTrueOrderByOrderIndexAsc(q))
+                .thenReturn(List.of(incorrecta, correcta));
+        when(answerRepository.findByAttemptAndQuestion(at, q)).thenReturn(Optional.of(ans));
+
+        StudentAttemptResultDetailResponse res = service.getStudentAttemptResult("EST0001", 50L);
+
+        assertThat(res.reviewAvailable()).isTrue();
+        assertThat(res.reviewUnlockReason()).isEqualTo(ReviewUnlockReason.DEADLINE_REACHED);
+        assertThat(res.reviewAvailableAt()).isEqualTo(dueAt);
+        assertThat(res.answers().get(0).correctOptionText()).isEqualTo("CaO");
+        // Aunque la revisión esté abierta por plazo, el conteo refleja que B sigue pendiente.
+        assertThat(res.pendingStudentsCount()).isEqualTo(1);
+    }
+
+    // =========================================================================
+    // 26d. Caso H: una alumna con un intento en progreso no cuenta como finalizada,
+    //      aunque haya alcanzado el máximo de intentos.
+    // =========================================================================
+
+    @Test
+    void intentoEnProgresoNoCuentaComoFinalizada() {
+        StudentProfile alumno = student(5L, "EST0001", "3", "A");
+        stubStudent(alumno);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
+        EvaluationAttempt terminado = gradedAttempt(50L, eval, alumno, 1, 2, 2);
+        EvaluationAttempt enProgreso = EvaluationAttempt.builder()
+                .id(51L).evaluation(eval).student(alumno).attemptNumber(2)
+                .status(AttemptStatus.IN_PROGRESS).active(true).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(terminado));
+        when(assignmentRepository.findByEvaluationOrderByAssignedAtDesc(eval))
+                .thenReturn(List.of(assignment(40L, eval, docente, "3", "A")));
+        when(studentProfileRepository.findByGradeAndSection("3", "A")).thenReturn(List.of(alumno));
+        // Tiene un intento en progreso: aún está rindiendo, no finaliza (no se consulta la cuenta).
+        when(attemptRepository.findByEvaluationAndStudentAndStatus(eval, alumno, AttemptStatus.IN_PROGRESS))
+                .thenReturn(Optional.of(enProgreso));
+
+        StudentAttemptResultDetailResponse res = service.getStudentAttemptResult("EST0001", 50L);
+
+        assertThat(res.reviewAvailable()).isFalse();
+        assertThat(res.answers()).isEmpty();
+        assertThat(res.finishedStudentsCount()).isZero();
+        assertThat(res.pendingStudentsCount()).isEqualTo(1);
     }
 
     // =========================================================================
@@ -2197,7 +2336,9 @@ class EvaluationServiceTest {
         StudentProfile alumno = student(5L, "EST0001", "3", "A");
         stubStudent(alumno);
         TeacherProfile docente = teacher(1L, "docente1");
-        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
+        // El grupo ya finalizó (revisión disponible), pero la calificación del intento sigue
+        // pendiente de revisión manual: la nota aún no se muestra.
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
         EvaluationQuestion open = openQuestion(21L, eval, 3, false);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
                 .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
@@ -2207,14 +2348,17 @@ class EvaluationServiceTest {
         EvaluationAnswer openAnswer = EvaluationAnswer.builder()
                 .id(61L).attempt(attempt).question(open).answerText("Mi respuesta").reviewed(false).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+        stubGroup(eval, assignment(40L, eval, docente, "3", "A"), List.of(alumno));
+        stubAttemptsUsed(eval, alumno, 1L);
         when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval))
                 .thenReturn(List.of(open));
         when(answerRepository.findByAttemptAndQuestion(attempt, open)).thenReturn(Optional.of(openAnswer));
-        when(attemptRepository.countByEvaluationAndStudent(eval, alumno)).thenReturn(1L);
 
         StudentAttemptResultDetailResponse response = service.getStudentAttemptResult("EST0001", 50L);
 
-        // Antes del cierre: el estudiante ve su propia respuesta pero ninguna nota ni retro.
+        // Revisión disponible para el grupo, pero calificación sin cerrar: ve su propia
+        // respuesta y ninguna nota ni retro.
+        assertThat(response.reviewAvailable()).isTrue();
         assertThat(response.gradeClosed()).isFalse();
         assertThat(response.finalScore()).isNull();
         assertThat(response.score()).isNull();
@@ -2228,7 +2372,7 @@ class EvaluationServiceTest {
         StudentProfile alumno = student(5L, "EST0001", "3", "A");
         stubStudent(alumno);
         TeacherProfile docente = teacher(1L, "docente1");
-        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
         EvaluationQuestion open = openQuestion(21L, eval, 5, false);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
                 .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
@@ -2240,14 +2384,18 @@ class EvaluationServiceTest {
                 .id(61L).attempt(attempt).question(open).answerText("Mi respuesta").reviewed(true)
                 .pointsAwarded(4).teacherFeedback("Bien explicado.").build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
+        // El grupo finalizó y la calificación está cerrada: se revela todo.
+        stubGroup(eval, assignment(40L, eval, docente, "3", "A"), List.of(alumno));
+        stubAttemptsUsed(eval, alumno, 1L);
         when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval))
                 .thenReturn(List.of(open));
         when(answerRepository.findByAttemptAndQuestion(attempt, open)).thenReturn(Optional.of(openAnswer));
-        when(attemptRepository.countByEvaluationAndStudent(eval, alumno)).thenReturn(1L);
 
         StudentAttemptResultDetailResponse response = service.getStudentAttemptResult("EST0001", 50L);
 
-        // Tras el cierre: nota final, retroalimentación general y comentario por respuesta.
+        // Tras el cierre y con la revisión disponible: nota final, retroalimentación general
+        // y comentario por respuesta.
+        assertThat(response.reviewAvailable()).isTrue();
         assertThat(response.gradeClosed()).isTrue();
         assertThat(response.finalScore()).isEqualByComparingTo("16.00");
         assertThat(response.overallFeedback()).isEqualTo("Buen trabajo.");
