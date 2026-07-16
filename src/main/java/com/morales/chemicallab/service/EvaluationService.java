@@ -14,9 +14,12 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -1386,13 +1389,26 @@ public class EvaluationService {
         ensureScored(attempt);
 
         Evaluation evaluation = attempt.getEvaluation();
+
+        // Regla 18.6: la revisión detallada solo se entrega si ya está disponible para el
+        // grupo (venció el plazo o todas las estudiantes asignadas finalizaron). Mientras
+        // siga bloqueada, el backend no expone respuestas correctas, corrección ni nota:
+        // ocultar botones en el frontend no basta, el backend es la fuente de verdad.
+        StudentReviewAvailability availability = computeReviewAvailability(evaluation);
+        boolean reviewAvailable = availability.reviewAvailable();
+
         // Mientras la calificación no esté cerrada, el estudiante no ve su nota final ni el
         // detalle de puntajes/retroalimentación: el intento aparece como pendiente de
-        // revisión. Solo se revela todo (nota, puntajes por pregunta, comentarios) al cerrar.
+        // revisión. Solo se revela todo (nota, puntajes por pregunta, comentarios) al cerrar
+        // y siempre que la revisión esté disponible para el grupo.
         boolean closed = Boolean.TRUE.equals(attempt.getGradeClosed());
-        boolean canView = canViewDetailedFeedback(evaluation, student);
+        boolean showDetail = reviewAvailable && closed;
 
-        List<StudentAnswerResultResponse> answers = answerDetailsOf(attempt).stream()
+        // Si la revisión está bloqueada, no se envía ninguna respuesta (ni siquiera la propia
+        // sin corregir): el estudiante solo ve estado y mensaje. Al desbloquearse, la
+        // corrección pregunta a pregunta se sigue gobernando por el cierre de la calificación.
+        List<StudentAnswerResultResponse> answers = !reviewAvailable ? List.of()
+                : answerDetailsOf(attempt).stream()
                 .map(d -> {
                     boolean open = d.question.getQuestionType() == QuestionType.OPEN_TEXT;
                     return new StudentAnswerResultResponse(
@@ -1407,22 +1423,25 @@ public class EvaluationService {
                             closed && !(open && !d.reviewed) ? d.pointsAwarded : null,
                             closed && d.reviewed,
                             closed && open && d.reviewed ? d.teacherFeedback : null,
-                            closed && canView && !open && d.correctOption != null
+                            closed && !open && d.correctOption != null
                                     ? d.correctOption.getOptionText() : null,
-                            closed && canView ? d.question.getExplanation() : null);
+                            closed ? d.question.getExplanation() : null);
                 })
                 .toList();
 
         return new StudentAttemptResultDetailResponse(
                 attempt.getId(), evaluation.getId(), evaluation.getTitle(), evaluation.getTopic(),
                 attempt.getAttemptNumber(), attempt.getStatus(),
-                closed ? attempt.getScore() : null,
-                closed ? attempt.getMaxScore() : null,
-                closed ? percentageOf(attempt) : null,
-                closed ? computeFinalScore(attempt) : null,
-                closed ? attempt.getOverallFeedback() : null,
+                showDetail ? attempt.getScore() : null,
+                showDetail ? attempt.getMaxScore() : null,
+                showDetail ? percentageOf(attempt) : null,
+                showDetail ? computeFinalScore(attempt) : null,
+                showDetail ? attempt.getOverallFeedback() : null,
                 closed,
-                attempt.getSubmittedAt(), canView, answers);
+                attempt.getSubmittedAt(), reviewAvailable, answers,
+                reviewAvailable, !reviewAvailable, availability.reason(), availability.deadlineAt(),
+                availability.assignedStudentsCount(), availability.finishedStudentsCount(),
+                availability.pendingStudentsCount(), availability.messageWhenLocked());
     }
 
     // =========================================================================
@@ -1500,27 +1519,152 @@ public class EvaluationService {
         StudentProfile student = attempt.getStudent();
         boolean closed = Boolean.TRUE.equals(attempt.getGradeClosed());
         int attemptsUsed = (int) attemptRepository.countByEvaluationAndStudent(evaluation, student);
+
+        // La nota solo se expone cuando la revisión está disponible para el grupo y la
+        // calificación del intento está cerrada; de lo contrario el estudiante ve el intento
+        // como "revisión pendiente" sin puntaje.
+        StudentReviewAvailability availability = computeReviewAvailability(evaluation);
+        boolean reviewAvailable = availability.reviewAvailable();
+        boolean showScore = reviewAvailable && closed;
+
         return new StudentResultSummaryResponse(
                 attempt.getId(), evaluation.getId(), evaluation.getTitle(), evaluation.getTopic(),
                 attempt.getAttemptNumber(), attempt.getStatus(),
-                // Antes del cierre no se expone la nota: el estudiante ve "pendiente de revisión".
-                closed ? attempt.getScore() : null,
-                closed ? attempt.getMaxScore() : null,
-                closed ? percentageOf(attempt) : null,
-                closed ? computeFinalScore(attempt) : null, closed,
-                attempt.getSubmittedAt(), canViewDetailedFeedback(evaluation, student),
-                attemptsUsed, evaluation.getMaxAttempts());
+                showScore ? attempt.getScore() : null,
+                showScore ? attempt.getMaxScore() : null,
+                showScore ? percentageOf(attempt) : null,
+                showScore ? computeFinalScore(attempt) : null, closed,
+                attempt.getSubmittedAt(), reviewAvailable,
+                attemptsUsed, evaluation.getMaxAttempts(),
+                reviewAvailable, !reviewAvailable, availability.reason(), availability.deadlineAt(),
+                availability.assignedStudentsCount(), availability.finishedStudentsCount(),
+                availability.pendingStudentsCount());
+    }
+
+    // Mensaje para el estudiante mientras la revisión detallada sigue bloqueada.
+    private static final String REVIEW_LOCKED_MESSAGE =
+            "Tu evaluación fue enviada correctamente. La revisión estará disponible cuando "
+                    + "todas las estudiantes asignadas hayan finalizado o cuando se cumpla la "
+                    + "fecha límite.";
+
+    /**
+     * Disponibilidad de la revisión detallada de una evaluación para las estudiantes, con
+     * el motivo del desbloqueo y el progreso general del grupo (sin nombres). Se calcula a
+     * partir del estado del grupo, no del intento individual.
+     */
+    private record StudentReviewAvailability(
+            boolean reviewAvailable,
+            ReviewUnlockReason reason,
+            int assignedStudentsCount,
+            int finishedStudentsCount,
+            int pendingStudentsCount,
+            LocalDateTime deadlineAt) {
+
+        String messageWhenLocked() {
+            return reviewAvailable ? null : REVIEW_LOCKED_MESSAGE;
+        }
     }
 
     /**
-     * Criterio conservador de retroalimentación: el estudiante solo ve la alternativa
-     * correcta cuando ya no le quedan intentos disponibles o la evaluación está
-     * archivada. Así no puede usar un resultado para acertar en un intento posterior.
+     * Regla central de la sesión 18.6: la revisión detallada del examen (respuestas
+     * correctas, alternativas, explicación, nota y detalle de aciertos/errores) solo se
+     * habilita para las estudiantes cuando el grupo ya cerró. Así, una alumna que termina
+     * antes que sus compañeras no puede ver la corrección y filtrarla.
+     *
+     * <p>{@code reviewAvailable = deadlineReached OR allAssignedStudentsFinished}, donde:</p>
+     * <ul>
+     *   <li><b>allAssignedStudentsFinished</b>: todas las estudiantes activas con acceso a la
+     *       evaluación (mismo criterio de grado/sección que la vista del estudiante) ya no
+     *       tienen intentos disponibles. Si no hay estudiantes asignadas, no se habilita por
+     *       accidente.</li>
+     *   <li><b>deadlineReached</b>: la evaluación tiene fecha límite y ya se cumplió. El modelo
+     *       actual no guarda una fecha límite en la evaluación; la fecha límite disponible es
+     *       la {@code dueAt} de la asignación (ventana por grado/sección). Para no filtrar entre
+     *       secciones, el plazo desbloquea la revisión solo cuando <b>todas</b> las asignaciones
+     *       activas tienen {@code dueAt} y ya pasó la más tardía; si alguna asignación no tiene
+     *       {@code dueAt}, el plazo no basta y se depende de la finalización grupal.</li>
+     * </ul>
+     *
+     * <p>Una evaluación archivada se considera cerrada para todo el grupo (ya no es rendible),
+     * por lo que también habilita la revisión, conservando el comportamiento previo.</p>
      */
-    private boolean canViewDetailedFeedback(Evaluation evaluation, StudentProfile student) {
+    private StudentReviewAvailability computeReviewAvailability(Evaluation evaluation) {
+        List<EvaluationAssignment> activeAssignments =
+                assignmentRepository.findByEvaluationOrderByAssignedAtDesc(evaluation).stream()
+                        .filter(a -> Boolean.TRUE.equals(a.getActive()))
+                        .toList();
+
+        // Estudiantes con acceso a la evaluación: activas y cuyo grado/sección coincide con
+        // alguna asignación activa. Se deduplican por id (una alumna podría cubrir dos
+        // asignaciones con el mismo grado/sección). No se exponen sus nombres a nadie.
+        Map<Long, StudentProfile> assignedStudents = new LinkedHashMap<>();
+        for (EvaluationAssignment assignment : activeAssignments) {
+            for (StudentProfile candidate :
+                    studentProfileRepository.findByGradeAndSection(assignment.getGrade(), assignment.getSection())) {
+                if (candidate.getUser() != null && Boolean.TRUE.equals(candidate.getUser().getActive())) {
+                    assignedStudents.putIfAbsent(candidate.getId(), candidate);
+                }
+            }
+        }
+
+        int assignedCount = assignedStudents.size();
+        int finishedCount = 0;
+        for (StudentProfile candidate : assignedStudents.values()) {
+            if (studentFinishedAttempts(evaluation, candidate)) {
+                finishedCount++;
+            }
+        }
+        int pendingCount = assignedCount - finishedCount;
+
+        // Fecha límite efectiva: la evaluación queda cerrada por tiempo solo cuando ninguna
+        // asignación activa deja una ventana abierta, es decir, todas tienen dueAt y ya pasó
+        // la más tardía. Si alguna no tiene dueAt, no hay fecha límite que garantice el cierre.
+        boolean everyAssignmentHasDueAt = !activeAssignments.isEmpty()
+                && activeAssignments.stream().allMatch(a -> a.getDueAt() != null);
+        LocalDateTime deadlineAt = everyAssignmentHasDueAt
+                ? activeAssignments.stream()
+                        .map(EvaluationAssignment::getDueAt)
+                        .max(Comparator.naturalOrder())
+                        .orElse(null)
+                : null;
+        boolean deadlineReached = deadlineAt != null && !LocalDateTime.now().isBefore(deadlineAt);
+
+        // Sin estudiantes asignadas no se habilita la revisión por accidente.
+        boolean allAssignedStudentsFinished = assignedCount > 0 && pendingCount == 0;
+        boolean archived = evaluation.getStatus() == EvaluationStatus.ARCHIVED;
+
+        boolean reviewAvailable = deadlineReached || allAssignedStudentsFinished || archived;
+
+        ReviewUnlockReason reason;
+        if (reviewAvailable) {
+            // Prioriza el motivo real; una evaluación archivada se informa como grupo cerrado.
+            reason = deadlineReached ? ReviewUnlockReason.DEADLINE_REACHED
+                    : ReviewUnlockReason.ALL_ASSIGNED_STUDENTS_FINISHED;
+        } else {
+            reason = deadlineAt != null
+                    ? ReviewUnlockReason.LOCKED_WAITING_FOR_GROUP
+                    : ReviewUnlockReason.NO_DEADLINE;
+        }
+
+        return new StudentReviewAvailability(
+                reviewAvailable, reason, assignedCount, finishedCount, pendingCount, deadlineAt);
+    }
+
+    /**
+     * Indica si una estudiante ya no tiene intentos disponibles en la evaluación (terminó).
+     * No cuenta como finalizada si tiene un intento en progreso (sigue rindiendo) ni si aún
+     * le quedan intentos por usar. Con {@code maxAttempts = 1} basta con haber enviado su
+     * intento; con más intentos, debe haberlos usado todos.
+     */
+    private boolean studentFinishedAttempts(Evaluation evaluation, StudentProfile student) {
+        boolean hasInProgress = attemptRepository
+                .findByEvaluationAndStudentAndStatus(evaluation, student, AttemptStatus.IN_PROGRESS)
+                .isPresent();
+        if (hasInProgress) {
+            return false;
+        }
         long attemptsUsed = attemptRepository.countByEvaluationAndStudent(evaluation, student);
-        boolean noAttemptsLeft = attemptsUsed >= evaluation.getMaxAttempts();
-        return noAttemptsLeft || evaluation.getStatus() == EvaluationStatus.ARCHIVED;
+        return attemptsUsed >= evaluation.getMaxAttempts();
     }
 
     /**
