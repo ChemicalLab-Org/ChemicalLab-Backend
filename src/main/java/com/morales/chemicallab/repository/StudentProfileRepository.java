@@ -24,4 +24,9 @@ public interface StudentProfileRepository extends JpaRepository<StudentProfile, 
     List<StudentProfile> findByTeacherAndGrade(TeacherProfile teacher, String grade);
 
     List<StudentProfile> findByTeacherAndSection(TeacherProfile teacher, String section);
+
+    // Estudiantes de un grado/sección concretos. Se usa para determinar el conjunto de
+    // estudiantes asignadas a una evaluación (según sus asignaciones activas por
+    // grado/sección) y así decidir si ya finalizaron todas y puede habilitarse la revisión.
+    List<StudentProfile> findByGradeAndSection(String grade, String section);
 }

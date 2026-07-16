@@ -6,10 +6,13 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * Resumen de la calificación de un intento propio del estudiante. Siempre expone su
- * puntaje y porcentaje; {@code canViewDetailedFeedback} indica si ya puede ver la
- * retroalimentación detallada (alternativas correctas) sin facilitar la trampa en
- * intentos restantes.
+ * Resumen de la calificación de un intento propio del estudiante.
+ *
+ * <p>La nota (puntaje, porcentaje y nota final) solo se expone cuando la revisión está
+ * disponible para el grupo ({@code reviewAvailable}) y la calificación está cerrada;
+ * mientras la revisión sigue bloqueada, esos campos van null y el estudiante ve
+ * "revisión pendiente". {@code canViewDetailedFeedback} se conserva como alias de
+ * {@code reviewAvailable}.</p>
  */
 public record StudentResultSummaryResponse(
         Long attemptId,
@@ -28,5 +31,15 @@ public record StudentResultSummaryResponse(
         LocalDateTime submittedAt,
         boolean canViewDetailedFeedback,
         int attemptsUsed,
-        int maxAttempts
+        int maxAttempts,
+        // Disponibilidad de revisión para las estudiantes (regla grupal).
+        boolean reviewAvailable,
+        com.morales.chemicallab.dto.ReviewUnlockReason reviewUnlockReason,
+        // Fecha en que la revisión se desbloquea por vencimiento; null si no hay fecha límite.
+        LocalDateTime reviewAvailableAt,
+        Integer assignedStudentsCount,
+        Integer finishedStudentsCount,
+        Integer pendingStudentsCount,
+        // Mensaje para la estudiante cuando la revisión sigue bloqueada; null si ya disponible.
+        String message
 ) {}

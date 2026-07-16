@@ -7,10 +7,18 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Detalle del resultado de un intento propio del estudiante. Incluye su calificación
- * y, solo si {@code canViewDetailedFeedback} es true, la corrección pregunta a
- * pregunta con la alternativa correcta. Cuando es false, las respuestas se entregan
- * sin revelar la alternativa correcta.
+ * Detalle del resultado de un intento propio del estudiante.
+ *
+ * <p>La revisión detallada solo se entrega cuando {@code reviewAvailable} es true, es
+ * decir, cuando la evaluación cerró para todo el grupo (todas las estudiantes asignadas
+ * finalizaron) o venció la fecha límite. Mientras {@code reviewAvailable} es false, la
+ * lista {@code answers} va vacía y no se revelan puntajes, aciertos/errores, alternativas
+ * correctas ni explicaciones: la estudiante solo ve el estado del envío y el
+ * {@code message} de revisión pendiente. Los conteos del grupo permiten mostrar el avance
+ * general (p. ej. "18 de 22 finalizaron") sin exponer nombres de compañeras.</p>
+ *
+ * <p>{@code canViewDetailedFeedback} se conserva como alias de {@code reviewAvailable}
+ * para compatibilidad con el frontend existente.</p>
  */
 public record StudentAttemptResultDetailResponse(
         Long attemptId,
@@ -31,5 +39,15 @@ public record StudentAttemptResultDetailResponse(
         boolean gradeClosed,
         LocalDateTime submittedAt,
         boolean canViewDetailedFeedback,
-        List<StudentAnswerResultResponse> answers
+        List<StudentAnswerResultResponse> answers,
+        // Disponibilidad de revisión para las estudiantes (regla grupal).
+        boolean reviewAvailable,
+        com.morales.chemicallab.dto.ReviewUnlockReason reviewUnlockReason,
+        // Fecha en que la revisión se desbloquea por vencimiento; null si no hay fecha límite.
+        LocalDateTime reviewAvailableAt,
+        Integer assignedStudentsCount,
+        Integer finishedStudentsCount,
+        Integer pendingStudentsCount,
+        // Mensaje para la estudiante cuando la revisión sigue bloqueada; null si ya disponible.
+        String message
 ) {}

@@ -135,6 +135,23 @@ class EvaluationServiceTest {
                 .thenReturn(Optional.of(student));
     }
 
+    /**
+     * Stubea una asignación activa (grado/sección, sin fecha límite) con la lista de
+     * estudiantes asignadas, para ejercitar la regla grupal de disponibilidad de revisión.
+     */
+    private void stubAssignedSection(Evaluation eval, TeacherProfile docente, String grade,
+                                     String section, List<StudentProfile> roster) {
+        when(assignmentRepository.findByEvaluationOrderByAssignedAtDesc(eval))
+                .thenReturn(List.of(assignment(90L, eval, docente, grade, section)));
+        when(studentProfileRepository.findByGradeAndSection(grade, section)).thenReturn(roster);
+    }
+
+    /** Marca a una estudiante como sin intento en progreso (finalizada si además agotó intentos). */
+    private void stubNoInProgress(Evaluation eval, StudentProfile student) {
+        when(attemptRepository.findByEvaluationAndStudentAndStatus(eval, student, AttemptStatus.IN_PROGRESS))
+                .thenReturn(Optional.empty());
+    }
+
     // =========================================================================
     // 1. Docente crea evaluación
     // =========================================================================
@@ -529,8 +546,11 @@ class EvaluationServiceTest {
                 "EST0001", 50L, new SubmitEvaluationAttemptRequest(null));
 
         assertThat(response.status()).isEqualTo(AttemptStatus.GRADED);
-        assertThat(response.score()).isEqualTo(2);
-        assertThat(response.maxScore()).isEqualTo(2);
+        // La calificación se persiste en el intento, pero la respuesta del envío no expone
+        // la nota mientras la revisión siga bloqueada para el grupo (aquí quedan intentos).
+        assertThat(attempt.getScore()).isEqualTo(2);
+        assertThat(attempt.getMaxScore()).isEqualTo(2);
+        assertThat(response.score()).isNull();
     }
 
     // =========================================================================
@@ -623,10 +643,12 @@ class EvaluationServiceTest {
                 "EST0001", 50L, new SubmitEvaluationAttemptRequest(null));
 
         assertThat(response.status()).isEqualTo(AttemptStatus.GRADED);
-        assertThat(response.score()).isZero();
-        assertThat(response.maxScore()).isEqualTo(2);
+        // El intento se califica (0 puntos), pero el envío no revela nota ni aciertos.
+        assertThat(attempt.getScore()).isZero();
+        assertThat(attempt.getMaxScore()).isEqualTo(2);
         assertThat(answer.getCorrect()).isFalse();
         assertThat(answer.getPointsAwarded()).isZero();
+        assertThat(response.score()).isNull();
     }
 
     // =========================================================================
@@ -687,14 +709,20 @@ class EvaluationServiceTest {
         when(attemptRepository.findByStudentAndStatusInOrderBySubmittedAtDesc(eq(alumno), any()))
                 .thenReturn(List.of(at));
         when(attemptRepository.countByEvaluationAndStudent(eval, alumno)).thenReturn(1L);
+        // Única estudiante asignada y ya finalizó (maxAttempts 1) → revisión disponible.
+        stubAssignedSection(eval, docente, "3", "A", List.of(alumno));
+        stubNoInProgress(eval, alumno);
 
         List<StudentResultSummaryResponse> res = service.listStudentResults("EST0001");
 
         assertThat(res).hasSize(1);
         assertThat(res.get(0).score()).isEqualTo(2);
         assertThat(res.get(0).percentage()).isEqualTo(100.0);
-        // maxAttempts 1 y attemptsUsed 1 → ya no quedan intentos: puede ver el detalle.
+        // Todas las asignadas finalizaron: la revisión queda disponible para el grupo.
         assertThat(res.get(0).canViewDetailedFeedback()).isTrue();
+        assertThat(res.get(0).reviewAvailable()).isTrue();
+        assertThat(res.get(0).reviewUnlockReason()).isEqualTo(ReviewUnlockReason.ALL_ASSIGNED_STUDENTS_FINISHED);
+        assertThat(res.get(0).message()).isNull();
     }
 
     // =========================================================================
@@ -725,25 +753,22 @@ class EvaluationServiceTest {
         stubStudent(alumno);
         TeacherProfile docente = teacher(1L, "docente1");
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
-        EvaluationQuestion q = question(20L, eval, 2);
-        EvaluationOption incorrecta = option(31L, q, false);
-        EvaluationOption correcta = option(32L, q, true);
         EvaluationAttempt at = gradedAttempt(50L, eval, alumno, 1, 2, 2);
-        EvaluationAnswer ans = EvaluationAnswer.builder()
-                .id(60L).attempt(at).question(q).selectedOption(correcta).correct(true).pointsAwarded(2).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(at));
+        // maxAttempts 2 y solo 1 usado → la estudiante aún no finalizó: la revisión queda
+        // bloqueada para el grupo y no se entrega ningún detalle de respuestas.
         when(attemptRepository.countByEvaluationAndStudent(eval, alumno)).thenReturn(1L);
-        when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval)).thenReturn(List.of(q));
-        when(optionRepository.findByQuestionAndActiveTrueOrderByOrderIndexAsc(q))
-                .thenReturn(List.of(incorrecta, correcta));
-        when(answerRepository.findByAttemptAndQuestion(at, q)).thenReturn(Optional.of(ans));
+        stubAssignedSection(eval, docente, "3", "A", List.of(alumno));
 
         StudentAttemptResultDetailResponse res = service.getStudentAttemptResult("EST0001", 50L);
 
+        assertThat(res.reviewAvailable()).isFalse();
         assertThat(res.canViewDetailedFeedback()).isFalse();
-        assertThat(res.answers()).hasSize(1);
-        assertThat(res.answers().get(0).correct()).isTrue();
-        assertThat(res.answers().get(0).correctOptionText()).isNull();
+        // Con la revisión bloqueada no se expone ni la nota ni el detalle por pregunta.
+        assertThat(res.answers()).isEmpty();
+        assertThat(res.score()).isNull();
+        assertThat(res.reviewUnlockReason()).isEqualTo(ReviewUnlockReason.NO_DEADLINE);
+        assertThat(res.message()).contains("La revisión estará disponible");
     }
 
     // =========================================================================
@@ -768,10 +793,14 @@ class EvaluationServiceTest {
         when(optionRepository.findByQuestionAndActiveTrueOrderByOrderIndexAsc(q))
                 .thenReturn(List.of(incorrecta, correcta));
         when(answerRepository.findByAttemptAndQuestion(at, q)).thenReturn(Optional.of(ans));
+        // Única estudiante asignada y ya finalizó (maxAttempts 1) → revisión disponible.
+        stubAssignedSection(eval, docente, "3", "A", List.of(alumno));
+        stubNoInProgress(eval, alumno);
 
         StudentAttemptResultDetailResponse res = service.getStudentAttemptResult("EST0001", 50L);
 
         assertThat(res.canViewDetailedFeedback()).isTrue();
+        assertThat(res.reviewAvailable()).isTrue();
         assertThat(res.answers().get(0).correctOptionText()).isEqualTo("CaO");
     }
 
@@ -1354,9 +1383,11 @@ class EvaluationServiceTest {
 
         // El intento queda finalizado (GRADED) y calificado con lo respondido: 2 de 5 puntos.
         assertThat(response.status()).isEqualTo(AttemptStatus.GRADED);
-        assertThat(response.score()).isEqualTo(2);
-        assertThat(response.maxScore()).isEqualTo(5);
+        assertThat(attempt.getScore()).isEqualTo(2);
+        assertThat(attempt.getMaxScore()).isEqualTo(5);
         assertThat(attempt.getSubmittedAt()).isNotNull();
+        // La revisión sigue bloqueada para el grupo: el cierre no revela la nota.
+        assertThat(response.score()).isNull();
     }
 
     // =========================================================================
@@ -1744,9 +1775,11 @@ class EvaluationServiceTest {
 
         // La parte de alternativa única se califica (2 pts); la abierta queda pendiente.
         assertThat(response.status()).isEqualTo(AttemptStatus.PENDING_MANUAL_REVIEW);
-        assertThat(response.score()).isEqualTo(2);
-        assertThat(response.maxScore()).isEqualTo(5);
+        assertThat(attempt.getScore()).isEqualTo(2);
+        assertThat(attempt.getMaxScore()).isEqualTo(5);
         assertThat(attempt.getGradedAt()).isNull();
+        // El envío no expone la nota parcial mientras la revisión siga bloqueada.
+        assertThat(response.score()).isNull();
         verify(auditLogService).recordInfo(eq(LogEventType.EVALUATION_ATTEMPT_PENDING_REVIEW),
                 any(), any(), any(), any(), any(), any());
     }
@@ -2197,7 +2230,9 @@ class EvaluationServiceTest {
         StudentProfile alumno = student(5L, "EST0001", "3", "A");
         stubStudent(alumno);
         TeacherProfile docente = teacher(1L, "docente1");
-        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
+        // Revisión disponible para el grupo (única asignada ya finalizó), pero la
+        // calificación aún no está cerrada: se valida que la nota siga oculta.
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
         EvaluationQuestion open = openQuestion(21L, eval, 3, false);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
                 .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
@@ -2211,10 +2246,13 @@ class EvaluationServiceTest {
                 .thenReturn(List.of(open));
         when(answerRepository.findByAttemptAndQuestion(attempt, open)).thenReturn(Optional.of(openAnswer));
         when(attemptRepository.countByEvaluationAndStudent(eval, alumno)).thenReturn(1L);
+        stubAssignedSection(eval, docente, "3", "A", List.of(alumno));
+        stubNoInProgress(eval, alumno);
 
         StudentAttemptResultDetailResponse response = service.getStudentAttemptResult("EST0001", 50L);
 
-        // Antes del cierre: el estudiante ve su propia respuesta pero ninguna nota ni retro.
+        // Revisión disponible pero calificación abierta: ve su respuesta, no la nota ni retro.
+        assertThat(response.reviewAvailable()).isTrue();
         assertThat(response.gradeClosed()).isFalse();
         assertThat(response.finalScore()).isNull();
         assertThat(response.score()).isNull();
@@ -2228,7 +2266,7 @@ class EvaluationServiceTest {
         StudentProfile alumno = student(5L, "EST0001", "3", "A");
         stubStudent(alumno);
         TeacherProfile docente = teacher(1L, "docente1");
-        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
         EvaluationQuestion open = openQuestion(21L, eval, 5, false);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
                 .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
@@ -2244,6 +2282,8 @@ class EvaluationServiceTest {
                 .thenReturn(List.of(open));
         when(answerRepository.findByAttemptAndQuestion(attempt, open)).thenReturn(Optional.of(openAnswer));
         when(attemptRepository.countByEvaluationAndStudent(eval, alumno)).thenReturn(1L);
+        stubAssignedSection(eval, docente, "3", "A", List.of(alumno));
+        stubNoInProgress(eval, alumno);
 
         StudentAttemptResultDetailResponse response = service.getStudentAttemptResult("EST0001", 50L);
 
@@ -2253,5 +2293,188 @@ class EvaluationServiceTest {
         assertThat(response.overallFeedback()).isEqualTo("Buen trabajo.");
         assertThat(response.answers().get(0).pointsAwarded()).isEqualTo(4);
         assertThat(response.answers().get(0).teacherFeedback()).isEqualTo("Bien explicado.");
+    }
+
+    // =========================================================================
+    // BLOQUEO DE REVISIÓN HASTA CIERRE GRUPAL
+    // =========================================================================
+
+    // Caso A: 1 intento, una estudiante terminó pero otra aún no envió y no hay fecha
+    // límite → la que terminó no puede ver ningún detalle de revisión.
+    @Test
+    void unIntentoUnaTerminaOtraNoEnviaRevisionBloqueada() {
+        StudentProfile a = student(5L, "EST0001", "3", "A");
+        StudentProfile b = student(6L, "EST0002", "3", "A");
+        stubStudent(a);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        EvaluationAttempt at = gradedAttempt(50L, eval, a, 1, 2, 2);
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(at));
+        stubAssignedSection(eval, docente, "3", "A", List.of(a, b));
+        // A finalizó (usó su único intento); B todavía no lo usó → pendiente.
+        when(attemptRepository.countByEvaluationAndStudent(eval, a)).thenReturn(1L);
+        stubNoInProgress(eval, a);
+        when(attemptRepository.countByEvaluationAndStudent(eval, b)).thenReturn(0L);
+
+        StudentAttemptResultDetailResponse res = service.getStudentAttemptResult("EST0001", 50L);
+
+        assertThat(res.reviewAvailable()).isFalse();
+        // Sin detalle de respuestas, sin nota, sin alternativas correctas.
+        assertThat(res.answers()).isEmpty();
+        assertThat(res.score()).isNull();
+        assertThat(res.gradeClosed()).isFalse();
+        assertThat(res.reviewUnlockReason()).isEqualTo(ReviewUnlockReason.NO_DEADLINE);
+        assertThat(res.assignedStudentsCount()).isEqualTo(2);
+        assertThat(res.finishedStudentsCount()).isEqualTo(1);
+        assertThat(res.pendingStudentsCount()).isEqualTo(1);
+        assertThat(res.message()).contains("La revisión estará disponible");
+        // No se exponen nombres ni códigos de compañeras pendientes.
+        assertThat(res.message()).doesNotContain("EST0002");
+    }
+
+    // Caso B: todas las estudiantes asignadas finalizaron (sin fecha límite) → la revisión
+    // se habilita y se revela la alternativa correcta.
+    @Test
+    void todasFinalizaronRevisionDisponible() {
+        StudentProfile a = student(5L, "EST0001", "3", "A");
+        StudentProfile b = student(6L, "EST0002", "3", "A");
+        stubStudent(a);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        EvaluationQuestion q = question(20L, eval, 2);
+        EvaluationOption incorrecta = option(31L, q, false);
+        EvaluationOption correcta = option(32L, q, true);
+        EvaluationAttempt at = gradedAttempt(50L, eval, a, 1, 2, 2);
+        EvaluationAnswer ans = EvaluationAnswer.builder()
+                .id(60L).attempt(at).question(q).selectedOption(correcta).correct(true).pointsAwarded(2).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(at));
+        stubAssignedSection(eval, docente, "3", "A", List.of(a, b));
+        when(attemptRepository.countByEvaluationAndStudent(eval, a)).thenReturn(1L);
+        when(attemptRepository.countByEvaluationAndStudent(eval, b)).thenReturn(1L);
+        stubNoInProgress(eval, a);
+        stubNoInProgress(eval, b);
+        when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval)).thenReturn(List.of(q));
+        when(optionRepository.findByQuestionAndActiveTrueOrderByOrderIndexAsc(q))
+                .thenReturn(List.of(incorrecta, correcta));
+        when(answerRepository.findByAttemptAndQuestion(at, q)).thenReturn(Optional.of(ans));
+
+        StudentAttemptResultDetailResponse res = service.getStudentAttemptResult("EST0001", 50L);
+
+        assertThat(res.reviewAvailable()).isTrue();
+        assertThat(res.reviewUnlockReason()).isEqualTo(ReviewUnlockReason.ALL_ASSIGNED_STUDENTS_FINISHED);
+        assertThat(res.answers().get(0).correctOptionText()).isEqualTo("CaO");
+        assertThat(res.pendingStudentsCount()).isZero();
+        assertThat(res.message()).isNull();
+    }
+
+    // Caso C: la fecha límite ya venció aunque falten estudiantes por enviar → quien envió
+    // sí puede revisar. Se usa la vista resumen para ejercitar el desbloqueo por fecha.
+    @Test
+    void fechaLimiteVencidaDesbloqueaRevisionAunqueFaltenEstudiantes() {
+        StudentProfile a = student(5L, "EST0001", "3", "A");
+        StudentProfile b = student(6L, "EST0002", "3", "A");
+        stubStudent(a);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        EvaluationAttempt at = gradedAttempt(50L, eval, a, 1, 2, 2);
+        when(attemptRepository.findByStudentAndStatusInOrderBySubmittedAtDesc(eq(a), any()))
+                .thenReturn(List.of(at));
+        when(attemptRepository.countByEvaluationAndStudent(eval, a)).thenReturn(1L);
+        when(attemptRepository.countByEvaluationAndStudent(eval, b)).thenReturn(0L);
+        // Asignación con fecha límite en el pasado.
+        EvaluationAssignment asig = EvaluationAssignment.builder()
+                .id(90L).evaluation(eval).teacher(docente).grade("3").section("A")
+                .dueAt(LocalDateTime.now().minusDays(1)).active(true).build();
+        when(assignmentRepository.findByEvaluationOrderByAssignedAtDesc(eval)).thenReturn(List.of(asig));
+        when(studentProfileRepository.findByGradeAndSection("3", "A")).thenReturn(List.of(a, b));
+        stubNoInProgress(eval, a);
+
+        List<StudentResultSummaryResponse> res = service.listStudentResults("EST0001");
+
+        assertThat(res.get(0).reviewAvailable()).isTrue();
+        assertThat(res.get(0).reviewUnlockReason()).isEqualTo(ReviewUnlockReason.DEADLINE_REACHED);
+        assertThat(res.get(0).reviewAvailableAt()).isNotNull();
+        // Con la revisión disponible y la nota cerrada, se expone el puntaje.
+        assertThat(res.get(0).score()).isEqualTo(2);
+        assertThat(res.get(0).pendingStudentsCount()).isEqualTo(1);
+    }
+
+    // Caso D: llamar el endpoint del intento manualmente tras enviar, con la revisión aún
+    // bloqueada, no revela aciertos por pregunta ni la nota; sí la propia opción elegida.
+    @Test
+    void consultarIntentoTerminalBloqueadoOcultaAciertosYNota() {
+        StudentProfile a = student(5L, "EST0001", "3", "A");
+        StudentProfile b = student(6L, "EST0002", "3", "A");
+        stubStudent(a);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        EvaluationQuestion q = question(20L, eval, 2);
+        EvaluationOption correcta = option(32L, q, true);
+        EvaluationAttempt at = EvaluationAttempt.builder()
+                .id(50L).evaluation(eval).student(a).attemptNumber(1)
+                .status(AttemptStatus.GRADED).score(2).maxScore(2)
+                .gradeClosed(true).gradeClosedAt(LocalDateTime.now())
+                .questionOrder("20").currentQuestionIndex(0)
+                .startedAt(LocalDateTime.now()).submittedAt(LocalDateTime.now()).gradedAt(LocalDateTime.now())
+                .active(true).build();
+        EvaluationAnswer ans = EvaluationAnswer.builder()
+                .id(60L).attempt(at).question(q).selectedOption(correcta).correct(true).pointsAwarded(2).build();
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(at));
+        when(answerRepository.findByAttemptOrderByAnsweredAtAsc(at)).thenReturn(List.of(ans));
+        stubAssignedSection(eval, docente, "3", "A", List.of(a, b));
+        when(attemptRepository.countByEvaluationAndStudent(eval, a)).thenReturn(1L);
+        when(attemptRepository.countByEvaluationAndStudent(eval, b)).thenReturn(0L);
+        stubNoInProgress(eval, a);
+
+        AttemptResponse res = service.getAttempt("EST0001", 50L);
+
+        assertThat(res.score()).isNull();
+        assertThat(res.maxScore()).isNull();
+        assertThat(res.answers().get(0).correct()).isNull();
+        assertThat(res.answers().get(0).pointsAwarded()).isNull();
+        // La estudiante sigue viendo su propia opción elegida (para repoblar la vista).
+        assertThat(res.answers().get(0).selectedOptionId()).isEqualTo(32L);
+    }
+
+    // Caso H: con más de un intento, una estudiante que aún tiene intentos disponibles no
+    // cuenta como finalizada, así que la revisión sigue bloqueada para el grupo.
+    @Test
+    void masDeUnIntentoConIntentosDisponiblesNoFinaliza() {
+        StudentProfile a = student(5L, "EST0001", "3", "A");
+        stubStudent(a);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
+        EvaluationAttempt at = gradedAttempt(50L, eval, a, 1, 2, 2);
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(at));
+        stubAssignedSection(eval, docente, "3", "A", List.of(a));
+        // Solo usó 1 de 2 intentos → no finalizada (no se consulta IN_PROGRESS por corte).
+        when(attemptRepository.countByEvaluationAndStudent(eval, a)).thenReturn(1L);
+
+        StudentAttemptResultDetailResponse res = service.getStudentAttemptResult("EST0001", 50L);
+
+        assertThat(res.reviewAvailable()).isFalse();
+        assertThat(res.finishedStudentsCount()).isZero();
+        assertThat(res.pendingStudentsCount()).isEqualTo(1);
+        assertThat(res.answers()).isEmpty();
+    }
+
+    // Si no hay ninguna estudiante asignada, la revisión no se habilita por accidente.
+    @Test
+    void sinEstudiantesAsignadasRevisionSigueBloqueada() {
+        StudentProfile a = student(5L, "EST0001", "3", "A");
+        stubStudent(a);
+        TeacherProfile docente = teacher(1L, "docente1");
+        Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
+        EvaluationAttempt at = gradedAttempt(50L, eval, a, 1, 2, 2);
+        when(attemptRepository.findById(50L)).thenReturn(Optional.of(at));
+        // Sin asignaciones activas → sin roster ni fecha límite.
+        when(assignmentRepository.findByEvaluationOrderByAssignedAtDesc(eval)).thenReturn(List.of());
+
+        StudentAttemptResultDetailResponse res = service.getStudentAttemptResult("EST0001", 50L);
+
+        assertThat(res.reviewAvailable()).isFalse();
+        assertThat(res.reviewUnlockReason()).isEqualTo(ReviewUnlockReason.NO_DEADLINE);
+        assertThat(res.assignedStudentsCount()).isZero();
+        assertThat(res.answers()).isEmpty();
     }
 }
