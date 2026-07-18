@@ -10,6 +10,7 @@ public enum LogCategory {
     CONCEPT_CONTENT,
     EVALUATION,
     RESULTS,
+    WHITEBOARD,
     ADMIN,
     SYSTEM
 }

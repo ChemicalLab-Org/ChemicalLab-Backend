@@ -3,6 +3,7 @@ package com.morales.chemicallab.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -71,6 +72,37 @@ public class EvaluationAttempt {
     private Integer score;
 
     private Integer maxScore;
+
+    // Nota final del intento en escala 0–20: se obtiene de la nota base (score/maxScore*20)
+    // más la suma de los ajustes manuales activos, acotada a [0, 20]. Se recalcula tras
+    // cada revisión, ajuste o cierre. Es la nota que ve el estudiante una vez cerrada la
+    // calificación.
+    @Column(precision = 5, scale = 2)
+    private BigDecimal finalScore;
+
+    // Retroalimentación general del docente para el estudiante. Solo se le muestra cuando la
+    // calificación está cerrada.
+    @Column(columnDefinition = "TEXT")
+    private String overallFeedback;
+
+    // Indica si la calificación del intento ya fue cerrada por el docente. Mientras sea
+    // false, el docente puede seguir ajustando puntajes y ajustes, y el estudiante ve el
+    // intento como "pendiente de revisión" (sin nota final). Al cerrarse, la nota final y la
+    // retroalimentación quedan visibles para el estudiante y se bloquea la edición.
+    // columnDefinition con default true para que ddl-auto=update agregue la columna a las
+    // tablas con datos previos dejando los intentos antiguos como ya cerrados (su resultado
+    // ya era visible). Los intentos nuevos fijan el valor explícitamente al enviarse.
+    @Builder.Default
+    @Column(nullable = false, columnDefinition = "boolean default true")
+    private Boolean gradeClosed = false;
+
+    private LocalDateTime gradeClosedAt;
+
+    // Docente que cerró la calificación. Queda null en los intentos cerrados de forma
+    // automática (solo alternativa única, sin revisión manual).
+    @ManyToOne
+    @JoinColumn(name = "grade_closed_by")
+    private TeacherProfile gradeClosedBy;
 
     @Builder.Default
     @Column(nullable = false)

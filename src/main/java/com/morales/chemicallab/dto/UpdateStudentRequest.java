@@ -16,7 +16,7 @@ public record UpdateStudentRequest(
         String studentCode,
 
         @NotBlank(message = "El grado es obligatorio")
-        @Pattern(regexp = "^\\s*[1-6]\\s*$", message = "El grado debe ser un número entero del 1 al 6")
+        @Pattern(regexp = "^\\s*[1-5]\\s*$", message = "El grado debe ser un número entero del 1 al 5")
         String grade,
 
         @NotBlank(message = "La sección es obligatoria")

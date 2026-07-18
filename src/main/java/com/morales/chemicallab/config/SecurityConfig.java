@@ -61,8 +61,15 @@ public class SecurityConfig {
                         // Cambio de contraseña temporal — requiere autenticación JWT
                         .requestMatchers(HttpMethod.PATCH, "/api/auth/change-temporary-password").authenticated()
 
+                        // Datos del usuario autenticado (validación de sesión) — requiere JWT
+                        .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
+
                         // Documentación Swagger / OpenAPI — útil en desarrollo
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+
+                        // Handshake WebSocket/STOMP de la pizarra — la autenticación real
+                        // ocurre en el frame STOMP CONNECT (JWT) vía ChannelInterceptor.
+                        .requestMatchers("/ws/**").permitAll()
 
                         // Restablecimiento de contraseña de estudiante — solo DOCENTE
                         // (debe ir antes que la regla de docente para no quedar sombreado)
@@ -92,6 +99,10 @@ public class SecurityConfig {
                         // (cubierto por /api/admin/** pero se declara explícito por claridad)
                         .requestMatchers("/api/admin/usage-metrics/**").hasRole(ADMIN)
 
+                        // Registro de uso por estudiante (instrumento de investigación) — solo
+                        // ADMINISTRADOR (cubierto por /api/admin/** pero se declara explícito por claridad)
+                        .requestMatchers("/api/admin/student-usage-records/**").hasRole(ADMIN)
+
                         // Panel administrativo (resumen, usuarios y actividad) — solo ADMINISTRADOR
                         .requestMatchers("/api/admin/**").hasRole(ADMIN)
 
@@ -111,6 +122,11 @@ public class SecurityConfig {
                         .requestMatchers("/api/evaluations/teacher/**").hasRole(DOCENTE)
                         .requestMatchers("/api/evaluations/student/**").hasRole(ESTUDIANTE)
                         .requestMatchers("/api/evaluations/admin/**").hasRole(ADMIN)
+
+                        // Pizarra interactiva en vivo — acceso segmentado por rol
+                        .requestMatchers("/api/whiteboards/teacher/**").hasRole(DOCENTE)
+                        .requestMatchers("/api/whiteboards/student/**").hasRole(ESTUDIANTE)
+                        .requestMatchers("/api/whiteboards/admin/**").hasRole(ADMIN)
 
                         // Cualquier otro endpoint requiere autenticación
                         .anyRequest().authenticated()

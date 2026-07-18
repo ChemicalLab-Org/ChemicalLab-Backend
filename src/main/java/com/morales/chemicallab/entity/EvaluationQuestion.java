@@ -6,10 +6,13 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 /**
- * Pregunta de una evaluación. Para este MVP es de alternativa única
- * ({@link QuestionType#MULTIPLE_CHOICE}): sus {@link EvaluationOption} ofrecen las
- * alternativas y exactamente una debe estar marcada como correcta para poder
- * publicar la evaluación.
+ * Pregunta de una evaluación. Puede ser de alternativa única
+ * ({@link QuestionType#MULTIPLE_CHOICE}) —sus {@link EvaluationOption} ofrecen las
+ * alternativas y exactamente una debe estar marcada como correcta para poder publicar—
+ * o de respuesta abierta ({@link QuestionType#OPEN_TEXT}), que no tiene alternativas: el
+ * estudiante responde con texto y el docente la califica manualmente. En las preguntas
+ * abiertas, {@code expectedAnswer} guarda una respuesta esperada o criterio de
+ * corrección visible solo para el docente (nunca se expone al estudiante).
  */
 @Entity
 @Table(name = "evaluation_questions")
@@ -46,6 +49,21 @@ public class EvaluationQuestion {
 
     @Column(columnDefinition = "TEXT")
     private String explanation;
+
+    // Solo para preguntas abiertas (OPEN_TEXT): respuesta esperada o criterio de
+    // corrección que orienta la revisión manual. Es información sensible visible solo
+    // para el docente; nunca se incluye en los DTO del estudiante.
+    @Column(columnDefinition = "TEXT")
+    private String expectedAnswer;
+
+    // Indica si la pregunta es obligatoria. Para preguntas abiertas obligatorias el
+    // estudiante no puede enviar el intento con la respuesta en blanco. Por defecto true
+    // para no alterar el comportamiento de las preguntas ya existentes.
+    // columnDefinition con default para que ddl-auto=update pueda agregar la columna a
+    // tablas con datos previos (las preguntas existentes quedan como obligatorias).
+    @Builder.Default
+    @Column(nullable = false, columnDefinition = "boolean default true")
+    private Boolean required = true;
 
     @Builder.Default
     @Column(nullable = false)

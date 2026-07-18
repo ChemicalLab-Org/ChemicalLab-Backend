@@ -206,7 +206,7 @@ class UsageMetricServiceTest {
         Page<UsageEvent> page = new PageImpl<>(List.of(event), Pageable.ofSize(20), 1);
         when(usageEventRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
 
-        List<UsageEventResponse> recent = service.getRecentEvents(20, null, null);
+        List<UsageEventResponse> recent = service.getRecentEvents(20, null, null, null);
 
         assertThat(recent).hasSize(1);
         UsageEventResponse dto = recent.get(0);

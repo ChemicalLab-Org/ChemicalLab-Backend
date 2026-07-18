@@ -8,11 +8,18 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -48,6 +55,7 @@ public class EvaluationService {
     private final EvaluationAttemptRepository attemptRepository;
     private final EvaluationAttemptEventRepository attemptEventRepository;
     private final EvaluationAnswerRepository answerRepository;
+    private final EvaluationAttemptAdjustmentRepository adjustmentRepository;
     private final UserAccountRepository userAccountRepository;
     private final TeacherProfileRepository teacherProfileRepository;
     private final StudentProfileRepository studentProfileRepository;
@@ -55,12 +63,19 @@ public class EvaluationService {
 
     private static final String TARGET_EVALUATION = "Evaluation";
 
-    // Estados de un intento que ya representa un resultado consultable.
+    // Estados de un intento que ya representa un resultado consultable. Incluye
+    // PENDING_MANUAL_REVIEW para que los intentos con preguntas abiertas sin calificar
+    // aparezcan en los listados de resultados (con su estado "pendiente").
     private static final Set<AttemptStatus> RESULT_STATUSES =
-            EnumSet.of(AttemptStatus.SUBMITTED, AttemptStatus.GRADED);
+            EnumSet.of(AttemptStatus.SUBMITTED, AttemptStatus.PENDING_MANUAL_REVIEW, AttemptStatus.GRADED);
 
     // Umbral de aprobación (en %) usado solo para los contadores aprobados/desaprobados.
     private static final double APPROVAL_PERCENTAGE = 60.0;
+
+    // Nota máxima de la escala vigesimal (0–20) en la que se expresa la nota final del
+    // intento. La nota base se deriva del puntaje en puntos (score/maxScore*20) y los
+    // ajustes manuales se aplican sobre esta misma escala.
+    private static final BigDecimal MAX_GRADE = new BigDecimal("20");
 
     // Margen de gracia (segundos) sobre el límite de tiempo, para tolerar latencia de red
     // y desfase de reloj en el envío automático del frontend. Pasado este margen, el
@@ -72,9 +87,24 @@ public class EvaluationService {
     // ráfagas de eventos duplicados (control simple de throttling).
     private static final long EVENT_THROTTLE_SECONDS = 2;
 
-    // Tipos de incidencia que se consideran una "salida" de la evaluación.
+    // Tipos de incidencia que se consideran una "salida" de pestaña/ventana.
     private static final Set<AttemptEventType> EXIT_EVENT_TYPES =
             EnumSet.of(AttemptEventType.TAB_HIDDEN, AttemptEventType.WINDOW_BLUR);
+
+    // Tipos de incidencia que se consideran un "regreso" a la pestaña/ventana.
+    private static final Set<AttemptEventType> RETURN_EVENT_TYPES =
+            EnumSet.of(AttemptEventType.TAB_VISIBLE, AttemptEventType.WINDOW_FOCUS);
+
+    // Eventos de foco del navegador: solo se registran si la evaluación activa trackTabExit.
+    private static final Set<AttemptEventType> FOCUS_EVENT_TYPES =
+            EnumSet.of(AttemptEventType.TAB_HIDDEN, AttemptEventType.TAB_VISIBLE,
+                    AttemptEventType.WINDOW_BLUR, AttemptEventType.WINDOW_FOCUS);
+
+    // Hitos del ciclo de vida del intento: los registra el backend en sus propios métodos
+    // (iniciar/enviar/salir), nunca el cliente, para que no puedan falsificarse.
+    private static final Set<AttemptEventType> BACKEND_ONLY_EVENT_TYPES =
+            EnumSet.of(AttemptEventType.ATTEMPT_STARTED, AttemptEventType.ATTEMPT_SUBMITTED,
+                    AttemptEventType.TIME_EXPIRED, AttemptEventType.ATTEMPT_EXITED);
 
     // =========================================================================
     // DOCENTE — evaluaciones
@@ -179,8 +209,12 @@ public class EvaluationService {
             throw new IllegalArgumentException("No se puede publicar una evaluación sin preguntas.");
         }
 
-        // Cada pregunta debe tener alternativas y exactamente una correcta.
+        // Cada pregunta de alternativa única debe tener alternativas y exactamente una
+        // correcta. Las preguntas abiertas no tienen alternativas: no se validan aquí.
         for (EvaluationQuestion question : questions) {
+            if (question.getQuestionType() == QuestionType.OPEN_TEXT) {
+                continue;
+            }
             List<EvaluationOption> options =
                     optionRepository.findByQuestionAndActiveTrueOrderByOrderIndexAsc(question);
             if (options.isEmpty()) {
@@ -219,18 +253,29 @@ public class EvaluationService {
         TeacherProfile teacher = requireTeacher(username);
         Evaluation evaluation = requireOwnedEvaluation(evaluationId, teacher);
 
+        QuestionType type = request.questionType() == null ? QuestionType.MULTIPLE_CHOICE : request.questionType();
+        validateQuestionByType(type, request.options());
+
         EvaluationQuestion question = EvaluationQuestion.builder()
                 .evaluation(evaluation)
                 .questionText(request.questionText().trim())
-                .questionType(request.questionType() == null ? QuestionType.MULTIPLE_CHOICE : request.questionType())
+                .questionType(type)
                 .points(request.points())
                 .orderIndex(request.orderIndex() == null ? 0 : request.orderIndex())
                 .explanation(trimOrNull(request.explanation()))
+                .expectedAnswer(type == QuestionType.OPEN_TEXT ? trimOrNull(request.expectedAnswer()) : null)
+                .required(request.required() == null || request.required())
                 .active(true)
                 .build();
         questionRepository.save(question);
 
-        replaceOptions(question, request.options());
+        // Las alternativas solo aplican a preguntas de alternativa única; las abiertas no
+        // tienen ni piden alternativas.
+        if (type == QuestionType.MULTIPLE_CHOICE) {
+            replaceOptions(question, request.options());
+        } else {
+            logOpenQuestionSaved(evaluation, "Crear pregunta abierta");
+        }
         return toQuestionResponse(question);
     }
 
@@ -240,15 +285,48 @@ public class EvaluationService {
         Evaluation evaluation = requireOwnedEvaluation(evaluationId, teacher);
         EvaluationQuestion question = requireQuestionOfEvaluation(questionId, evaluation);
 
+        QuestionType type = request.questionType() == null ? QuestionType.MULTIPLE_CHOICE : request.questionType();
+        validateQuestionByType(type, request.options());
+
         question.setQuestionText(request.questionText().trim());
-        question.setQuestionType(request.questionType() == null ? QuestionType.MULTIPLE_CHOICE : request.questionType());
+        question.setQuestionType(type);
         question.setPoints(request.points());
         question.setOrderIndex(request.orderIndex() == null ? 0 : request.orderIndex());
         question.setExplanation(trimOrNull(request.explanation()));
+        question.setExpectedAnswer(type == QuestionType.OPEN_TEXT ? trimOrNull(request.expectedAnswer()) : null);
+        question.setRequired(request.required() == null || request.required());
         questionRepository.save(question);
 
-        replaceOptions(question, request.options());
+        if (type == QuestionType.MULTIPLE_CHOICE) {
+            replaceOptions(question, request.options());
+        } else {
+            // Si la pregunta pasó a abierta, se eliminan las alternativas que pudiera tener.
+            clearOptions(question);
+            logOpenQuestionSaved(evaluation, "Editar pregunta abierta");
+        }
         return toQuestionResponse(question);
+    }
+
+    /**
+     * Valida las alternativas según el tipo de pregunta: una pregunta abierta no puede
+     * tener alternativas; una de alternativa única debe traer al menos dos (la unicidad
+     * de la correcta la valida {@link #replaceOptions}).
+     */
+    private void validateQuestionByType(QuestionType type, List<CreateOptionRequest> options) {
+        if (type == QuestionType.OPEN_TEXT) {
+            if (options != null && !options.isEmpty()) {
+                throw new IllegalArgumentException("Una pregunta abierta no puede tener alternativas.");
+            }
+        } else if (options == null || options.size() < 2) {
+            throw new IllegalArgumentException("La pregunta debe tener al menos dos alternativas.");
+        }
+    }
+
+    /** Registra de forma segura (sin enunciado ni criterio) el alta/edición de una abierta. */
+    private void logOpenQuestionSaved(Evaluation evaluation, String action) {
+        auditLogService.recordInfo(LogEventType.EVALUATION_OPEN_QUESTION_SAVED, TARGET_EVALUATION,
+                evaluation.getId(), evaluation.getTitle(), action,
+                "El docente guardó una pregunta abierta en la evaluación «" + evaluation.getTitle() + "».", null);
     }
 
     public QuestionResponse deactivateQuestion(String username, Long evaluationId, Long questionId) {
@@ -371,6 +449,12 @@ public class EvaluationService {
                 .build();
         attemptRepository.save(attempt);
 
+        // Trazabilidad del intento: el inicio se registra desde el backend al crear el
+        // intento (no depende del frontend), como ancla de la línea de tiempo. Se registra
+        // siempre, aunque la detección de salida de pestaña esté desactivada.
+        recordLifecycleEvent(attempt, AttemptEventType.ATTEMPT_STARTED,
+                "El estudiante inició el intento.", null);
+
         return toAttemptResponse(attempt);
     }
 
@@ -455,15 +539,51 @@ public class EvaluationService {
             }
         }
 
+        // Una pregunta abierta obligatoria no puede quedar en blanco en un envío normal. En
+        // un cierre por tiempo agotado no se bloquea: el intento se cierra igual y esas
+        // preguntas quedarán pendientes/0 en la revisión manual.
+        if (!pastTimeLimit) {
+            requireRequiredOpenAnswered(attempt);
+        }
+
+        // Cada pregunta abierta queda con una fila de respuesta (aunque vaya en blanco) para
+        // que el docente pueda calificarla en la revisión manual.
+        ensureOpenAnswerRows(attempt);
+
         gradeAttempt(attempt);
 
-        // La calificación de alternativa única es automática y completa, por lo que el
-        // intento queda directamente GRADED (no en un SUBMITTED a la espera de revisión).
+        // La parte de alternativa única se califica automáticamente. Si el intento contiene
+        // preguntas abiertas sin revisar, queda PENDING_MANUAL_REVIEW (puntaje parcial, sin
+        // gradedAt); si no, queda directamente GRADED.
+        boolean pendingReview = hasPendingManualReview(attempt);
         LocalDateTime now = LocalDateTime.now();
-        attempt.setStatus(AttemptStatus.GRADED);
         attempt.setSubmittedAt(now);
-        attempt.setGradedAt(now);
+        if (pendingReview) {
+            // Queda pendiente de revisión manual: la calificación no se cierra (el estudiante
+            // no verá su nota final hasta que el docente cierre la calificación).
+            attempt.setStatus(AttemptStatus.PENDING_MANUAL_REVIEW);
+            attempt.setGradedAt(null);
+            attempt.setGradeClosed(false);
+        } else {
+            // Solo alternativa única: se califica y se cierra automáticamente, como hasta ahora,
+            // para que el resultado quede visible de inmediato sin acción del docente.
+            attempt.setStatus(AttemptStatus.GRADED);
+            attempt.setGradedAt(now);
+            attempt.setGradeClosed(true);
+            attempt.setGradeClosedAt(now);
+        }
+        recomputeFinalScore(attempt);
         attemptRepository.save(attempt);
+
+        // Trazabilidad del intento: si el envío llega fuera de tiempo, se deja constancia
+        // de que el tiempo se agotó antes de marcar el envío. Nunca se registran respuestas.
+        if (pastTimeLimit) {
+            recordLifecycleEvent(attempt, AttemptEventType.TIME_EXPIRED,
+                    "El tiempo de la evaluación se agotó.", "source=TIME_LIMIT");
+        }
+        recordLifecycleEvent(attempt, AttemptEventType.ATTEMPT_SUBMITTED,
+                "El estudiante envió el intento.",
+                pastTimeLimit ? "source=TIME_LIMIT" : "source=USER_SUBMIT");
 
         // Solo se registra el envío del intento; nunca las respuestas individuales.
         Evaluation evaluation = attempt.getEvaluation();
@@ -472,7 +592,53 @@ public class EvaluationService {
                 "Se envió un intento de la evaluación «" + evaluation.getTitle() + "».",
                 "attemptId=" + attempt.getId() + (pastTimeLimit ? ";outOfTime=true" : ""));
 
+        // Si quedó pendiente de revisión manual, se deja constancia segura (sin respuestas).
+        if (pendingReview) {
+            auditLogService.recordInfo(LogEventType.EVALUATION_ATTEMPT_PENDING_REVIEW, TARGET_EVALUATION,
+                    evaluation.getId(), evaluation.getTitle(), "Intento pendiente de revisión",
+                    "Un intento de la evaluación «" + evaluation.getTitle()
+                            + "» quedó pendiente de revisión manual.",
+                    "attemptId=" + attempt.getId());
+        }
+
         return toAttemptResponse(attempt);
+    }
+
+    /**
+     * Verifica que todas las preguntas abiertas obligatorias del intento tengan una
+     * respuesta con texto no vacío. Se usa al enviar un intento a tiempo: el estudiante no
+     * puede dejar en blanco una abierta obligatoria.
+     */
+    private void requireRequiredOpenAnswered(EvaluationAttempt attempt) {
+        for (EvaluationQuestion question :
+                questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(attempt.getEvaluation())) {
+            if (question.getQuestionType() != QuestionType.OPEN_TEXT
+                    || !Boolean.TRUE.equals(question.getRequired())) {
+                continue;
+            }
+            EvaluationAnswer answer =
+                    answerRepository.findByAttemptAndQuestion(attempt, question).orElse(null);
+            if (answer == null || answer.getAnswerText() == null || answer.getAnswerText().isBlank()) {
+                throw new IllegalArgumentException(
+                        "Debes responder todas las preguntas abiertas obligatorias antes de enviar.");
+            }
+        }
+    }
+
+    /**
+     * Indica si el intento tiene preguntas abiertas activas sin revisión manual completa.
+     * Una pregunta abierta cuenta como pendiente si no tiene respuesta o si su respuesta
+     * todavía no fue revisada por el docente.
+     */
+    private boolean hasPendingManualReview(EvaluationAttempt attempt) {
+        return questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(attempt.getEvaluation())
+                .stream()
+                .filter(q -> q.getQuestionType() == QuestionType.OPEN_TEXT)
+                .anyMatch(q -> {
+                    EvaluationAnswer answer =
+                            answerRepository.findByAttemptAndQuestion(attempt, q).orElse(null);
+                    return answer == null || !Boolean.TRUE.equals(answer.getReviewed());
+                });
     }
 
     /**
@@ -496,27 +662,41 @@ public class EvaluationService {
 
         // Se califica con lo guardado hasta el momento: las preguntas no respondidas
         // quedan en cero según la misma lógica de calificación automática del envío.
+        ensureOpenAnswerRows(attempt);
         gradeAttempt(attempt);
 
+        // Si el intento tiene preguntas abiertas sin revisar, queda pendiente de revisión
+        // manual igual que un envío normal (el docente las calificará, normalmente con 0 si
+        // quedaron en blanco). Si no, se cierra como GRADED.
+        boolean pendingReview = hasPendingManualReview(attempt);
         LocalDateTime now = LocalDateTime.now();
-        attempt.setStatus(AttemptStatus.GRADED);
         attempt.setSubmittedAt(now);
-        attempt.setGradedAt(now);
+        if (pendingReview) {
+            // Queda pendiente de revisión manual: la calificación no se cierra (el estudiante
+            // no verá su nota final hasta que el docente cierre la calificación).
+            attempt.setStatus(AttemptStatus.PENDING_MANUAL_REVIEW);
+            attempt.setGradedAt(null);
+            attempt.setGradeClosed(false);
+        } else {
+            // Solo alternativa única: se califica y se cierra automáticamente, como hasta ahora,
+            // para que el resultado quede visible de inmediato sin acción del docente.
+            attempt.setStatus(AttemptStatus.GRADED);
+            attempt.setGradedAt(now);
+            attempt.setGradeClosed(true);
+            attempt.setGradeClosedAt(now);
+        }
+        recomputeFinalScore(attempt);
         attemptRepository.save(attempt);
 
         Evaluation evaluation = attempt.getEvaluation();
 
-        // Trazabilidad del intento: si la evaluación registra incidencias del intento, se
-        // deja constancia de la salida voluntaria. No cuenta como "salida de pestaña" y no
-        // guarda contenido sensible: solo el tipo de evento y el momento.
-        if (Boolean.TRUE.equals(evaluation.getTrackTabExit())
-                && !isDuplicateEvent(attempt, AttemptEventType.ATTEMPT_EXITED)) {
-            attemptEventRepository.save(EvaluationAttemptEvent.builder()
-                    .attempt(attempt)
-                    .eventType(AttemptEventType.ATTEMPT_EXITED)
-                    .description("El estudiante salió del intento y se dio por finalizado.")
-                    .build());
-        }
+        // Trazabilidad del intento: se deja constancia de la salida voluntaria (abandono)
+        // como hito del ciclo de vida, siempre (no depende de trackTabExit). No cuenta como
+        // "salida de pestaña" y no guarda contenido sensible: solo el tipo, el momento y un
+        // motivo seguro.
+        recordLifecycleEvent(attempt, AttemptEventType.ATTEMPT_EXITED,
+                "El estudiante salió del intento y se dio por finalizado.",
+                "reason=USER_CONFIRMED_EXIT");
 
         // Log de auditoría agregado: solo identifica la evaluación y marca que fue una
         // salida; nunca registra respuestas ni payloads.
@@ -530,14 +710,26 @@ public class EvaluationService {
     }
 
     /**
-     * Registra una incidencia de foco (salida/retorno de pestaña o ventana) durante un
-     * intento. Solo procede si la evaluación tiene activada la detección de salida de
-     * pestaña, el intento pertenece al estudiante autenticado y sigue en progreso.
+     * Registra un evento de trazabilidad reportado por el frontend durante un intento:
+     * incidencia de foco (salida/retorno de pestaña o ventana), intento de salida
+     * ({@code EXIT_ATTEMPTED}) o uso de una herramienta permitida ({@code TOOL_OPENED}/
+     * {@code TOOL_RETURNED}). Solo procede si el intento pertenece al estudiante
+     * autenticado y sigue en progreso.
      *
-     * <p>Aplica un control simple de duplicados: descarta el evento si es idéntico al
-     * último registrado dentro de una ventana corta de tiempo. No guarda contenido de
-     * otras pestañas, capturas ni datos sensibles: solo el tipo de evento, el momento y
-     * una descripción breve. Es trazabilidad del intento, no un log global de auditoría.</p>
+     * <p>Reglas de registro:</p>
+     * <ul>
+     *   <li>Los hitos del ciclo de vida (inicio, envío, expiración, salida confirmada) los
+     *       registra el backend en sus propios métodos: el cliente no puede falsificarlos.</li>
+     *   <li>Las incidencias de foco solo se registran si la evaluación activa
+     *       {@code trackTabExit}; el resto (intento de salida, herramientas) se registra
+     *       siempre, porque es trazabilidad del intento, no detección de pérdida de foco.</li>
+     * </ul>
+     *
+     * <p>Aplica un control simple de duplicados (descarta un evento idéntico al último
+     * dentro de una ventana corta) y solo guarda metadata segura y acotada
+     * ({@code tool}/{@code source}). No guarda respuestas, claves, contenido de otras
+     * pestañas, capturas ni datos sensibles. Es trazabilidad del intento, no un log global
+     * de auditoría.</p>
      */
     public AttemptEventSummaryResponse registerAttemptEvent(String username, Long attemptId,
                                                             RegisterAttemptEventRequest request) {
@@ -545,18 +737,25 @@ public class EvaluationService {
         EvaluationAttempt attempt = requireOwnedAttempt(attemptId, student);
         requireInProgress(attempt);
 
+        AttemptEventType type = request.eventType();
+        if (BACKEND_ONLY_EVENT_TYPES.contains(type)) {
+            throw new IllegalArgumentException(
+                    "Ese tipo de evento lo registra el sistema, no el cliente.");
+        }
+
         Evaluation evaluation = attempt.getEvaluation();
-        if (!Boolean.TRUE.equals(evaluation.getTrackTabExit())) {
+        if (FOCUS_EVENT_TYPES.contains(type) && !Boolean.TRUE.equals(evaluation.getTrackTabExit())) {
             throw new IllegalArgumentException(
                     "La detección de salida de pestaña no está activada para esta evaluación.");
         }
 
         boolean recorded = false;
-        if (!isDuplicateEvent(attempt, request.eventType())) {
+        if (!isDuplicateEvent(attempt, type)) {
             EvaluationAttemptEvent event = EvaluationAttemptEvent.builder()
                     .attempt(attempt)
-                    .eventType(request.eventType())
+                    .eventType(type)
                     .description(trimOrNull(request.description()))
+                    .metadata(buildSafeMetadata(request.tool(), request.source()))
                     .build();
             attemptEventRepository.save(event);
             recorded = true;
@@ -566,6 +765,60 @@ public class EvaluationService {
                 attempt.getId(), recorded,
                 attemptEventRepository.countByAttempt(attempt),
                 attemptEventRepository.countByAttemptAndEventTypeIn(attempt, EXIT_EVENT_TYPES));
+    }
+
+    /**
+     * Trazabilidad completa de un intento para el docente: resumen (tiempo usado, estado
+     * final, salidas/regresos de pestaña, intentos de salida, herramientas consultadas) y
+     * la línea de tiempo de eventos. Solo accesible si el intento pertenece a una
+     * evaluación creada por el docente autenticado. Nunca expone respuestas ni claves.
+     */
+    @Transactional(readOnly = true)
+    public AttemptTraceabilityResponse getAttemptTraceability(String username, Long attemptId) {
+        TeacherProfile teacher = requireTeacher(username);
+        EvaluationAttempt attempt = attemptRepository.findById(attemptId)
+                .orElseThrow(() -> new EntityNotFoundException("El intento no existe."));
+
+        Evaluation evaluation = attempt.getEvaluation();
+        if (!evaluation.getCreatedByTeacher().getId().equals(teacher.getId())) {
+            throw new IllegalArgumentException("No tienes permiso para ver este intento.");
+        }
+
+        List<EvaluationAttemptEvent> events =
+                attemptEventRepository.findByAttemptOrderByOccurredAtAsc(attempt);
+
+        long tabExit = 0;
+        long tabReturn = 0;
+        long exitAttempts = 0;
+        LinkedHashSet<String> tools = new LinkedHashSet<>();
+        List<AttemptEventResponse> timeline = new ArrayList<>(events.size());
+
+        for (EvaluationAttemptEvent e : events) {
+            AttemptEventType t = e.getEventType();
+            if (EXIT_EVENT_TYPES.contains(t)) {
+                tabExit++;
+            } else if (RETURN_EVENT_TYPES.contains(t)) {
+                tabReturn++;
+            } else if (t == AttemptEventType.EXIT_ATTEMPTED) {
+                exitAttempts++;
+            } else if (t == AttemptEventType.TOOL_OPENED) {
+                String tool = toolFromMetadata(e.getMetadata());
+                if (tool != null) {
+                    tools.add(tool);
+                }
+            }
+            timeline.add(new AttemptEventResponse(
+                    e.getId(), t, e.getDescription(), e.getMetadata(), e.getOccurredAt()));
+        }
+
+        StudentProfile s = attempt.getStudent();
+        return new AttemptTraceabilityResponse(
+                attempt.getId(), evaluation.getId(), evaluation.getTitle(),
+                s.getId(), s.getStudentCode(), fullName(s),
+                attempt.getStatus(), attempt.getStartedAt(), attempt.getSubmittedAt(),
+                timeUsedSecondsOf(attempt), Boolean.TRUE.equals(evaluation.getTrackTabExit()),
+                events.size(), tabExit, tabReturn, exitAttempts,
+                new ArrayList<>(tools), timeline);
     }
 
     // =========================================================================
@@ -650,13 +903,22 @@ public class EvaluationService {
 
         StudentProfile student = attempt.getStudent();
         List<TeacherAnswerResultResponse> answers = answerDetailsOf(attempt).stream()
-                .map(d -> new TeacherAnswerResultResponse(
-                        d.question.getId(), d.question.getQuestionText(),
-                        d.selected == null ? null : d.selected.getId(),
-                        d.selected == null ? null : d.selected.getOptionText(),
-                        d.correctOption == null ? null : d.correctOption.getId(),
-                        d.correctOption == null ? null : d.correctOption.getOptionText(),
-                        d.isCorrect, d.question.getPoints(), d.pointsAwarded, d.question.getExplanation()))
+                .map(d -> {
+                    boolean open = d.question.getQuestionType() == QuestionType.OPEN_TEXT;
+                    return new TeacherAnswerResultResponse(
+                            d.question.getId(), d.question.getQuestionText(), d.question.getQuestionType(),
+                            d.selected == null ? null : d.selected.getId(),
+                            d.selected == null ? null : d.selected.getOptionText(),
+                            d.correctOption == null ? null : d.correctOption.getId(),
+                            d.correctOption == null ? null : d.correctOption.getOptionText(),
+                            d.answerText,
+                            // "correct" solo aplica a alternativa única.
+                            open ? null : d.isCorrect,
+                            d.question.getPoints(),
+                            // En una abierta sin revisar todavía no hay puntaje asignado.
+                            open && !d.reviewed ? null : d.pointsAwarded,
+                            d.reviewed, d.teacherFeedback, d.question.getExplanation());
+                })
                 .toList();
 
         return new TeacherAttemptResultDetailResponse(
@@ -667,6 +929,442 @@ public class EvaluationService {
                 attempt.getScore(), attempt.getMaxScore(), percentageOf(attempt),
                 attempt.getStartedAt(), attempt.getSubmittedAt(), attempt.getGradedAt(),
                 tabExitCountOf(attempt), answers);
+    }
+
+    // =========================================================================
+    // REVISIÓN MANUAL — DOCENTE
+    // =========================================================================
+
+    /**
+     * Bandeja de revisión manual del docente: intentos de sus evaluaciones que quedaron
+     * pendientes de calificar por contener preguntas abiertas. No expone el texto de las
+     * respuestas, solo el resumen del intento.
+     */
+    @Transactional(readOnly = true)
+    public List<PendingReviewAttemptResponse> listPendingManualReview(String username) {
+        TeacherProfile teacher = requireTeacher(username);
+        return attemptRepository
+                .findByEvaluation_CreatedByTeacherAndStatusOrderBySubmittedAtDesc(
+                        teacher, AttemptStatus.PENDING_MANUAL_REVIEW)
+                .stream()
+                .map(this::toPendingReviewAttempt)
+                .toList();
+    }
+
+    /**
+     * Detalle de un intento para la revisión manual: las preguntas abiertas con la
+     * respuesta del estudiante, el puntaje máximo y el criterio de corrección (solo
+     * docente). Solo accesible si el intento pertenece a una evaluación del docente.
+     */
+    @Transactional(readOnly = true)
+    public TeacherAttemptReviewResponse getAttemptReview(String username, Long attemptId) {
+        TeacherProfile teacher = requireTeacher(username);
+        EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
+        requireGradedResult(attempt);
+        return toAttemptReview(attempt);
+    }
+
+    /**
+     * Califica manualmente una respuesta abierta: asigna un puntaje (entre 0 y el máximo
+     * de la pregunta) y una retroalimentación opcional. Tras guardar, recalcula la nota del
+     * intento y, si ya no quedan respuestas abiertas pendientes, lo marca como GRADED.
+     * Solo el docente dueño de la evaluación puede revisar el intento.
+     */
+    public TeacherAttemptReviewResponse manualGradeAnswer(String username, Long attemptId, Long answerId,
+                                                          ManualGradeRequest request) {
+        TeacherProfile teacher = requireTeacher(username);
+        EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
+        requireGradedResult(attempt);
+        requireNotClosed(attempt);
+
+        EvaluationAnswer answer = answerRepository.findById(answerId)
+                .orElseThrow(() -> new EntityNotFoundException("La respuesta no existe."));
+        if (!answer.getAttempt().getId().equals(attempt.getId())) {
+            throw new IllegalArgumentException("La respuesta no pertenece a este intento.");
+        }
+        EvaluationQuestion question = answer.getQuestion();
+        if (question.getQuestionType() != QuestionType.OPEN_TEXT) {
+            throw new IllegalArgumentException("Solo se califican manualmente las preguntas abiertas.");
+        }
+        if (request.score() > question.getPoints()) {
+            throw new IllegalArgumentException("El puntaje no puede superar el máximo de la pregunta.");
+        }
+
+        answer.setPointsAwarded(request.score());
+        answer.setTeacherFeedback(trimOrNull(request.feedback()));
+        answer.setReviewed(true);
+        answer.setReviewedAt(LocalDateTime.now());
+        answer.setReviewedBy(teacher);
+        answer.setCorrect(null);
+        answerRepository.save(answer);
+
+        Evaluation evaluation = attempt.getEvaluation();
+        // Log seguro: nunca incluye el texto de la respuesta ni la retroalimentación.
+        auditLogService.recordInfo(LogEventType.EVALUATION_ANSWER_REVIEWED, TARGET_EVALUATION,
+                evaluation.getId(), evaluation.getTitle(), "Revisar respuesta abierta",
+                "El docente revisó una respuesta abierta de la evaluación «" + evaluation.getTitle() + "».",
+                "attemptId=" + attempt.getId() + ";answerId=" + answer.getId());
+
+        if (recalculateAfterReview(attempt)) {
+            logReviewCompleted(attempt, evaluation);
+        }
+        return toAttemptReview(attempt);
+    }
+
+    /**
+     * Cierra la revisión de un intento: exige que no queden respuestas abiertas pendientes,
+     * recalcula la nota final y lo marca como GRADED. Útil como confirmación explícita del
+     * docente. Es idempotente si el intento ya estaba calificado.
+     */
+    public TeacherAttemptReviewResponse completeReview(String username, Long attemptId) {
+        TeacherProfile teacher = requireTeacher(username);
+        EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
+        requireGradedResult(attempt);
+
+        requireNotClosed(attempt);
+
+        if (hasPendingManualReview(attempt)) {
+            throw new IllegalArgumentException("Aún quedan respuestas abiertas por revisar.");
+        }
+
+        boolean wasGraded = attempt.getStatus() == AttemptStatus.GRADED;
+        gradeAttempt(attempt);
+        attempt.setStatus(AttemptStatus.GRADED);
+        if (attempt.getGradedAt() == null) {
+            attempt.setGradedAt(LocalDateTime.now());
+        }
+        recomputeFinalScore(attempt);
+        attemptRepository.save(attempt);
+
+        if (!wasGraded) {
+            logReviewCompleted(attempt, attempt.getEvaluation());
+        }
+        return toAttemptReview(attempt);
+    }
+
+    /**
+     * Recalcula la nota del intento tras una revisión manual y actualiza su estado: queda
+     * PENDING_MANUAL_REVIEW si aún hay abiertas sin revisar, o GRADED si ya están todas.
+     * Devuelve true solo cuando el intento <i>acaba</i> de pasar a GRADED (para registrar
+     * el cierre una sola vez).
+     */
+    private boolean recalculateAfterReview(EvaluationAttempt attempt) {
+        boolean wasGraded = attempt.getStatus() == AttemptStatus.GRADED;
+        gradeAttempt(attempt);
+        if (hasPendingManualReview(attempt)) {
+            attempt.setStatus(AttemptStatus.PENDING_MANUAL_REVIEW);
+            attempt.setGradedAt(null);
+            recomputeFinalScore(attempt);
+            attemptRepository.save(attempt);
+            return false;
+        }
+        // Todas las abiertas quedaron revisadas: el intento pasa a GRADED, pero no se cierra
+        // automáticamente. El docente puede aún ajustar puntajes/ajustes y debe cerrar la
+        // calificación de forma explícita para que el estudiante vea su nota final.
+        attempt.setStatus(AttemptStatus.GRADED);
+        if (attempt.getGradedAt() == null) {
+            attempt.setGradedAt(LocalDateTime.now());
+        }
+        recomputeFinalScore(attempt);
+        attemptRepository.save(attempt);
+        return !wasGraded;
+    }
+
+    private void logReviewCompleted(EvaluationAttempt attempt, Evaluation evaluation) {
+        auditLogService.recordInfo(LogEventType.EVALUATION_REVIEW_COMPLETED, TARGET_EVALUATION,
+                evaluation.getId(), evaluation.getTitle(), "Completar revisión de intento",
+                "Se actualizó la calificación manual de un intento de la evaluación «"
+                        + evaluation.getTitle() + "».",
+                "attemptId=" + attempt.getId());
+    }
+
+    // =========================================================================
+    // AJUSTES MANUALES, RETROALIMENTACIÓN GENERAL Y CIERRE — DOCENTE
+    // =========================================================================
+
+    /**
+     * Agrega un ajuste manual de puntaje al intento completo (bonificación si el monto es
+     * positivo, penalización si es negativo) con un motivo obligatorio. El ajuste no
+     * sobrescribe la nota: queda registrado con su autor y fecha, y la nota final se
+     * recompone como la nota base (0–20) más la suma de los ajustes activos, acotada a
+     * [0, 20]. Solo el docente dueño de la evaluación puede ajustar, y solo mientras la
+     * calificación no esté cerrada.
+     */
+    public TeacherAttemptReviewResponse addAdjustment(String username, Long attemptId,
+                                                      CreateAdjustmentRequest request) {
+        TeacherProfile teacher = requireTeacher(username);
+        EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
+        requireGradedResult(attempt);
+        requireNotClosed(attempt);
+
+        BigDecimal amount = request.amount().setScale(2, RoundingMode.HALF_UP);
+        if (amount.signum() == 0) {
+            throw new IllegalArgumentException("El monto del ajuste no puede ser cero.");
+        }
+        String reason = trimOrNull(request.reason());
+        if (reason == null) {
+            throw new IllegalArgumentException("El motivo del ajuste es obligatorio.");
+        }
+        AdjustmentType type = amount.signum() > 0 ? AdjustmentType.BONUS : AdjustmentType.PENALTY;
+
+        EvaluationAttemptAdjustment adjustment = EvaluationAttemptAdjustment.builder()
+                .attempt(attempt).amount(amount).type(type).reason(reason)
+                .createdBy(teacher).active(true).build();
+        adjustmentRepository.save(adjustment);
+
+        recomputeFinalScore(attempt);
+        attemptRepository.save(attempt);
+
+        Evaluation evaluation = attempt.getEvaluation();
+        // Log seguro: registra el tipo (enum) y los identificadores, nunca el monto exacto ni
+        // el motivo escrito por el docente.
+        auditLogService.recordInfo(LogEventType.EVALUATION_ADJUSTMENT_ADDED, TARGET_EVALUATION,
+                evaluation.getId(), evaluation.getTitle(), "Agregar ajuste de puntaje",
+                "Se agregó un ajuste de puntaje al intento de la evaluación «"
+                        + evaluation.getTitle() + "».",
+                "attemptId=" + attempt.getId() + ";adjustmentId=" + adjustment.getId()
+                        + ";type=" + type.name());
+
+        return toAttemptReview(attempt);
+    }
+
+    /**
+     * Anula (de forma lógica) un ajuste manual de un intento: deja de afectar la nota final
+     * pero permanece registrado para conservar la trazabilidad. Solo el docente dueño puede
+     * anularlo y solo mientras la calificación no esté cerrada.
+     */
+    public TeacherAttemptReviewResponse deleteAdjustment(String username, Long attemptId,
+                                                         Long adjustmentId) {
+        TeacherProfile teacher = requireTeacher(username);
+        EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
+        requireGradedResult(attempt);
+        requireNotClosed(attempt);
+
+        EvaluationAttemptAdjustment adjustment = adjustmentRepository.findById(adjustmentId)
+                .orElseThrow(() -> new EntityNotFoundException("El ajuste no existe."));
+        if (!adjustment.getAttempt().getId().equals(attempt.getId())) {
+            throw new IllegalArgumentException("El ajuste no pertenece a este intento.");
+        }
+
+        if (Boolean.TRUE.equals(adjustment.getActive())) {
+            adjustment.setActive(false);
+            adjustmentRepository.save(adjustment);
+            recomputeFinalScore(attempt);
+            attemptRepository.save(attempt);
+
+            Evaluation evaluation = attempt.getEvaluation();
+            auditLogService.recordInfo(LogEventType.EVALUATION_ADJUSTMENT_REMOVED, TARGET_EVALUATION,
+                    evaluation.getId(), evaluation.getTitle(), "Anular ajuste de puntaje",
+                    "Se anuló un ajuste de puntaje del intento de la evaluación «"
+                            + evaluation.getTitle() + "».",
+                    "attemptId=" + attempt.getId() + ";adjustmentId=" + adjustment.getId());
+        }
+        return toAttemptReview(attempt);
+    }
+
+    /**
+     * Guarda la retroalimentación general que el docente escribe para el estudiante sobre el
+     * intento. Es opcional (puede vaciarse) y solo se le muestra al estudiante una vez que la
+     * calificación esté cerrada. Solo el docente dueño puede editarla y solo si no está
+     * cerrada.
+     */
+    public TeacherAttemptReviewResponse updateOverallFeedback(String username, Long attemptId,
+                                                              UpdateAttemptFeedbackRequest request) {
+        TeacherProfile teacher = requireTeacher(username);
+        EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
+        requireGradedResult(attempt);
+        requireNotClosed(attempt);
+
+        attempt.setOverallFeedback(trimOrNull(request.overallFeedback()));
+        attemptRepository.save(attempt);
+
+        Evaluation evaluation = attempt.getEvaluation();
+        // Log seguro: nunca incluye el texto de la retroalimentación, solo el identificador.
+        auditLogService.recordInfo(LogEventType.EVALUATION_FEEDBACK_UPDATED, TARGET_EVALUATION,
+                evaluation.getId(), evaluation.getTitle(), "Actualizar retroalimentación general",
+                "Se actualizó la retroalimentación general de un intento de la evaluación «"
+                        + evaluation.getTitle() + "».",
+                "attemptId=" + attempt.getId());
+
+        return toAttemptReview(attempt);
+    }
+
+    /**
+     * Cierra la calificación de un intento: exige que no queden respuestas abiertas por
+     * revisar, recalcula el puntaje y la nota final (con los ajustes manuales), y deja la
+     * nota visible para el estudiante. Registra fecha y docente del cierre y bloquea la
+     * edición posterior de puntajes, ajustes y retroalimentación (no se implementa
+     * reapertura en esta sesión). Solo el docente dueño puede cerrar.
+     */
+    public TeacherAttemptReviewResponse closeGrade(String username, Long attemptId) {
+        TeacherProfile teacher = requireTeacher(username);
+        EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
+        requireGradedResult(attempt);
+
+        if (Boolean.TRUE.equals(attempt.getGradeClosed())) {
+            throw new IllegalArgumentException("La calificación ya está cerrada.");
+        }
+        if (hasPendingManualReview(attempt)) {
+            throw new IllegalArgumentException("Aún quedan respuestas abiertas por revisar.");
+        }
+
+        gradeAttempt(attempt);
+        attempt.setStatus(AttemptStatus.GRADED);
+        recomputeFinalScore(attempt);
+        LocalDateTime now = LocalDateTime.now();
+        if (attempt.getGradedAt() == null) {
+            attempt.setGradedAt(now);
+        }
+        attempt.setGradeClosed(true);
+        attempt.setGradeClosedAt(now);
+        attempt.setGradeClosedBy(teacher);
+        attemptRepository.save(attempt);
+
+        Evaluation evaluation = attempt.getEvaluation();
+        auditLogService.recordInfo(LogEventType.EVALUATION_GRADE_CLOSED, TARGET_EVALUATION,
+                evaluation.getId(), evaluation.getTitle(), "Cerrar calificación",
+                "Se cerró la calificación de un intento de la evaluación «"
+                        + evaluation.getTitle() + "».",
+                "attemptId=" + attempt.getId());
+
+        return toAttemptReview(attempt);
+    }
+
+    /** Impide modificar la calificación de un intento ya cerrado (no hay reapertura). */
+    private void requireNotClosed(EvaluationAttempt attempt) {
+        if (Boolean.TRUE.equals(attempt.getGradeClosed())) {
+            throw new IllegalArgumentException(
+                    "La calificación ya está cerrada; no se puede modificar.");
+        }
+    }
+
+    /** Nota base del intento en escala 0–20, derivada del puntaje en puntos. */
+    private BigDecimal baseScore20(EvaluationAttempt attempt) {
+        Integer score = attempt.getScore();
+        Integer maxScore = attempt.getMaxScore();
+        if (score == null || maxScore == null || maxScore == 0) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        return BigDecimal.valueOf(score)
+                .multiply(MAX_GRADE)
+                .divide(BigDecimal.valueOf(maxScore), 2, RoundingMode.HALF_UP);
+    }
+
+    /** Suma de los ajustes manuales activos del intento (en escala 0–20, con su signo). */
+    private BigDecimal adjustmentsTotal(EvaluationAttempt attempt) {
+        return adjustmentRepository.findByAttemptAndActiveTrueOrderByCreatedAtAsc(attempt).stream()
+                .map(EvaluationAttemptAdjustment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Nota final del intento en escala 0–20: nota base más la suma de los ajustes activos,
+     * acotada a [0, 20] para que nunca sea negativa ni supere el máximo de la escala.
+     */
+    private BigDecimal computeFinalScore(EvaluationAttempt attempt) {
+        BigDecimal raw = baseScore20(attempt).add(adjustmentsTotal(attempt));
+        BigDecimal clamped = raw.max(BigDecimal.ZERO).min(MAX_GRADE);
+        return clamped.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /** Recalcula y fija la nota final del intento (el llamador persiste el intento). */
+    private void recomputeFinalScore(EvaluationAttempt attempt) {
+        attempt.setFinalScore(computeFinalScore(attempt));
+    }
+
+    private AttemptAdjustmentResponse toAdjustmentResponse(EvaluationAttemptAdjustment a) {
+        return new AttemptAdjustmentResponse(
+                a.getId(), a.getAmount(), a.getType(), a.getReason(),
+                a.getCreatedBy() == null ? null : fullName(a.getCreatedBy()), a.getCreatedAt());
+    }
+
+    /** Preguntas abiertas activas de una evaluación, en su orden. */
+    private List<EvaluationQuestion> openQuestionsOf(Evaluation evaluation) {
+        return questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(evaluation)
+                .stream()
+                .filter(q -> q.getQuestionType() == QuestionType.OPEN_TEXT)
+                .toList();
+    }
+
+    /**
+     * Crea una fila de respuesta vacía (sin texto, sin revisar) para cada pregunta abierta
+     * del intento que aún no tenga una. Así toda pregunta abierta tiene un identificador de
+     * respuesta que el docente puede calificar, incluso si el estudiante la dejó en blanco.
+     */
+    private void ensureOpenAnswerRows(EvaluationAttempt attempt) {
+        for (EvaluationQuestion question : openQuestionsOf(attempt.getEvaluation())) {
+            if (answerRepository.findByAttemptAndQuestion(attempt, question).isEmpty()) {
+                answerRepository.save(EvaluationAnswer.builder()
+                        .attempt(attempt)
+                        .question(question)
+                        .reviewed(false)
+                        .build());
+            }
+        }
+    }
+
+    private PendingReviewAttemptResponse toPendingReviewAttempt(EvaluationAttempt attempt) {
+        Evaluation evaluation = attempt.getEvaluation();
+        StudentProfile s = attempt.getStudent();
+        int open = 0;
+        int pending = 0;
+        for (EvaluationQuestion q : openQuestionsOf(evaluation)) {
+            open++;
+            EvaluationAnswer a = answerRepository.findByAttemptAndQuestion(attempt, q).orElse(null);
+            if (a == null || !Boolean.TRUE.equals(a.getReviewed())) {
+                pending++;
+            }
+        }
+        return new PendingReviewAttemptResponse(
+                attempt.getId(), evaluation.getId(), evaluation.getTitle(),
+                s.getId(), s.getStudentCode(), fullName(s), s.getGrade(), s.getSection(),
+                attempt.getAttemptNumber(), attempt.getStatus(), attempt.getSubmittedAt(),
+                open, pending);
+    }
+
+    private TeacherAttemptReviewResponse toAttemptReview(EvaluationAttempt attempt) {
+        Evaluation evaluation = attempt.getEvaluation();
+        StudentProfile s = attempt.getStudent();
+        List<TeacherReviewAnswerResponse> openAnswers = new ArrayList<>();
+        int pending = 0;
+        for (EvaluationQuestion q : openQuestionsOf(evaluation)) {
+            EvaluationAnswer a = answerRepository.findByAttemptAndQuestion(attempt, q).orElse(null);
+            boolean reviewed = a != null && Boolean.TRUE.equals(a.getReviewed());
+            if (!reviewed) {
+                pending++;
+            }
+            openAnswers.add(new TeacherReviewAnswerResponse(
+                    a == null ? null : a.getId(), q.getId(), q.getQuestionText(), q.getPoints(),
+                    q.getExpectedAnswer(), a == null ? null : a.getAnswerText(),
+                    reviewed, a == null ? null : a.getPointsAwarded(),
+                    a == null ? null : a.getTeacherFeedback()));
+        }
+        List<AttemptAdjustmentResponse> adjustments =
+                adjustmentRepository.findByAttemptAndActiveTrueOrderByCreatedAtAsc(attempt).stream()
+                        .map(this::toAdjustmentResponse)
+                        .toList();
+        return new TeacherAttemptReviewResponse(
+                attempt.getId(), evaluation.getId(), evaluation.getTitle(),
+                s.getId(), s.getStudentCode(), fullName(s), s.getGrade(), s.getSection(),
+                attempt.getAttemptNumber(), attempt.getStatus(),
+                attempt.getScore(), attempt.getMaxScore(),
+                baseScore20(attempt), adjustmentsTotal(attempt), computeFinalScore(attempt),
+                attempt.getOverallFeedback(), attempt.getGradeClosed(), attempt.getGradeClosedAt(),
+                attempt.getSubmittedAt(), attempt.getGradedAt(), pending, openAnswers, adjustments);
+    }
+
+    /**
+     * Carga un intento y valida que pertenezca a una evaluación creada por el docente
+     * autenticado. Distingue intento inexistente de intento ajeno.
+     */
+    private EvaluationAttempt requireOwnedAttemptForTeacher(Long attemptId, TeacherProfile teacher) {
+        EvaluationAttempt attempt = attemptRepository.findById(attemptId)
+                .orElseThrow(() -> new EntityNotFoundException("El intento no existe."));
+        if (!attempt.getEvaluation().getCreatedByTeacher().getId().equals(teacher.getId())) {
+            throw new IllegalArgumentException("No tienes permiso para ver este intento.");
+        }
+        return attempt;
     }
 
     // =========================================================================
@@ -691,22 +1389,59 @@ public class EvaluationService {
         ensureScored(attempt);
 
         Evaluation evaluation = attempt.getEvaluation();
-        boolean canView = canViewDetailedFeedback(evaluation, student);
 
-        List<StudentAnswerResultResponse> answers = answerDetailsOf(attempt).stream()
-                .map(d -> new StudentAnswerResultResponse(
-                        d.question.getId(), d.question.getQuestionText(),
-                        d.selected == null ? null : d.selected.getOptionText(),
-                        d.isCorrect, d.question.getPoints(), d.pointsAwarded,
-                        canView && d.correctOption != null ? d.correctOption.getOptionText() : null,
-                        canView ? d.question.getExplanation() : null))
+        // Regla 18.6: la revisión detallada solo se entrega si ya está disponible para el
+        // grupo (venció el plazo o todas las estudiantes asignadas finalizaron). Mientras
+        // siga bloqueada, el backend no expone respuestas correctas, corrección ni nota:
+        // ocultar botones en el frontend no basta, el backend es la fuente de verdad.
+        StudentReviewAvailability availability = computeReviewAvailability(evaluation);
+        boolean reviewAvailable = availability.reviewAvailable();
+
+        // Mientras la calificación no esté cerrada, el estudiante no ve su nota final ni el
+        // detalle de puntajes/retroalimentación: el intento aparece como pendiente de
+        // revisión. Solo se revela todo (nota, puntajes por pregunta, comentarios) al cerrar
+        // y siempre que la revisión esté disponible para el grupo.
+        boolean closed = Boolean.TRUE.equals(attempt.getGradeClosed());
+        boolean showDetail = reviewAvailable && closed;
+
+        // Si la revisión está bloqueada, no se envía ninguna respuesta (ni siquiera la propia
+        // sin corregir): el estudiante solo ve estado y mensaje. Al desbloquearse, la
+        // corrección pregunta a pregunta se sigue gobernando por el cierre de la calificación.
+        List<StudentAnswerResultResponse> answers = !reviewAvailable ? List.of()
+                : answerDetailsOf(attempt).stream()
+                .map(d -> {
+                    boolean open = d.question.getQuestionType() == QuestionType.OPEN_TEXT;
+                    return new StudentAnswerResultResponse(
+                            d.question.getId(), d.question.getQuestionText(), d.question.getQuestionType(),
+                            // El estudiante siempre ve su alternativa elegida o su propio texto.
+                            d.selected == null ? null : d.selected.getOptionText(),
+                            open ? d.answerText : null,
+                            closed && !open ? d.isCorrect : null,
+                            d.question.getPoints(),
+                            // El puntaje por pregunta y la retroalimentación solo se muestran con
+                            // la calificación cerrada (y, en abiertas, una vez revisadas).
+                            closed && !(open && !d.reviewed) ? d.pointsAwarded : null,
+                            closed && d.reviewed,
+                            closed && open && d.reviewed ? d.teacherFeedback : null,
+                            closed && !open && d.correctOption != null
+                                    ? d.correctOption.getOptionText() : null,
+                            closed ? d.question.getExplanation() : null);
+                })
                 .toList();
 
         return new StudentAttemptResultDetailResponse(
                 attempt.getId(), evaluation.getId(), evaluation.getTitle(), evaluation.getTopic(),
                 attempt.getAttemptNumber(), attempt.getStatus(),
-                attempt.getScore(), attempt.getMaxScore(), percentageOf(attempt),
-                attempt.getSubmittedAt(), canView, answers);
+                showDetail ? attempt.getScore() : null,
+                showDetail ? attempt.getMaxScore() : null,
+                showDetail ? percentageOf(attempt) : null,
+                showDetail ? computeFinalScore(attempt) : null,
+                showDetail ? attempt.getOverallFeedback() : null,
+                closed,
+                attempt.getSubmittedAt(), reviewAvailable, answers,
+                reviewAvailable, !reviewAvailable, availability.reason(), availability.deadlineAt(),
+                availability.assignedStudentsCount(), availability.finishedStudentsCount(),
+                availability.pendingStudentsCount(), availability.messageWhenLocked());
     }
 
     // =========================================================================
@@ -732,26 +1467,32 @@ public class EvaluationService {
         int approved = 0;
         int failed = 0;
 
-        if (total > 0) {
-            int sumScore = 0;
-            double sumPct = 0;
-            highest = Integer.MIN_VALUE;
-            lowest = Integer.MAX_VALUE;
-            for (TeacherStudentResultResponse r : results) {
-                int score = r.score() == null ? 0 : r.score();
-                double pct = r.percentage() == null ? 0 : r.percentage();
-                sumScore += score;
-                sumPct += pct;
-                highest = Math.max(highest, score);
-                lowest = Math.min(lowest, score);
-                if (pct >= APPROVAL_PERCENTAGE) {
-                    approved++;
-                } else {
-                    failed++;
-                }
+        // Los promedios y los contadores aprobado/desaprobado solo consideran intentos ya
+        // calificados (GRADED). Los pendientes de revisión manual aparecen en la lista con
+        // su estado, pero su nota aún es parcial y no debe afectar las estadísticas.
+        int graded = 0;
+        int sumScore = 0;
+        double sumPct = 0;
+        for (TeacherStudentResultResponse r : results) {
+            if (r.status() != AttemptStatus.GRADED) {
+                continue;
             }
-            averageScore = round1((double) sumScore / total);
-            averagePercentage = round1(sumPct / total);
+            int score = r.score() == null ? 0 : r.score();
+            double pct = r.percentage() == null ? 0 : r.percentage();
+            graded++;
+            sumScore += score;
+            sumPct += pct;
+            highest = highest == null ? score : Math.max(highest, score);
+            lowest = lowest == null ? score : Math.min(lowest, score);
+            if (pct >= APPROVAL_PERCENTAGE) {
+                approved++;
+            } else {
+                failed++;
+            }
+        }
+        if (graded > 0) {
+            averageScore = round1((double) sumScore / graded);
+            averagePercentage = round1(sumPct / graded);
         }
 
         return new TeacherEvaluationResultsResponse(
@@ -761,11 +1502,14 @@ public class EvaluationService {
 
     private TeacherStudentResultResponse toTeacherStudentResult(EvaluationAttempt attempt) {
         StudentProfile student = attempt.getStudent();
+        boolean closed = Boolean.TRUE.equals(attempt.getGradeClosed());
         return new TeacherStudentResultResponse(
                 attempt.getId(), student.getId(), student.getStudentCode(), fullName(student),
                 student.getGrade(), student.getSection(),
                 attempt.getAttemptNumber(), attempt.getStatus(),
                 attempt.getScore(), attempt.getMaxScore(), percentageOf(attempt),
+                // La nota final (con ajustes) solo es definitiva con la calificación cerrada.
+                closed ? computeFinalScore(attempt) : null, closed,
                 attempt.getSubmittedAt(), attempt.getGradedAt(), tabExitCountOf(attempt));
     }
 
@@ -773,24 +1517,154 @@ public class EvaluationService {
         ensureScored(attempt);
         Evaluation evaluation = attempt.getEvaluation();
         StudentProfile student = attempt.getStudent();
+        boolean closed = Boolean.TRUE.equals(attempt.getGradeClosed());
         int attemptsUsed = (int) attemptRepository.countByEvaluationAndStudent(evaluation, student);
+
+        // La nota solo se expone cuando la revisión está disponible para el grupo y la
+        // calificación del intento está cerrada; de lo contrario el estudiante ve el intento
+        // como "revisión pendiente" sin puntaje.
+        StudentReviewAvailability availability = computeReviewAvailability(evaluation);
+        boolean reviewAvailable = availability.reviewAvailable();
+        boolean showScore = reviewAvailable && closed;
+
         return new StudentResultSummaryResponse(
                 attempt.getId(), evaluation.getId(), evaluation.getTitle(), evaluation.getTopic(),
                 attempt.getAttemptNumber(), attempt.getStatus(),
-                attempt.getScore(), attempt.getMaxScore(), percentageOf(attempt),
-                attempt.getSubmittedAt(), canViewDetailedFeedback(evaluation, student),
-                attemptsUsed, evaluation.getMaxAttempts());
+                showScore ? attempt.getScore() : null,
+                showScore ? attempt.getMaxScore() : null,
+                showScore ? percentageOf(attempt) : null,
+                showScore ? computeFinalScore(attempt) : null, closed,
+                attempt.getSubmittedAt(), reviewAvailable,
+                attemptsUsed, evaluation.getMaxAttempts(),
+                reviewAvailable, !reviewAvailable, availability.reason(), availability.deadlineAt(),
+                availability.assignedStudentsCount(), availability.finishedStudentsCount(),
+                availability.pendingStudentsCount());
+    }
+
+    // Mensaje para el estudiante mientras la revisión detallada sigue bloqueada.
+    private static final String REVIEW_LOCKED_MESSAGE =
+            "Tu evaluación fue enviada correctamente. La revisión estará disponible cuando "
+                    + "todas las estudiantes asignadas hayan finalizado o cuando se cumpla la "
+                    + "fecha límite.";
+
+    /**
+     * Disponibilidad de la revisión detallada de una evaluación para las estudiantes, con
+     * el motivo del desbloqueo y el progreso general del grupo (sin nombres). Se calcula a
+     * partir del estado del grupo, no del intento individual.
+     */
+    private record StudentReviewAvailability(
+            boolean reviewAvailable,
+            ReviewUnlockReason reason,
+            int assignedStudentsCount,
+            int finishedStudentsCount,
+            int pendingStudentsCount,
+            LocalDateTime deadlineAt) {
+
+        String messageWhenLocked() {
+            return reviewAvailable ? null : REVIEW_LOCKED_MESSAGE;
+        }
     }
 
     /**
-     * Criterio conservador de retroalimentación: el estudiante solo ve la alternativa
-     * correcta cuando ya no le quedan intentos disponibles o la evaluación está
-     * archivada. Así no puede usar un resultado para acertar en un intento posterior.
+     * Regla central de la sesión 18.6: la revisión detallada del examen (respuestas
+     * correctas, alternativas, explicación, nota y detalle de aciertos/errores) solo se
+     * habilita para las estudiantes cuando el grupo ya cerró. Así, una alumna que termina
+     * antes que sus compañeras no puede ver la corrección y filtrarla.
+     *
+     * <p>{@code reviewAvailable = deadlineReached OR allAssignedStudentsFinished}, donde:</p>
+     * <ul>
+     *   <li><b>allAssignedStudentsFinished</b>: todas las estudiantes activas con acceso a la
+     *       evaluación (mismo criterio de grado/sección que la vista del estudiante) ya no
+     *       tienen intentos disponibles. Si no hay estudiantes asignadas, no se habilita por
+     *       accidente.</li>
+     *   <li><b>deadlineReached</b>: la evaluación tiene fecha límite y ya se cumplió. El modelo
+     *       actual no guarda una fecha límite en la evaluación; la fecha límite disponible es
+     *       la {@code dueAt} de la asignación (ventana por grado/sección). Para no filtrar entre
+     *       secciones, el plazo desbloquea la revisión solo cuando <b>todas</b> las asignaciones
+     *       activas tienen {@code dueAt} y ya pasó la más tardía; si alguna asignación no tiene
+     *       {@code dueAt}, el plazo no basta y se depende de la finalización grupal.</li>
+     * </ul>
+     *
+     * <p>Una evaluación archivada se considera cerrada para todo el grupo (ya no es rendible),
+     * por lo que también habilita la revisión, conservando el comportamiento previo.</p>
      */
-    private boolean canViewDetailedFeedback(Evaluation evaluation, StudentProfile student) {
+    private StudentReviewAvailability computeReviewAvailability(Evaluation evaluation) {
+        List<EvaluationAssignment> activeAssignments =
+                assignmentRepository.findByEvaluationOrderByAssignedAtDesc(evaluation).stream()
+                        .filter(a -> Boolean.TRUE.equals(a.getActive()))
+                        .toList();
+
+        // Estudiantes con acceso a la evaluación: activas y cuyo grado/sección coincide con
+        // alguna asignación activa. Se deduplican por id (una alumna podría cubrir dos
+        // asignaciones con el mismo grado/sección). No se exponen sus nombres a nadie.
+        Map<Long, StudentProfile> assignedStudents = new LinkedHashMap<>();
+        for (EvaluationAssignment assignment : activeAssignments) {
+            for (StudentProfile candidate :
+                    studentProfileRepository.findByGradeAndSection(assignment.getGrade(), assignment.getSection())) {
+                if (candidate.getUser() != null && Boolean.TRUE.equals(candidate.getUser().getActive())) {
+                    assignedStudents.putIfAbsent(candidate.getId(), candidate);
+                }
+            }
+        }
+
+        int assignedCount = assignedStudents.size();
+        int finishedCount = 0;
+        for (StudentProfile candidate : assignedStudents.values()) {
+            if (studentFinishedAttempts(evaluation, candidate)) {
+                finishedCount++;
+            }
+        }
+        int pendingCount = assignedCount - finishedCount;
+
+        // Fecha límite efectiva: la evaluación queda cerrada por tiempo solo cuando ninguna
+        // asignación activa deja una ventana abierta, es decir, todas tienen dueAt y ya pasó
+        // la más tardía. Si alguna no tiene dueAt, no hay fecha límite que garantice el cierre.
+        boolean everyAssignmentHasDueAt = !activeAssignments.isEmpty()
+                && activeAssignments.stream().allMatch(a -> a.getDueAt() != null);
+        LocalDateTime deadlineAt = everyAssignmentHasDueAt
+                ? activeAssignments.stream()
+                        .map(EvaluationAssignment::getDueAt)
+                        .max(Comparator.naturalOrder())
+                        .orElse(null)
+                : null;
+        boolean deadlineReached = deadlineAt != null && !LocalDateTime.now().isBefore(deadlineAt);
+
+        // Sin estudiantes asignadas no se habilita la revisión por accidente.
+        boolean allAssignedStudentsFinished = assignedCount > 0 && pendingCount == 0;
+        boolean archived = evaluation.getStatus() == EvaluationStatus.ARCHIVED;
+
+        boolean reviewAvailable = deadlineReached || allAssignedStudentsFinished || archived;
+
+        ReviewUnlockReason reason;
+        if (reviewAvailable) {
+            // Prioriza el motivo real; una evaluación archivada se informa como grupo cerrado.
+            reason = deadlineReached ? ReviewUnlockReason.DEADLINE_REACHED
+                    : ReviewUnlockReason.ALL_ASSIGNED_STUDENTS_FINISHED;
+        } else {
+            reason = deadlineAt != null
+                    ? ReviewUnlockReason.LOCKED_WAITING_FOR_GROUP
+                    : ReviewUnlockReason.NO_DEADLINE;
+        }
+
+        return new StudentReviewAvailability(
+                reviewAvailable, reason, assignedCount, finishedCount, pendingCount, deadlineAt);
+    }
+
+    /**
+     * Indica si una estudiante ya no tiene intentos disponibles en la evaluación (terminó).
+     * No cuenta como finalizada si tiene un intento en progreso (sigue rindiendo) ni si aún
+     * le quedan intentos por usar. Con {@code maxAttempts = 1} basta con haber enviado su
+     * intento; con más intentos, debe haberlos usado todos.
+     */
+    private boolean studentFinishedAttempts(Evaluation evaluation, StudentProfile student) {
+        boolean hasInProgress = attemptRepository
+                .findByEvaluationAndStudentAndStatus(evaluation, student, AttemptStatus.IN_PROGRESS)
+                .isPresent();
+        if (hasInProgress) {
+            return false;
+        }
         long attemptsUsed = attemptRepository.countByEvaluationAndStudent(evaluation, student);
-        boolean noAttemptsLeft = attemptsUsed >= evaluation.getMaxAttempts();
-        return noAttemptsLeft || evaluation.getStatus() == EvaluationStatus.ARCHIVED;
+        return attemptsUsed >= evaluation.getMaxAttempts();
     }
 
     /**
@@ -802,18 +1676,24 @@ public class EvaluationService {
         return questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(attempt.getEvaluation())
                 .stream()
                 .map(question -> {
-                    List<EvaluationOption> options =
-                            optionRepository.findByQuestionAndActiveTrueOrderByOrderIndexAsc(question);
-                    EvaluationOption correctOption = options.stream()
-                            .filter(o -> Boolean.TRUE.equals(o.getCorrect()))
-                            .findFirst().orElse(null);
+                    boolean open = question.getQuestionType() == QuestionType.OPEN_TEXT;
+                    EvaluationOption correctOption = open ? null
+                            : optionRepository.findByQuestionAndActiveTrueOrderByOrderIndexAsc(question).stream()
+                                    .filter(o -> Boolean.TRUE.equals(o.getCorrect()))
+                                    .findFirst().orElse(null);
                     EvaluationAnswer answer =
                             answerRepository.findByAttemptAndQuestion(attempt, question).orElse(null);
                     EvaluationOption selected = answer == null ? null : answer.getSelectedOption();
                     boolean isCorrect = answer != null && Boolean.TRUE.equals(answer.getCorrect());
                     int pointsAwarded = answer == null || answer.getPointsAwarded() == null
                             ? 0 : answer.getPointsAwarded();
-                    return new AnswerDetail(question, selected, correctOption, isCorrect, pointsAwarded);
+                    String answerText = answer == null ? null : answer.getAnswerText();
+                    // Una abierta sin respuesta cuenta como no revisada (pendiente); el resto
+                    // hereda el flag de la respuesta, y la alternativa única siempre está revisada.
+                    boolean reviewed = answer == null ? !open : Boolean.TRUE.equals(answer.getReviewed());
+                    String teacherFeedback = answer == null ? null : answer.getTeacherFeedback();
+                    return new AnswerDetail(question, selected, correctOption, isCorrect, pointsAwarded,
+                            answerText, reviewed, teacherFeedback);
                 })
                 .toList();
     }
@@ -829,10 +1709,18 @@ public class EvaluationService {
         }
         if (attempt.getScore() == null || attempt.getMaxScore() == null) {
             gradeAttempt(attempt);
-            if (attempt.getGradedAt() == null) {
+            // gradedAt solo se fija para intentos ya calificados; un intento pendiente de
+            // revisión manual conserva gradedAt en null hasta que el docente cierre la revisión.
+            if (attempt.getStatus() == AttemptStatus.GRADED && attempt.getGradedAt() == null) {
                 attempt.setGradedAt(attempt.getSubmittedAt() != null
                         ? attempt.getSubmittedAt() : LocalDateTime.now());
             }
+            recomputeFinalScore(attempt);
+            attemptRepository.save(attempt);
+        } else if (attempt.getFinalScore() == null) {
+            // Intentos terminales con puntaje pero sin nota final (anteriores a esta sesión):
+            // se completa la nota final en escala 0–20 sin recalcular el puntaje en puntos.
+            recomputeFinalScore(attempt);
             attemptRepository.save(attempt);
         }
     }
@@ -856,6 +1744,85 @@ public class EvaluationService {
         return attemptEventRepository.countByAttemptAndEventTypeIn(attempt, EXIT_EVENT_TYPES);
     }
 
+    /**
+     * Tiempo usado por el intento, en segundos, calculado en el backend con los timestamps
+     * del propio intento (no con el contador del frontend). Si el intento ya terminó, se
+     * mide hasta {@code submittedAt} (también cubre el cierre por salida o por tiempo); si
+     * sigue en progreso, hasta el momento actual. Nunca devuelve un valor negativo.
+     */
+    private Long timeUsedSecondsOf(EvaluationAttempt attempt) {
+        if (attempt.getStartedAt() == null) {
+            return null;
+        }
+        LocalDateTime end = attempt.getSubmittedAt() != null
+                ? attempt.getSubmittedAt() : LocalDateTime.now();
+        return Math.max(0, Duration.between(attempt.getStartedAt(), end).getSeconds());
+    }
+
+    /**
+     * Registra un hito del ciclo de vida del intento (inicio, envío, expiración, salida).
+     * Lo emite el backend, no el cliente, y se guarda siempre (no depende de
+     * {@code trackTabExit}) para que la línea de tiempo del intento quede completa. Solo
+     * persiste tipo, descripción breve y metadata segura.
+     */
+    private void recordLifecycleEvent(EvaluationAttempt attempt, AttemptEventType type,
+                                      String description, String metadata) {
+        attemptEventRepository.save(EvaluationAttemptEvent.builder()
+                .attempt(attempt)
+                .eventType(type)
+                .description(description)
+                .metadata(metadata)
+                .build());
+    }
+
+    /**
+     * Construye una metadata segura y acotada a partir de los únicos datos permitidos:
+     * la herramienta (enum cerrado) y un origen corto sanitizado. Devuelve null si no hay
+     * nada que guardar. Por diseño no puede transportar respuestas, claves ni texto libre.
+     */
+    private String buildSafeMetadata(AttemptTool tool, String source) {
+        List<String> parts = new ArrayList<>();
+        if (tool != null) {
+            parts.add("tool=" + tool.name());
+        }
+        String safeSource = sanitizeMetadataToken(source);
+        if (safeSource != null) {
+            parts.add("source=" + safeSource);
+        }
+        return parts.isEmpty() ? null : String.join(";", parts);
+    }
+
+    /**
+     * Limpia un valor de metadata enviado por el cliente: conserva solo letras, dígitos y
+     * guion bajo, y lo acota a 60 caracteres. Así un valor con contenido inesperado o
+     * sensible queda reducido a una etiqueta corta e inocua (o null si queda vacío).
+     */
+    private String sanitizeMetadataToken(String value) {
+        if (value == null) {
+            return null;
+        }
+        String cleaned = value.trim().replaceAll("[^A-Za-z0-9_]", "");
+        if (cleaned.isEmpty()) {
+            return null;
+        }
+        return cleaned.length() > 60 ? cleaned.substring(0, 60) : cleaned;
+    }
+
+    /** Extrae el nombre de la herramienta de una metadata "tool=...". Devuelve null si no hay. */
+    private String toolFromMetadata(String metadata) {
+        if (metadata == null) {
+            return null;
+        }
+        for (String part : metadata.split(";")) {
+            String trimmed = part.trim();
+            if (trimmed.startsWith("tool=")) {
+                String value = trimmed.substring("tool=".length()).trim();
+                return value.isEmpty() ? null : value;
+            }
+        }
+        return null;
+    }
+
     private Double percentageOf(EvaluationAttempt attempt) {
         Integer score = attempt.getScore();
         Integer maxScore = attempt.getMaxScore();
@@ -869,6 +1836,10 @@ public class EvaluationService {
         return (student.getNames() + " " + student.getLastNames()).trim();
     }
 
+    private String fullName(TeacherProfile teacher) {
+        return (teacher.getNames() + " " + teacher.getLastNames()).trim();
+    }
+
     private double round1(double value) {
         return Math.round(value * 10.0) / 10.0;
     }
@@ -879,7 +1850,10 @@ public class EvaluationService {
             EvaluationOption selected,
             EvaluationOption correctOption,
             boolean isCorrect,
-            int pointsAwarded
+            int pointsAwarded,
+            String answerText,
+            boolean reviewed,
+            String teacherFeedback
     ) {}
 
     // =========================================================================
@@ -887,12 +1861,15 @@ public class EvaluationService {
     // =========================================================================
 
     /**
-     * Calcula un puntaje básico para preguntas de alternativa única: una respuesta es
-     * correcta si su alternativa elegida está marcada como correcta, y entonces otorga
-     * los puntos de la pregunta. El puntaje máximo es la suma de los puntos de todas
-     * las preguntas activas (las inactivas no cuentan) y nunca se otorga puntaje
-     * negativo. Deja {@code correct} y {@code pointsAwarded} en cada respuesta y
-     * {@code score}/{@code maxScore} en el intento.
+     * Calcula el puntaje del intento. El puntaje máximo es la suma de los puntos de todas
+     * las preguntas activas (las inactivas no cuentan), sea cual sea su tipo.
+     *
+     * <p>Las preguntas de alternativa única se califican automáticamente: la respuesta es
+     * correcta si la alternativa elegida está marcada como correcta, y entonces otorga los
+     * puntos de la pregunta. Las preguntas abiertas no se califican aquí: solo suman al
+     * puntaje el valor que el docente les haya asignado manualmente (sus respuestas ya
+     * revisadas); mientras no estén revisadas aportan 0 y no se tocan. Nunca se otorga
+     * puntaje negativo. Deja {@code score}/{@code maxScore} en el intento.</p>
      */
     private void gradeAttempt(EvaluationAttempt attempt) {
         List<EvaluationQuestion> questions =
@@ -909,12 +1886,22 @@ public class EvaluationService {
                 continue;
             }
 
+            if (question.getQuestionType() == QuestionType.OPEN_TEXT) {
+                // Calificación manual: solo cuenta si el docente ya la revisó. No se modifica
+                // la respuesta (su puntaje lo fija la revisión manual).
+                if (Boolean.TRUE.equals(answer.getReviewed()) && answer.getPointsAwarded() != null) {
+                    score += answer.getPointsAwarded();
+                }
+                continue;
+            }
+
             boolean correct = answer.getSelectedOption() != null
                     && Boolean.TRUE.equals(answer.getSelectedOption().getCorrect());
             int awarded = correct ? question.getPoints() : 0;
 
             answer.setCorrect(correct);
             answer.setPointsAwarded(awarded);
+            answer.setReviewed(true);
             answerRepository.save(answer);
 
             score += awarded;
@@ -1097,6 +2084,24 @@ public class EvaluationService {
             throw new IllegalArgumentException("La pregunta no pertenece a esta evaluación.");
         }
 
+        EvaluationAnswer answer = answerRepository.findByAttemptAndQuestion(attempt, question)
+                .orElseGet(() -> EvaluationAnswer.builder()
+                        .attempt(attempt)
+                        .question(question)
+                        .build());
+
+        if (question.getQuestionType() == QuestionType.OPEN_TEXT) {
+            // Pregunta abierta: se guarda el texto del estudiante y queda pendiente de
+            // revisión manual (sin alternativa ni corrección automática).
+            answer.setSelectedOption(null);
+            answer.setAnswerText(trimOrNull(request.answerText()));
+            answer.setReviewed(false);
+            answer.setCorrect(null);
+            answerRepository.save(answer);
+            return;
+        }
+
+        // Pregunta de alternativa única: se valida la alternativa elegida.
         EvaluationOption selectedOption = null;
         if (request.selectedOptionId() != null) {
             selectedOption = optionRepository.findById(request.selectedOptionId())
@@ -1105,13 +2110,8 @@ public class EvaluationService {
                 throw new IllegalArgumentException("La alternativa seleccionada no pertenece a la pregunta.");
             }
         }
-
-        EvaluationAnswer answer = answerRepository.findByAttemptAndQuestion(attempt, question)
-                .orElseGet(() -> EvaluationAnswer.builder()
-                        .attempt(attempt)
-                        .question(question)
-                        .build());
         answer.setSelectedOption(selectedOption);
+        answer.setAnswerText(null);
         answerRepository.save(answer);
     }
 
@@ -1145,6 +2145,14 @@ public class EvaluationService {
                     .build();
             optionRepository.save(option);
             index++;
+        }
+    }
+
+    /** Elimina las alternativas activas de una pregunta (al convertirla en abierta). */
+    private void clearOptions(EvaluationQuestion question) {
+        List<EvaluationOption> existing = optionRepository.findByQuestionAndActiveTrueOrderByOrderIndexAsc(question);
+        if (!existing.isEmpty()) {
+            optionRepository.deleteAll(existing);
         }
     }
 
@@ -1235,6 +2243,8 @@ public class EvaluationService {
                 question.getPoints(),
                 question.getOrderIndex(),
                 question.getExplanation(),
+                question.getExpectedAnswer(),
+                question.getRequired(),
                 options
         );
     }
@@ -1378,6 +2388,7 @@ public class EvaluationService {
                 question.getQuestionType(),
                 question.getPoints(),
                 question.getOrderIndex(),
+                question.getRequired(),
                 options
         );
     }
@@ -1389,7 +2400,9 @@ public class EvaluationService {
                         .map(a -> new EvaluationAnswerResponse(
                                 a.getId(),
                                 a.getQuestion().getId(),
+                                a.getQuestion().getQuestionType(),
                                 a.getSelectedOption() == null ? null : a.getSelectedOption().getId(),
+                                a.getAnswerText(),
                                 a.getCorrect(),
                                 a.getPointsAwarded(),
                                 a.getAnsweredAt()))

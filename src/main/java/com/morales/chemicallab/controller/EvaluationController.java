@@ -138,6 +138,92 @@ public class EvaluationController {
         return evaluationService.getTeacherAttemptResult(authentication.getName(), attemptId);
     }
 
+    /**
+     * Trazabilidad del intento para el docente: resumen (tiempo usado, estado final,
+     * salidas/regresos de pestaña, intentos de salida, herramientas consultadas) y línea
+     * de tiempo de eventos. El docente solo puede consultar intentos de sus propias
+     * evaluaciones; nunca se exponen respuestas ni claves.
+     */
+    @GetMapping("/teacher/attempts/{attemptId}/traceability")
+    public AttemptTraceabilityResponse verTrazabilidadIntento(
+            Authentication authentication,
+            @PathVariable Long attemptId) {
+        return evaluationService.getAttemptTraceability(authentication.getName(), attemptId);
+    }
+
+    // =========================================================================
+    // DOCENTE — revisión manual de preguntas abiertas
+    // =========================================================================
+
+    /** Bandeja de intentos del docente pendientes de revisión manual. */
+    @GetMapping("/teacher/manual-review")
+    public List<PendingReviewAttemptResponse> listarPendientesRevision(Authentication authentication) {
+        return evaluationService.listPendingManualReview(authentication.getName());
+    }
+
+    /** Detalle de un intento para revisar sus respuestas abiertas. */
+    @GetMapping("/teacher/attempts/{attemptId}/review")
+    public TeacherAttemptReviewResponse verRevisionIntento(
+            Authentication authentication,
+            @PathVariable Long attemptId) {
+        return evaluationService.getAttemptReview(authentication.getName(), attemptId);
+    }
+
+    /** Asigna puntaje y retroalimentación a una respuesta abierta. */
+    @PatchMapping("/teacher/attempts/{attemptId}/answers/{answerId}/manual-grade")
+    public TeacherAttemptReviewResponse calificarRespuestaAbierta(
+            Authentication authentication,
+            @PathVariable Long attemptId,
+            @PathVariable Long answerId,
+            @Valid @RequestBody ManualGradeRequest request) {
+        return evaluationService.manualGradeAnswer(authentication.getName(), attemptId, answerId, request);
+    }
+
+    /** Cierra la revisión de un intento y recalcula su nota final. */
+    @PatchMapping("/teacher/attempts/{attemptId}/complete-review")
+    public TeacherAttemptReviewResponse completarRevisionIntento(
+            Authentication authentication,
+            @PathVariable Long attemptId) {
+        return evaluationService.completeReview(authentication.getName(), attemptId);
+    }
+
+    /** Agrega un ajuste manual de puntaje (bonificación o penalización) al intento. */
+    @PostMapping("/teacher/attempts/{attemptId}/adjustments")
+    public ResponseEntity<TeacherAttemptReviewResponse> agregarAjuste(
+            Authentication authentication,
+            @PathVariable Long attemptId,
+            @Valid @RequestBody CreateAdjustmentRequest request) {
+        TeacherAttemptReviewResponse response =
+                evaluationService.addAdjustment(authentication.getName(), attemptId, request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    /** Anula un ajuste manual de puntaje previamente aplicado al intento. */
+    @DeleteMapping("/teacher/attempts/{attemptId}/adjustments/{adjustmentId}")
+    public TeacherAttemptReviewResponse anularAjuste(
+            Authentication authentication,
+            @PathVariable Long attemptId,
+            @PathVariable Long adjustmentId) {
+        return evaluationService.deleteAdjustment(authentication.getName(), attemptId, adjustmentId);
+    }
+
+    /** Guarda la retroalimentación general del intento para el estudiante. */
+    @PatchMapping("/teacher/attempts/{attemptId}/feedback")
+    public TeacherAttemptReviewResponse actualizarRetroalimentacion(
+            Authentication authentication,
+            @PathVariable Long attemptId,
+            @Valid @RequestBody UpdateAttemptFeedbackRequest request) {
+        return evaluationService.updateOverallFeedback(authentication.getName(), attemptId, request);
+    }
+
+    /** Cierra la calificación del intento: fija la nota final y la deja visible al estudiante. */
+    @PatchMapping("/teacher/attempts/{attemptId}/close-grade")
+    public TeacherAttemptReviewResponse cerrarCalificacion(
+            Authentication authentication,
+            @PathVariable Long attemptId) {
+        return evaluationService.closeGrade(authentication.getName(), attemptId);
+    }
+
     // =========================================================================
     // ESTUDIANTE
     // =========================================================================

@@ -41,11 +41,35 @@ public enum LogEventType {
     EVALUATION_PUBLISHED(LogCategory.EVALUATION),
     EVALUATION_ARCHIVED(LogCategory.EVALUATION),
     EVALUATION_ASSIGNED(LogCategory.EVALUATION),
+    // El docente creó o editó una pregunta abierta (revisión manual).
+    EVALUATION_OPEN_QUESTION_SAVED(LogCategory.EVALUATION),
     EVALUATION_ATTEMPT_STARTED(LogCategory.EVALUATION),
     EVALUATION_ATTEMPT_SUBMITTED(LogCategory.EVALUATION),
+    // El intento quedó pendiente de revisión manual por contener preguntas abiertas.
+    EVALUATION_ATTEMPT_PENDING_REVIEW(LogCategory.EVALUATION),
+    // El docente revisó/calificó manualmente una respuesta abierta.
+    EVALUATION_ANSWER_REVIEWED(LogCategory.EVALUATION),
+    // Se completó la revisión manual de un intento y se recalculó la nota final.
+    EVALUATION_REVIEW_COMPLETED(LogCategory.EVALUATION),
+    // El docente agregó un ajuste manual de puntaje (bonificación o penalización) al intento.
+    EVALUATION_ADJUSTMENT_ADDED(LogCategory.EVALUATION),
+    // El docente anuló un ajuste manual de puntaje previamente aplicado.
+    EVALUATION_ADJUSTMENT_REMOVED(LogCategory.EVALUATION),
+    // El docente agregó o actualizó la retroalimentación general de un intento.
+    EVALUATION_FEEDBACK_UPDATED(LogCategory.EVALUATION),
+    // El docente cerró la calificación de un intento (nota final visible para el estudiante).
+    EVALUATION_GRADE_CLOSED(LogCategory.EVALUATION),
 
     // Resultados
     RESULT_VIEWED(LogCategory.RESULTS),
+
+    // Pizarra interactiva en vivo
+    WHITEBOARD_SESSION_CREATED(LogCategory.WHITEBOARD),
+    WHITEBOARD_SESSION_PAUSED(LogCategory.WHITEBOARD),
+    WHITEBOARD_SESSION_RESUMED(LogCategory.WHITEBOARD),
+    WHITEBOARD_SESSION_CLOSED(LogCategory.WHITEBOARD),
+    WHITEBOARD_INTERACTION_UPDATED(LogCategory.WHITEBOARD),
+    WHITEBOARD_PARTICIPANT_INTERACTION_UPDATED(LogCategory.WHITEBOARD),
 
     // Sistema / administración
     SYSTEM_HEALTH_CHECK(LogCategory.SYSTEM),

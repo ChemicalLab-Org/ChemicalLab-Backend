@@ -1,6 +1,7 @@
 package com.morales.chemicallab.repository;
 
 import com.morales.chemicallab.entity.LogCategory;
+import com.morales.chemicallab.entity.LogEventType;
 import com.morales.chemicallab.entity.LogSeverity;
 import com.morales.chemicallab.entity.SystemLog;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -23,4 +24,6 @@ public interface SystemLogRepository
     long countBySeverity(LogSeverity severity);
 
     long countByCategory(LogCategory category);
+
+    long countByEventType(LogEventType eventType);
 }
