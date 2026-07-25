@@ -234,16 +234,16 @@ class AdminServiceTest {
 
     @Test
     void createUser_administrador_generaContrasenaTemporalYNoExponeHash() {
-        when(userAccountRepository.existsByUsername("nuevo.admin")).thenReturn(false);
+        when(userAccountRepository.existsByUsername("nuevoadmin")).thenReturn(false);
         when(passwordEncoder.encode(anyString())).thenReturn("HASH");
 
         CreateUserRequest request = new CreateUserRequest(
-                Role.ADMINISTRADOR, null, null, "nuevo.admin", null, null, null, null, null);
+                Role.ADMINISTRADOR, null, null, "nuevoadmin", null, null, null, null, null);
 
         AdminUserCreatedResponse response = service.createUser(request);
 
         assertThat(response.user().role()).isEqualTo(Role.ADMINISTRADOR);
-        assertThat(response.user().username()).isEqualTo("nuevo.admin");
+        assertThat(response.user().username()).isEqualTo("nuevoadmin");
         assertThat(response.temporaryPassword()).isNotBlank();
 
         ArgumentCaptor<UserAccount> saved = ArgumentCaptor.forClass(UserAccount.class);
@@ -256,13 +256,13 @@ class AdminServiceTest {
 
     @Test
     void createUser_docente_creaCuentaYPerfil() {
-        when(userAccountRepository.existsByUsername("pedro.m")).thenReturn(false);
+        when(userAccountRepository.existsByUsername("pedrom")).thenReturn(false);
         when(passwordEncoder.encode(anyString())).thenReturn("HASH");
         when(teacherProfileRepository.findByUser(any()))
                 .thenReturn(Optional.of(teacher(2L, "Pedro", "Martínez")));
 
         CreateUserRequest request = new CreateUserRequest(
-                Role.DOCENTE, "Pedro", "Martínez", "pedro.m", null, null, null, null, null);
+                Role.DOCENTE, "Pedro", "Martínez", "pedrom", null, null, null, null, null);
 
         AdminUserCreatedResponse response = service.createUser(request);
 

@@ -1,6 +1,7 @@
 package com.morales.chemicallab.dto;
 
 import com.morales.chemicallab.entity.Role;
+import com.morales.chemicallab.validation.InputValidation;
 import jakarta.validation.constraints.*;
 
 /**
@@ -27,12 +28,18 @@ public record CreateUserRequest(
         Role role,
 
         @Size(max = 100, message = "El nombre no puede superar 100 caracteres")
+        @Pattern(regexp = InputValidation.PERSON_NAME_REQUEST_REGEX,
+                message = "El nombre solo puede contener letras, espacios, apóstrofes y guiones")
         String names,
 
         @Size(max = 100, message = "Los apellidos no pueden superar 100 caracteres")
+        @Pattern(regexp = InputValidation.PERSON_NAME_REQUEST_REGEX,
+                message = "Los apellidos solo pueden contener letras, espacios, apóstrofes y guiones")
         String lastNames,
 
-        @Size(max = 50, message = "El nombre de usuario no puede superar 50 caracteres")
+        @Size(min = 4, max = 50, message = "El nombre de usuario debe tener entre 4 y 50 caracteres")
+        @Pattern(regexp = InputValidation.INSTITUTIONAL_IDENTIFIER_REQUEST_REGEX,
+                message = "El nombre de usuario solo puede contener letras y números")
         String username,
 
         @Email(message = "El correo no tiene un formato válido")
@@ -46,6 +53,8 @@ public record CreateUserRequest(
         String section,
 
         @Size(max = 20, message = "El código de estudiante no puede superar 20 caracteres")
+        @Pattern(regexp = InputValidation.OPTIONAL_INSTITUTIONAL_IDENTIFIER_REQUEST_REGEX,
+                message = "El código de estudiante solo puede contener letras y números")
         String studentCode,
 
         Long teacherUserId
