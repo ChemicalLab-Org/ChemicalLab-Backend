@@ -7,6 +7,7 @@ import com.morales.chemicallab.repository.TeacherProfileRepository;
 import com.morales.chemicallab.repository.UserAccountRepository;
 import com.morales.chemicallab.repository.WhiteboardParticipantRepository;
 import com.morales.chemicallab.repository.WhiteboardSessionRepository;
+import com.morales.chemicallab.validation.InputValidation;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -75,10 +76,7 @@ public class WhiteboardSessionService {
     public WhiteboardSessionResponse createSession(String username, WhiteboardSessionCreateRequest request) {
         TeacherProfile teacher = requireTeacher(username);
 
-        String name = request.name() == null ? "" : request.name().trim();
-        if (name.isEmpty()) {
-            throw new IllegalArgumentException("El nombre de la sesión es obligatorio.");
-        }
+        String name = InputValidation.requireWhiteboardTitle(request.name());
         String grade = StudentValidation.normalizedGrade(request.grade());
         String section = StudentValidation.normalizedSection(request.section());
 

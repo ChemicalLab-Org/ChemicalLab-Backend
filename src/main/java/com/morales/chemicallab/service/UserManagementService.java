@@ -3,6 +3,7 @@ package com.morales.chemicallab.service;
 import com.morales.chemicallab.dto.*;
 import com.morales.chemicallab.entity.*;
 import com.morales.chemicallab.repository.*;
+import com.morales.chemicallab.validation.InputValidation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -33,18 +34,25 @@ public class UserManagementService {
     // =========================================================================
 
     public TeacherResponse createTeacher(CreateTeacherRequest request) {
-        if (userAccountRepository.existsByUsername(request.username())) {
+        String names = InputValidation.requirePersonName(request.names(), "nombres");
+        String lastNames = InputValidation.requirePersonName(request.lastNames(), "apellidos");
+        String username = InputValidation.requireInstitutionalIdentifier(
+                request.username(), "nombre de usuario", 4, 50, false);
+        String email = request.email() != null && !request.email().isBlank()
+                ? request.email().trim() : null;
+
+        if (userAccountRepository.existsByUsername(username)) {
             throw new IllegalArgumentException("El nombre de usuario ya está registrado.");
         }
-        if (request.email() != null && !request.email().isBlank()) {
-            if (userAccountRepository.existsByEmail(request.email())) {
+        if (email != null) {
+            if (userAccountRepository.existsByEmail(email)) {
                 throw new IllegalArgumentException("El correo ya está registrado.");
             }
         }
 
         UserAccount user = UserAccount.builder()
-                .username(request.username())
-                .email(request.email() != null && !request.email().isBlank() ? request.email() : null)
+                .username(username)
+                .email(email)
                 .password(passwordEncoder.encode(request.temporaryPassword()))
                 .role(Role.DOCENTE)
                 .active(true)
@@ -55,8 +63,8 @@ public class UserManagementService {
 
         TeacherProfile teacher = TeacherProfile.builder()
                 .user(user)
-                .names(request.names())
-                .lastNames(request.lastNames())
+                .names(names)
+                .lastNames(lastNames)
                 .build();
 
         teacherProfileRepository.save(teacher);
@@ -132,14 +140,17 @@ public class UserManagementService {
         validateAuthenticatedTeacher(teacherUserId);
         TeacherProfile teacher = findTeacherProfileByUserId(teacherUserId);
 
+        String names = InputValidation.requirePersonName(request.names(), "nombres");
+        String lastNames = InputValidation.requirePersonName(request.lastNames(), "apellidos");
         String grade = StudentValidation.normalizedGrade(request.grade());
         String section = StudentValidation.normalizedSection(request.section());
 
+        String requestedCode = InputValidation.normalizeOptionalStudentCode(request.studentCode());
         String studentCode;
-        if (request.studentCode() == null || request.studentCode().isBlank()) {
+        if (requestedCode == null) {
             studentCode = generateStudentCode();
         } else {
-            studentCode = normalizeStudentCode(request.studentCode());
+            studentCode = requestedCode;
             if (studentProfileRepository.existsByStudentCode(studentCode)) {
                 throw new IllegalArgumentException("El código de estudiante ya está registrado.");
             }
@@ -163,8 +174,8 @@ public class UserManagementService {
                 .user(user)
                 .teacher(teacher)
                 .studentCode(studentCode)
-                .names(request.names())
-                .lastNames(request.lastNames())
+                .names(names)
+                .lastNames(lastNames)
                 .grade(grade)
                 .section(section)
                 .build();
@@ -199,8 +210,8 @@ public class UserManagementService {
 
         // Se calculan los campos modificados ANTES de aplicar los cambios. Solo se guarda
         // el nombre del campo, nunca el valor anterior ni el nuevo, para no exponer datos.
-        String newNames = request.names();
-        String newLastNames = request.lastNames();
+        String newNames = InputValidation.requirePersonName(request.names(), "nombres");
+        String newLastNames = InputValidation.requirePersonName(request.lastNames(), "apellidos");
         String newGrade = StudentValidation.normalizedGrade(request.grade());
         String newSection = StudentValidation.normalizedSection(request.section());
 
@@ -218,10 +229,13 @@ public class UserManagementService {
         student.getUser().setActive(request.active());
 
         if (request.studentCode() != null && !request.studentCode().isBlank()) {
-            String newCode = normalizeStudentCode(request.studentCode());
+            String newCode = InputValidation.normalizeOptionalStudentCode(request.studentCode());
             if (!newCode.equals(student.getStudentCode())) {
                 if (studentProfileRepository.existsByStudentCode(newCode)) {
                     throw new IllegalArgumentException("El código de estudiante ya está registrado.");
+                }
+                if (userAccountRepository.existsByUsername(newCode)) {
+                    throw new IllegalArgumentException("El nombre de usuario ya está registrado.");
                 }
                 student.setStudentCode(newCode);
                 student.getUser().setUsername(newCode);
@@ -463,7 +477,4 @@ public class UserManagementService {
         return String.format("EST%04d", max + 1);
     }
 
-    private String normalizeStudentCode(String studentCode) {
-        return studentCode.trim().toUpperCase();
-    }
 }

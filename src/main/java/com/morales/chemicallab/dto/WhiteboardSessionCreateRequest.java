@@ -1,6 +1,8 @@
 package com.morales.chemicallab.dto;
 
+import com.morales.chemicallab.validation.InputValidation;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -11,6 +13,8 @@ import jakarta.validation.constraints.Size;
 public record WhiteboardSessionCreateRequest(
         @NotBlank(message = "El nombre de la sesión es obligatorio.")
         @Size(max = 150, message = "El nombre no puede superar 150 caracteres.")
+        @Pattern(regexp = InputValidation.WHITEBOARD_TITLE_REQUEST_REGEX,
+                message = "El nombre de la sesión solo puede contener letras, números y espacios.")
         String name,
 
         @Size(max = 1000, message = "La descripción no puede superar 1000 caracteres.")
