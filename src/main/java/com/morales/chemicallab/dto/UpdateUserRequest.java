@@ -1,5 +1,6 @@
 package com.morales.chemicallab.dto;
 
+import com.morales.chemicallab.validation.InputValidation;
 import jakarta.validation.constraints.*;
 
 /**
@@ -21,9 +22,13 @@ import jakarta.validation.constraints.*;
 public record UpdateUserRequest(
 
         @Size(max = 100, message = "El nombre no puede superar 100 caracteres")
+        @Pattern(regexp = InputValidation.PERSON_NAME_REQUEST_REGEX,
+                message = "El nombre solo puede contener letras, espacios, apóstrofes y guiones")
         String names,
 
         @Size(max = 100, message = "Los apellidos no pueden superar 100 caracteres")
+        @Pattern(regexp = InputValidation.PERSON_NAME_REQUEST_REGEX,
+                message = "Los apellidos solo pueden contener letras, espacios, apóstrofes y guiones")
         String lastNames,
 
         @Email(message = "El correo no tiene un formato válido")

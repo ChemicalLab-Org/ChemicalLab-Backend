@@ -122,6 +122,17 @@ class WhiteboardSessionServiceTest {
     }
 
     @Test
+    void rechazaCaracteresEspecialesEnNombre() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        stubTeacher(docente);
+
+        assertThatThrownBy(() -> service.createSession("docente1",
+                new WhiteboardSessionCreateRequest("Clase #1", null, "3", "A")))
+                .hasMessageContaining("letras, números y espacios");
+        verify(sessionRepository, never()).save(any());
+    }
+
+    @Test
     void rechazaGradoInvalido() {
         TeacherProfile docente = teacher(1L, "docente1");
         stubTeacher(docente);

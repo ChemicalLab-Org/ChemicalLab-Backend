@@ -11,6 +11,7 @@ import com.morales.chemicallab.dto.TeacherOptionResponse;
 import com.morales.chemicallab.dto.UpdateUserRequest;
 import com.morales.chemicallab.entity.*;
 import com.morales.chemicallab.repository.*;
+import com.morales.chemicallab.validation.InputValidation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -175,7 +176,8 @@ public class AdminService {
     }
 
     private UserAccount createAdministrator(CreateUserRequest request, String encodedPassword) {
-        String username = requireText(request.username(), "El nombre de usuario es obligatorio.");
+        String username = InputValidation.requireInstitutionalIdentifier(
+                request.username(), "nombre de usuario", 4, 50, false);
         String email = normalizeEmail(request.email());
         validateUsernameAvailable(username);
         validateEmailAvailable(email, null);
@@ -198,9 +200,10 @@ public class AdminService {
     }
 
     private UserAccount createTeacher(CreateUserRequest request, String encodedPassword) {
-        String names = requireText(request.names(), "El nombre es obligatorio.");
-        String lastNames = requireText(request.lastNames(), "Los apellidos son obligatorios.");
-        String username = requireText(request.username(), "El nombre de usuario es obligatorio.");
+        String names = InputValidation.requirePersonName(request.names(), "nombres");
+        String lastNames = InputValidation.requirePersonName(request.lastNames(), "apellidos");
+        String username = InputValidation.requireInstitutionalIdentifier(
+                request.username(), "nombre de usuario", 4, 50, false);
         String email = normalizeEmail(request.email());
         validateUsernameAvailable(username);
         validateEmailAvailable(email, null);
@@ -229,17 +232,18 @@ public class AdminService {
     }
 
     private UserAccount createStudent(CreateUserRequest request, String encodedPassword) {
-        String names = requireText(request.names(), "El nombre es obligatorio.");
-        String lastNames = requireText(request.lastNames(), "Los apellidos son obligatorios.");
+        String names = InputValidation.requirePersonName(request.names(), "nombres");
+        String lastNames = InputValidation.requirePersonName(request.lastNames(), "apellidos");
         String grade = StudentValidation.normalizedGrade(request.grade());
         String section = StudentValidation.normalizedSection(request.section());
         TeacherProfile teacher = resolveActiveTeacher(request.teacherUserId());
 
+        String requestedCode = InputValidation.normalizeOptionalStudentCode(request.studentCode());
         String studentCode;
-        if (request.studentCode() == null || request.studentCode().isBlank()) {
+        if (requestedCode == null) {
             studentCode = generateStudentCode();
         } else {
-            studentCode = request.studentCode().trim().toUpperCase();
+            studentCode = requestedCode;
             if (studentProfileRepository.existsByStudentCode(studentCode)) {
                 throw new IllegalArgumentException("El código de estudiante ya está registrado.");
             }
@@ -292,8 +296,8 @@ public class AdminService {
                 user.setEmail(newEmail);
             }
             case DOCENTE -> {
-                String names = requireText(request.names(), "El nombre es obligatorio.");
-                String lastNames = requireText(request.lastNames(), "Los apellidos son obligatorios.");
+                String names = InputValidation.requirePersonName(request.names(), "nombres");
+                String lastNames = InputValidation.requirePersonName(request.lastNames(), "apellidos");
                 TeacherProfile teacher = teacherProfileRepository.findByUser(user)
                         .orElseThrow(() -> new IllegalArgumentException("Perfil de docente no encontrado."));
                 if (!Objects.equals(teacher.getNames(), names)) changedFields.add("nombres");
@@ -306,8 +310,8 @@ public class AdminService {
                 teacherProfileRepository.save(teacher);
             }
             case ESTUDIANTE -> {
-                String names = requireText(request.names(), "El nombre es obligatorio.");
-                String lastNames = requireText(request.lastNames(), "Los apellidos son obligatorios.");
+                String names = InputValidation.requirePersonName(request.names(), "nombres");
+                String lastNames = InputValidation.requirePersonName(request.lastNames(), "apellidos");
                 String grade = StudentValidation.normalizedGrade(request.grade());
                 String section = StudentValidation.normalizedSection(request.section());
                 StudentProfile student = studentProfileRepository.findByUser_Id(user.getId())
@@ -526,14 +530,6 @@ public class AdminService {
         return userAccountRepository.findByUsername(authentication.getName())
                 .map(UserAccount::getId)
                 .orElse(null);
-    }
-
-    /** Exige que un campo de texto obligatorio tenga contenido; devuelve el valor recortado. */
-    private String requireText(String value, String message) {
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException(message);
-        }
-        return value.trim();
     }
 
     /** Normaliza el correo: {@code null} si viene vacío, recortado en caso contrario. */
