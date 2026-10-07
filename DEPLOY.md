@@ -30,7 +30,7 @@ para desplegar: basta con configurar las variables en Render.
 2. Rama: la que quieras desplegar (normalmente `develop` o `main`).
 3. Runtime: **Docker** no es necesario; usa el entorno **Java**. Configura:
    - **Build Command:** `./mvnw clean package -DskipTests`
-   - **Start Command:** `java -jar target/*.jar`
+   - **Start Command:** `java -jar target/*.jar --spring.profiles.active=prod`
 4. Plan: **Free**.
 
 > Render inyecta automáticamente la variable `PORT`; la app ya la lee con
@@ -44,6 +44,7 @@ Configúralas en **Environment** del Web Service:
 
 | Variable | Descripción | Ejemplo / valor |
 |---|---|---|
+| `SPRING_PROFILES_ACTIVE` | Perfil obligatorio de despliegue | `prod` |
 | `SPRING_DATASOURCE_URL` | URL JDBC de PostgreSQL | `jdbc:postgresql://HOST:5432/NOMBRE_BD` |
 | `SPRING_DATASOURCE_USERNAME` | Usuario de la base de datos | (del panel de Render) |
 | `SPRING_DATASOURCE_PASSWORD` | Contraseña de la base de datos | (del panel de Render) |
@@ -52,9 +53,6 @@ Configúralas en **Environment** del Web Service:
 | `APP_JWT_SECRET` | Clave JWT en **Base64** (≥ 32 bytes decodificados) | generar una nueva (ver abajo) |
 | `APP_JWT_EXPIRATION_MS` | Expiración del token en ms | `86400000` (1 día) |
 | `APP_CORS_ALLOWED_ORIGINS` | Orígenes del frontend, separados por comas | `https://chemicallab.vercel.app` |
-| `ADMIN_INITIAL_PASSWORD` | Contraseña inicial del admin | (elige una segura) |
-| `TEACHER_INITIAL_PASSWORD` | Contraseña inicial del docente demo | (elige una segura) |
-| `STUDENT_INITIAL_PASSWORD` | Contraseña inicial del estudiante demo | (elige una segura) |
 
 **Notas:**
 
@@ -64,7 +62,7 @@ Configúralas en **Environment** del Web Service:
   `create` en despliegue (recrearía las tablas en cada arranque). El valor `create` solo es
   útil en desarrollo local si quieres reiniciar el esquema.
 - Generar una clave JWT Base64 nueva:
-  - PowerShell: `[Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes("una-frase-larga-de-al-menos-32-caracteres"))`
+  - PowerShell: usar `RandomNumberGenerator` según [configuración segura](docs/configuracion-segura.md).
   - OpenSSL: `openssl rand -base64 64`
 - `APP_CORS_ALLOWED_ORIGINS` admite varios orígenes separados por comas, por ejemplo:
   `https://chemicallab.vercel.app,http://localhost:4200`.
@@ -142,28 +140,32 @@ peticiones por CORS.
 
 ---
 
-## 8. Usuarios iniciales de demo
+## 8. Primer administrador y cuentas demo
 
-El seeder (`AdminSeeder`) crea estos usuarios al arrancar **solo si no existen** (no duplica
-datos). Las contraseñas se toman de las variables de entorno indicadas arriba; si no se
-definen, usa contraseñas de desarrollo por defecto.
+No se crean cuentas por defecto. El perfil `prod` rechaza la clave JWT pública de
+desarrollo, exige conexión PostgreSQL externa y bloquea demos incluso con
+`APP_DEMO_ENABLED=true`. Sin perfil explícito también se aplica producción.
 
-| Usuario | Rol | Username | Contraseña | Variable de entorno |
-|---|---|---|---|---|
-| Administrador | ADMINISTRADOR | `admin` | (la que definas) | `ADMIN_INITIAL_PASSWORD` |
-| Docente demo | DOCENTE | `docente` | (la que definas) | `TEACHER_INITIAL_PASSWORD` |
-| Estudiante demo | ESTUDIANTE | `EST0001` | (la que definas) | `STUDENT_INITIAL_PASSWORD` |
+El primer administrador requiere `APP_BOOTSTRAP_ADMIN_ENABLED=true`,
+`APP_BOOTSTRAP_ADMIN_USERNAME` y `APP_BOOTSTRAP_ADMIN_PASSWORD` externos, sin valores
+predeterminados; `APP_BOOTSTRAP_ADMIN_EMAIL` es opcional. Tras crearlo, deshabilite
+la opción y retire esas credenciales. Si ya existe cualquier administrador, no crea
+otro ni sobrescribe su contraseña. Se conserva `temporaryPassword=true` y el flujo
+actual de cambio; su cumplimiento central en la API es T02.
 
-Los tres se crean con `temporaryPassword=true`: en el primer inicio de sesión el sistema
-pedirá cambiar la contraseña.
+Las demos `docente` y `EST0001` solo se crean bajo `dev`/`test` con
+`APP_DEMO_ENABLED=true`. Deshabilitarlo conserva cuentas y perfiles existentes.
 
-Prueba el login (POST `/api/auth/login`) con cada uno para confirmar que el despliegue y la
-base de datos funcionan correctamente.
-
----
+Procedimientos completos de bootstrap, inventario previo de cuentas demo, generación
+criptográfica/rotación de JWT y pruebas aisladas:
+[configuración segura](docs/configuracion-segura.md).
 
 ## Resumen de comprobaciones
 
-1. `GET /api/health` responde 200.
-2. Login de `admin`, `docente` y `EST0001` funciona.
-3. El frontend desplegado puede comunicarse con el backend (sin errores de CORS).
+1. Seleccione `prod` y configure JWT y DB externos; el arranque debe fallar si faltan.
+2. Confirme `GET /api/health`, perfil y versión de configuración sin mostrar secretos.
+3. Cree el primer administrador solo mediante el bootstrap explícito, retírelo y cambie la contraseña temporal.
+4. Verifique CORS y la comunicación del frontend. No utilice demos en producción.
+
+La aplicación conserva `ddl-auto=update`; esto no sustituye migraciones versionadas,
+backup/restauración ni una revisión de infraestructura. Esta tarea no realiza despliegues.

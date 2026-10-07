@@ -78,14 +78,14 @@ los valores versionados por defecto y sumar la configuracion local no versionada
 
 ```powershell
 cd C:\ChemicalLab\backend
-java -jar .\chemical-lab-backend.jar --spring.config.additional-location=file:C:/ChemicalLab/config/application-test.properties
+java -jar .\chemical-lab-backend.jar --spring.profiles.active=test --spring.config.additional-location=file:C:/ChemicalLab/config/application-test.properties
 ```
 
 Para despliegue final:
 
 ```powershell
 cd C:\ChemicalLab\backend
-java -jar .\chemical-lab-backend.jar --spring.config.additional-location=file:C:/ChemicalLab/config/application-prod.properties
+java -jar .\chemical-lab-backend.jar --spring.profiles.active=prod --spring.config.additional-location=file:C:/ChemicalLab/config/application-prod.properties
 ```
 
 ### `C:\ChemicalLab\config\application-test.properties`
@@ -138,14 +138,18 @@ app.jwt.expiration-ms=86400000
 app.cors.allowed-origins=http://localhost,http://127.0.0.1,http://192.168.18.147,http://chemicallab
 ```
 
-Las claves iniciales del administrador, docente demo y estudiante demo no deben ponerse en
-el repositorio. Definirlas como variables de entorno de Windows antes de iniciar el backend:
+Las cuentas demo están deshabilitadas por defecto y bloqueadas en `prod`. No se crea
+un administrador automáticamente. Para una base nueva, habilite explícitamente
+`APP_BOOTSTRAP_ADMIN_ENABLED=true` y proporcione `APP_BOOTSTRAP_ADMIN_USERNAME` y
+`APP_BOOTSTRAP_ADMIN_PASSWORD` externos. `APP_BOOTSTRAP_ADMIN_EMAIL` es opcional.
+Después del primer arranque, deshabilite la opción y retire las credenciales; inicie
+sesión y cambie la contraseña temporal. Si ya hay un administrador, no cree otro ni
+altere su contraseña mediante el bootstrap.
 
-```powershell
-$env:ADMIN_INITIAL_PASSWORD="<ADMIN_INITIAL_PASSWORD>"
-$env:TEACHER_INITIAL_PASSWORD="<TEACHER_INITIAL_PASSWORD>"
-$env:STUDENT_INITIAL_PASSWORD="<STUDENT_INITIAL_PASSWORD>"
-```
+Vea [configuración segura](configuracion-segura.md) para perfiles, variables, validaciones,
+inventario previo de demos, rotación y pruebas con PostgreSQL desechable. El nombre
+`application-test.properties` no activa un perfil; los comandos anteriores lo indican.
+No use la base del colegio para las pruebas de esta entrega.
 
 ## Configuracion Nginx recomendada
 

@@ -1,11 +1,12 @@
 package com.morales.chemicallab.security;
 
 import com.morales.chemicallab.entity.UserAccount;
+import com.morales.chemicallab.config.RuntimeEnvironment;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
@@ -18,34 +19,15 @@ import java.util.function.Function;
 @Service
 public class JwtService {
 
-    // HS256 requiere al menos 32 bytes (256 bits) de material de clave
-    private static final int MIN_KEY_BYTES = 32;
-
     private final SecretKey signingKey;
     private final long expirationMs;
 
     public JwtService(
             @Value("${app.jwt.secret}") String secret,
-            @Value("${app.jwt.expiration-ms}") long expirationMs
+            @Value("${app.jwt.expiration-ms}") long expirationMs,
+            Environment environment
     ) {
-        // app.jwt.secret DEBE estar codificado en Base64 (estandar). Caracteres no validos como '_' o '-' fallan al decodificar.
-        byte[] keyBytes;
-        try {
-            keyBytes = Decoders.BASE64.decode(secret);
-        } catch (io.jsonwebtoken.io.DecodingException | IllegalArgumentException ex) {
-            throw new IllegalStateException(
-                    "La propiedad app.jwt.secret debe estar codificada en Base64 estandar (A-Z, a-z, 0-9, +, /, =). " +
-                            "Generala con: openssl rand -base64 64  o  [Convert]::ToBase64String((1..64|%{Get-Random -Maximum 256}))",
-                    ex
-            );
-        }
-
-        if (keyBytes.length < MIN_KEY_BYTES) {
-            throw new IllegalStateException(
-                    "La clave decodificada de app.jwt.secret tiene " + keyBytes.length + " bytes; HS256 requiere al menos " + MIN_KEY_BYTES + " bytes."
-            );
-        }
-
+        byte[] keyBytes = JwtKeyValidator.validate(secret, RuntimeEnvironment.from(environment) == RuntimeEnvironment.PROD);
         this.signingKey = Keys.hmacShaKeyFor(keyBytes);
         this.expirationMs = expirationMs;
     }
