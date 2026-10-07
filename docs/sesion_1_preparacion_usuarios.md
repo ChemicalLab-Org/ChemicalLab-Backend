@@ -279,9 +279,9 @@ El motor químico existente (`/api/chemistry/**`) es completamente independiente
 ## 9. Checklist para Continuar con la Sesión 2
 
 - [ ] Verificar que la base de datos `lab_quimico_db` existe en PostgreSQL local
-- [ ] Ejecutar `./mvnw spring-boot:run` y confirmar que el backend inicia sin errores
+- [ ] Ejecutar `./mvnw spring-boot:run -Dspring-boot.run.profiles=dev` (base ficticia; para colegio usar `prod` y la [configuración segura](configuracion-segura.md)) y confirmar que el backend inicia sin errores
 - [ ] Verificar `GET http://localhost:8080/api/health` retorna `{"status": "OK"}`
-- [ ] Confirmar que las dependencias de prueba resuelven con `./mvnw test`
+- [ ] Ejecutar las pruebas con perfil `test` y PostgreSQL desechable según la [configuración segura](configuracion-segura.md); no usar la base del colegio
 - [ ] Revisar este documento antes de iniciar la Sesión 2
 - [ ] Crear entidad `Usuario` con el diseño definido en la sección 5
 - [ ] Crear enum `Rol`

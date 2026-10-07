@@ -11,40 +11,25 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
+import org.springframework.core.annotation.Order;
+import org.springframework.core.env.Environment;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Crea los usuarios iniciales si no existen al arrancar la aplicación.
- *
- * Usuarios creados:
- *   - Administrador (admin)
- *   - Docente de prueba (docente) — solo para desarrollo
- *   - Estudiante de prueba (EST0001) asociado al docente — solo para desarrollo
- *
- * Contraseñas iniciales:
- *   - Se leen de variables de entorno (ADMIN_INITIAL_PASSWORD, TEACHER_INITIAL_PASSWORD,
- *     STUDENT_INITIAL_PASSWORD).
- *   - Si no están definidas, se usan los fallbacks de desarrollo.
- *   - Para producción, definir siempre las variables de entorno correspondientes.
- *
- * Cambiar la contraseña tras el primer inicio:
- *   1. Iniciar sesión con el username y la contraseña inicial.
- *   2. El campo temporaryPassword=true forzará la pantalla de cambio de contraseña.
- *   3. Seguir el flujo de cambio de contraseña temporal.
- *
- * El docente y el estudiante de prueba existen para facilitar las pruebas en desarrollo
- * (la base de datos se recrea en cada arranque por ddl-auto=create). No deben usarse en producción.
+ * Datos ficticios únicamente con app.demo.enabled=true y perfil dev/test.
+ * Nunca modifica cuentas/perfiles encontrados; no crea administradores.
  */
 @Slf4j
 @Component
+@Profile("!prod & (dev | test)")
+@ConditionalOnProperty(name = "app.demo.enabled", havingValue = "true")
+@Order(3)
 @RequiredArgsConstructor
-public class AdminSeeder implements ApplicationRunner {
-
-    private static final String ADMIN_USERNAME = "admin";
-    private static final String ADMIN_EMAIL = "admin@chemicallab.local";
-    // Fallback solo para desarrollo local — nunca usar en producción
-    private static final String ADMIN_DEV_FALLBACK_PASSWORD = "Admin123*";
+public class DemoAccountSeeder implements ApplicationRunner {
 
     private static final String TEACHER_USERNAME = "docente";
     private static final String TEACHER_EMAIL = "docente@chemicallab.local";
@@ -57,43 +42,17 @@ public class AdminSeeder implements ApplicationRunner {
     private final TeacherProfileRepository teacherProfileRepository;
     private final StudentProfileRepository studentProfileRepository;
     private final PasswordEncoder passwordEncoder;
+    private final Environment environment;
 
     @Override
+    @Transactional
     public void run(ApplicationArguments args) {
-        seedAdmin();
-        TeacherProfile teacher = seedTeacher();
-        seedStudent(teacher);
-    }
-
-    // =========================================================================
-    // ADMINISTRADOR
-    // =========================================================================
-
-    private void seedAdmin() {
-        if (adminAlreadyExists()) {
-            log.info("Admin user already exists — skipping admin seed");
+        if (RuntimeEnvironment.from(environment) == RuntimeEnvironment.PROD
+                || !SecureEnvironmentPostProcessor.enabled(environment, "app.demo.enabled")) {
             return;
         }
-
-        String rawPassword = resolvePassword("ADMIN_INITIAL_PASSWORD", ADMIN_DEV_FALLBACK_PASSWORD);
-
-        UserAccount admin = UserAccount.builder()
-                .username(ADMIN_USERNAME)
-                .email(ADMIN_EMAIL)
-                .password(passwordEncoder.encode(rawPassword))
-                .role(Role.ADMINISTRADOR)
-                .active(true)
-                .temporaryPassword(true)
-                .build();
-
-        userAccountRepository.save(admin);
-        log.info("Initial admin user created. Username: [{}]. Set ADMIN_INITIAL_PASSWORD env var to override the default password.", ADMIN_USERNAME);
-    }
-
-    private boolean adminAlreadyExists() {
-        return userAccountRepository.existsByUsername(ADMIN_USERNAME)
-                || userAccountRepository.existsByEmail(ADMIN_EMAIL)
-                || userAccountRepository.countByRole(Role.ADMINISTRADOR) > 0;
+        TeacherProfile teacher = seedTeacher();
+        seedStudent(teacher);
     }
 
     // =========================================================================
@@ -104,8 +63,13 @@ public class AdminSeeder implements ApplicationRunner {
         if (userAccountRepository.existsByUsername(TEACHER_USERNAME)) {
             log.info("Demo teacher already exists — skipping teacher seed");
             return userAccountRepository.findByUsername(TEACHER_USERNAME)
+                    .filter(user -> user.getRole() == Role.DOCENTE && Boolean.TRUE.equals(user.getActive()))
                     .flatMap(teacherProfileRepository::findByUser)
                     .orElse(null);
+        }
+        if (userAccountRepository.existsByEmail(TEACHER_EMAIL)) {
+            log.warn("Demo teacher identity occupied — skipping demo seed");
+            return null;
         }
 
         String rawPassword = resolvePassword("TEACHER_INITIAL_PASSWORD", TEACHER_DEV_FALLBACK_PASSWORD);
@@ -180,11 +144,11 @@ public class AdminSeeder implements ApplicationRunner {
     // =========================================================================
 
     private String resolvePassword(String envVar, String devFallback) {
-        String envPassword = System.getenv(envVar);
+        String envPassword = environment.getProperty(envVar);
         if (envPassword != null && !envPassword.isBlank()) {
             return envPassword;
         }
-        // Fallback de desarrollo — configura la variable de entorno en producción
+        // Fallback público exclusivo para demos opt-in en desarrollo/pruebas.
         return devFallback;
     }
 }
