@@ -4,6 +4,11 @@ Esta entrega corrige la configuración compartida y el aprovisionamiento automá
 de SEC-01/SEC-02. No implementa sesiones revocables, restricciones centrales de
 contraseña temporal ni autorización STOMP (SEC-03–SEC-06; T02/T03).
 
+Actualización T02: esta descripción delimita la entrega original T01. La versión
+actual incorpora [sesiones persistentes y restricciones centrales REST/CONNECT](seguridad/02-02-autenticacion-sesiones.md).
+Las garantías de configuración y bootstrap de este documento se mantienen; la
+autorización de destinos y revocación de conexiones STOMP existentes siguen en T03.
+
 ## Perfiles y arranque
 
 Seleccione exactamente uno: `dev`, `test` o `prod`. Los perfiles combinados o desconocidos
@@ -92,8 +97,8 @@ No coloque credenciales en la URL JDBC o en argumentos visibles del proceso.
    variables de la sesión con `Remove-Item Env:APP_BOOTSTRAP_ADMIN_PASSWORD` y equivalentes;
    quite también las persistidas en el gestor de despliegue.
 6. Inicie sesión y cambie la contraseña temporal mediante el flujo existente. La cuenta
-   se crea con `temporaryPassword=true`. Su restricción central en la API sigue pendiente
-   en T02; T01 no acredita esa protección en solicitudes directas.
+   se crea con `temporaryPassword=true`. T02 restringe centralmente esta sesión a estado
+   mínimo, cambio de contraseña y cierre de sesiones; al cambiar entrega un JWT nuevo.
 
 No use este procedimiento para recuperar una cuenta, añadir administradores posteriores
 o restablecer contraseñas. Si ya hay un administrador, no se crea otro ni se cambia su
@@ -126,7 +131,8 @@ Verifique propietarios, perfiles de docente/alumno, contenidos, evaluaciones, in
 pizarras, auditoría y métricas asociados antes de decidir. Documente responsables,
 dependencias e historial y prepare una copia/restauración conforme al procedimiento del
 entorno. T01 no elimina, desactiva ni modifica cuentas existentes. Desactivar/restablecer
-no revoca hoy todos los JWT: SEC-03/SEC-05 siguen pendientes.
+revoca con T02 todas las sesiones anteriores en REST y nuevos CONNECT. El cierre de
+conexiones STOMP existentes sigue pendiente de T03.
 
 ## Rotación de la clave JWT
 

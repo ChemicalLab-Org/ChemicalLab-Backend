@@ -7,10 +7,11 @@ import com.morales.chemicallab.dto.LoginRequest;
 import com.morales.chemicallab.dto.PasswordChangeResponse;
 import com.morales.chemicallab.entity.Role;
 import com.morales.chemicallab.entity.UserAccount;
+import com.morales.chemicallab.exception.CurrentPasswordInvalidException;
 import com.morales.chemicallab.repository.StudentProfileRepository;
 import com.morales.chemicallab.repository.TeacherProfileRepository;
 import com.morales.chemicallab.repository.UserAccountRepository;
-import com.morales.chemicallab.security.JwtService;
+import com.morales.chemicallab.security.AccountSessionService;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -35,28 +36,15 @@ public class AuthService {
     private final TeacherProfileRepository teacherProfileRepository;
     private final StudentProfileRepository studentProfileRepository;
     private final PasswordEncoder passwordEncoder;
-    private final JwtService jwtService;
+    private final AccountSessionService sessions;
     private final AuditLogService auditLogService;
 
     @Transactional
     public PasswordChangeResponse changeTemporaryPassword(ChangePasswordRequest request) {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()
-                || authentication instanceof AnonymousAuthenticationToken) {
-            throw new BadCredentialsException("Usuario no autenticado.");
-        }
-
-        String username = authentication.getName();
-
-        UserAccount user = userAccountRepository.findByUsername(username)
-                .orElseThrow(() -> new EntityNotFoundException("Usuario no encontrado."));
-
-        if (Boolean.FALSE.equals(user.getActive())) {
-            throw new DisabledException("La cuenta se encuentra inactiva.");
-        }
+        UserAccount user = sessions.currentLocked();
 
         if (!passwordEncoder.matches(request.currentPassword(), user.getPassword())) {
-            throw new BadCredentialsException("La contraseña actual es incorrecta.");
+            throw new CurrentPasswordInvalidException();
         }
 
         if (!request.newPassword().equals(request.confirmPassword())) {
@@ -71,7 +59,8 @@ public class AuthService {
         user.setTemporaryPassword(false);
         userAccountRepository.save(user);
 
-        return new PasswordChangeResponse("La contraseña fue actualizada correctamente.", false);
+        return new PasswordChangeResponse("La contraseña fue actualizada correctamente.", false,
+                sessions.issue(user), BEARER);
     }
 
     /**
@@ -95,12 +84,13 @@ public class AuthService {
             throw new DisabledException("La cuenta se encuentra inactiva.");
         }
 
-        ProfileNames profileNames = resolveProfileNames(user);
+        ProfileNames profileNames = Boolean.TRUE.equals(user.getTemporaryPassword())
+                ? ProfileNames.EMPTY : resolveProfileNames(user);
 
         return new CurrentUserResponse(
                 user.getId(),
                 user.getUsername(),
-                user.getEmail(),
+                Boolean.TRUE.equals(user.getTemporaryPassword()) ? null : user.getEmail(),
                 profileNames.names(),
                 profileNames.lastNames(),
                 user.getRole(),
@@ -109,6 +99,7 @@ public class AuthService {
         );
     }
 
+    @Transactional
     public AuthResponse login(LoginRequest request) {
         String identifier = request.usernameOrEmail().trim();
 
@@ -124,6 +115,10 @@ public class AuthService {
         }
 
         UserAccount user = userOpt.get();
+        sessions.lock(user);
+        if (!identifier.equals(user.getUsername()) && !identifier.equals(user.getEmail())) {
+            throw new BadCredentialsException("Credenciales inválidas.");
+        }
 
         if (Boolean.FALSE.equals(user.getActive())) {
             auditLogService.recordLoginFailed(identifier, "La cuenta se encuentra inactiva.");
@@ -135,17 +130,18 @@ public class AuthService {
             throw new BadCredentialsException("La contraseña es incorrecta.");
         }
 
-        String token = jwtService.generateToken(user);
+        String token = sessions.issue(user);
 
         auditLogService.recordLoginSuccess(user);
-        ProfileNames profileNames = resolveProfileNames(user);
+        ProfileNames profileNames = Boolean.TRUE.equals(user.getTemporaryPassword())
+                ? ProfileNames.EMPTY : resolveProfileNames(user);
 
         return new AuthResponse(
                 token,
                 BEARER,
                 user.getId(),
                 user.getUsername(),
-                user.getEmail(),
+                Boolean.TRUE.equals(user.getTemporaryPassword()) ? null : user.getEmail(),
                 profileNames.names(),
                 profileNames.lastNames(),
                 user.getRole(),
@@ -153,6 +149,9 @@ public class AuthService {
                 user.getTemporaryPassword()
         );
     }
+
+    @Transactional
+    public void logout(boolean all) { sessions.logout(all); }
 
     private ProfileNames resolveProfileNames(UserAccount user) {
         if (user.getRole() == Role.DOCENTE) {

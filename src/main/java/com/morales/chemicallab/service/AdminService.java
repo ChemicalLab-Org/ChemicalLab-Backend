@@ -46,6 +46,7 @@ public class AdminService {
     private final ConceptContentRepository conceptContentRepository;
     private final EvaluationRepository evaluationRepository;
     private final EvaluationAttemptRepository evaluationAttemptRepository;
+    private final com.morales.chemicallab.security.AccountSessionService sessions;
     private final PasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
 
@@ -122,6 +123,7 @@ public class AdminService {
     public AdminPasswordResetResponse resetUserPassword(Long userId) {
         UserAccount user = userAccountRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado."));
+        sessions.lock(user);
 
         Long selfId = authenticatedUserId();
         if (selfId != null && selfId.equals(user.getId())) {
@@ -285,6 +287,7 @@ public class AdminService {
     public AdminUserResponse updateUser(Long userId, UpdateUserRequest request) {
         UserAccount user = userAccountRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado."));
+        sessions.lock(user);
 
         // Solo se registran los nombres de los campos modificados, nunca sus valores.
         List<String> changedFields = new ArrayList<>();
@@ -339,6 +342,10 @@ public class AdminService {
             }
         }
 
+        if (changedFields.stream().anyMatch(field ->
+                field.equals("grado") || field.equals("sección") || field.equals("docente responsable"))) {
+            user.invalidateSessions();
+        }
         userAccountRepository.save(user);
 
         // El log se registra solo tras una actualización correcta. El actor (administrador) y su
@@ -366,6 +373,7 @@ public class AdminService {
     public AdminUserResponse activateUser(Long userId) {
         UserAccount user = userAccountRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado."));
+        sessions.lock(user);
 
         user.setActive(true);
         userAccountRepository.save(user);
@@ -386,6 +394,7 @@ public class AdminService {
     public AdminUserResponse deactivateUser(Long userId) {
         UserAccount user = userAccountRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado."));
+        sessions.lock(user);
 
         Long selfId = authenticatedUserId();
         if (selfId != null && selfId.equals(user.getId())) {
