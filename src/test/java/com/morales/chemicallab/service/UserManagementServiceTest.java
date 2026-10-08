@@ -52,6 +52,9 @@ class UserManagementServiceTest {
     @Mock
     private AuditLogService auditLogService;
 
+    @Mock
+    private com.morales.chemicallab.security.AccountSessionService sessions;
+
     @InjectMocks
     private UserManagementService service;
 

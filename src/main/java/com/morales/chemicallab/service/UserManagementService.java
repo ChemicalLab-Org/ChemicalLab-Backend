@@ -23,6 +23,7 @@ public class UserManagementService {
     private final UserAccountRepository userAccountRepository;
     private final TeacherProfileRepository teacherProfileRepository;
     private final StudentProfileRepository studentProfileRepository;
+    private final com.morales.chemicallab.security.AccountSessionService sessions;
     private final PasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
 
@@ -87,6 +88,7 @@ public class UserManagementService {
     public TeacherResponse deactivateTeacher(Long teacherUserId) {
         UserAccount user = userAccountRepository.findById(teacherUserId)
                 .orElseThrow(() -> new IllegalArgumentException("Docente no encontrado."));
+        sessions.lock(user);
 
         if (user.getRole() != Role.DOCENTE) {
             throw new IllegalArgumentException("El usuario indicado no pertenece al rol docente.");
@@ -115,6 +117,7 @@ public class UserManagementService {
 
         UserAccount user = userAccountRepository.findById(teacherUserId)
                 .orElseThrow(() -> new IllegalArgumentException("Docente no encontrado."));
+        sessions.lock(user);
 
         if (user.getRole() != Role.DOCENTE) {
             throw new IllegalArgumentException("El usuario indicado no pertenece al rol docente.");
@@ -206,6 +209,7 @@ public class UserManagementService {
         StudentProfile student = studentProfileRepository.findById(studentId)
                 .orElseThrow(() -> new IllegalArgumentException("Estudiante no encontrado."));
 
+        sessions.lock(student.getUser());
         validateStudentBelongsToTeacher(student, teacher);
 
         // Se calculan los campos modificados ANTES de aplicar los cambios. Solo se guarda
@@ -243,6 +247,9 @@ public class UserManagementService {
             }
         }
 
+        if (changedFields.contains("grado") || changedFields.contains("sección")) {
+            student.getUser().invalidateSessions();
+        }
         userAccountRepository.save(student.getUser());
         studentProfileRepository.save(student);
 
@@ -274,6 +281,7 @@ public class UserManagementService {
         StudentProfile student = studentProfileRepository.findById(studentId)
                 .orElseThrow(() -> new IllegalArgumentException("Estudiante no encontrado."));
 
+        sessions.lock(student.getUser());
         validateStudentBelongsToTeacher(student, teacher);
 
         student.getUser().setActive(false);
@@ -300,6 +308,7 @@ public class UserManagementService {
         StudentProfile student = studentProfileRepository.findById(studentId)
                 .orElseThrow(() -> new IllegalArgumentException("Estudiante no encontrado."));
 
+        sessions.lock(student.getUser());
         validateStudentBelongsToTeacher(student, teacher);
 
         UserAccount account = student.getUser();
@@ -323,6 +332,7 @@ public class UserManagementService {
     public UserResponse deactivateUser(Long userId) {
         UserAccount user = userAccountRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado."));
+        sessions.lock(user);
 
         // Un administrador no puede desactivar su propia cuenta: evita quedar sin acceso.
         UserAccount current = findAuthenticatedUser();
@@ -348,6 +358,7 @@ public class UserManagementService {
     public UserResponse activateUser(Long userId) {
         UserAccount user = userAccountRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado."));
+        sessions.lock(user);
 
         user.setActive(true);
         userAccountRepository.save(user);

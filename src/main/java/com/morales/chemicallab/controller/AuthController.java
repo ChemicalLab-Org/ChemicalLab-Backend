@@ -38,4 +38,15 @@ public class AuthController {
             @Valid @RequestBody ChangePasswordRequest request) {
         return ResponseEntity.ok(authService.changeTemporaryPassword(request));
     }
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout() {
+        authService.logout(false);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/logout-all")
+    public ResponseEntity<Void> logoutAll() {
+        authService.logout(true);
+        return ResponseEntity.noContent().build();
+    }
 }

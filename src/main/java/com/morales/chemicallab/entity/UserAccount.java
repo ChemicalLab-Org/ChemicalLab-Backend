@@ -38,6 +38,33 @@ public class UserAccount {
     @Column(nullable = false)
     private Boolean temporaryPassword = true;
 
+    @Column(nullable = false, columnDefinition = "bigint default 0")
+    private long credentialsVersion;
+
+    public void invalidateSessions() { credentialsVersion = Math.addExact(credentialsVersion, 1); }
+
+    // Keep credential invalidation at the entity boundary, including future role changes.
+    public void setPassword(String value) {
+        if (!java.util.Objects.equals(password, value)) invalidateSessions();
+        password = value;
+    }
+    public void setActive(Boolean value) {
+        if (!java.util.Objects.equals(active, value)) invalidateSessions();
+        active = value;
+    }
+    public void setRole(Role value) {
+        if (role != value) invalidateSessions();
+        role = value;
+    }
+    public void setTemporaryPassword(Boolean value) {
+        if (!java.util.Objects.equals(temporaryPassword, value)) invalidateSessions();
+        temporaryPassword = value;
+    }
+    public void setUsername(String value) {
+        if (!java.util.Objects.equals(username, value)) invalidateSessions();
+        username = value;
+    }
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
