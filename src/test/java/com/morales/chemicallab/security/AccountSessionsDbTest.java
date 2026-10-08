@@ -11,6 +11,8 @@ import com.morales.chemicallab.service.*;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.boot.SpringApplication;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.StandardEnvironment;
@@ -200,6 +202,51 @@ class AccountSessionsDbTest {
         }
     }
 
+    @ParameterizedTest(name = "incorrect password preserves {0}, temporary={1}; correct retry replaces sessions")
+    @CsvSource({"ADMINISTRADOR,false", "ADMINISTRADOR,true", "DOCENTE,false", "DOCENTE,true",
+            "ESTUDIANTE,false", "ESTUDIANTE,true"})
+    void incorrectCurrentPasswordPreservesStateAndSessionsThenAllowsRetry(Role role, boolean temporary) throws Exception {
+        UserAccount user = account(role, temporary);
+        String a = login(user), b = login(user);
+        var jdbc = app.getBean(JdbcTemplate.class);
+        var beforeUser = jdbc.queryForMap("SELECT * FROM user_accounts WHERE id = ?", user.getId());
+        var beforeSessions = jdbc.queryForList("SELECT * FROM account_sessions WHERE user_id = ? ORDER BY id", user.getId());
+        assertThat(beforeSessions).hasSize(2);
+
+        var rejected = request("PATCH", "/api/auth/change-temporary-password", a, passwordChangeBody("WrongFictitious123"));
+        assertThat(rejected.statusCode()).isEqualTo(400);
+        assertThat(body(rejected).path("code").asText()).isEqualTo("CURRENT_PASSWORD_INVALID");
+        assertThat(body(rejected).path("message").asText()).isEqualTo("La contraseña actual es incorrecta.");
+        // Compare the entire persisted row, without exposing its password hash in a failed assertion.
+        assertThat(jdbc.queryForMap("SELECT * FROM user_accounts WHERE id = ?", user.getId()).equals(beforeUser))
+                .as("Rejected change preserves password, temporary flag, credential version and account timestamps").isTrue();
+        assertThat(jdbc.queryForList("SELECT * FROM account_sessions WHERE user_id = ? ORDER BY id", user.getId()))
+                .as("Rejected change neither creates nor mutates sessions").isEqualTo(beforeSessions);
+        assertStatus("GET", "/api/auth/me", a, null, 200);
+        assertStatus("GET", "/api/auth/me", b, null, 200);
+
+        var changed = request("PATCH", "/api/auth/change-temporary-password", a, passwordChangeBody(PASSWORD));
+        assertThat(changed.statusCode()).isEqualTo(200);
+        String replacement = body(changed).path("token").asText();
+        assertThat(replacement).isNotBlank().isNotEqualTo(a).isNotEqualTo(b);
+        var after = users().findById(user.getId()).orElseThrow();
+        assertThat(app.getBean(PasswordEncoder.class).matches("NewFictitious123", after.getPassword())).isTrue();
+        assertThat(after.getTemporaryPassword()).isFalse();
+        assertThat(after.getCredentialsVersion()).isGreaterThan(((Number) beforeUser.get("credentials_version")).longValue());
+        assertThat(jdbc.queryForList("SELECT * FROM account_sessions WHERE user_id = ?", user.getId())).hasSize(3);
+        assertStatus("GET", "/api/auth/me", a, null, 401);
+        assertStatus("GET", "/api/auth/me", b, null, 401);
+        assertStatus("GET", "/api/chemistry/catalog/metals", replacement, null, 200);
+
+        // A real revocation still wins over a form error on this same endpoint.
+        assertStatus("POST", "/api/auth/logout", replacement, "{}", 204);
+        assertStatus("PATCH", "/api/auth/change-temporary-password", replacement, passwordChangeBody("WrongFictitious123"), 401);
+    }
+
+    private String passwordChangeBody(String currentPassword) {
+        return "{\"currentPassword\":\"" + currentPassword + "\",\"newPassword\":\"NewFictitious123\",\"confirmPassword\":\"NewFictitious123\"}";
+    }
+
     @Test void currentAndLegacyResetDeactivationAndReactivationRevokeFutureTokens() throws Exception {
         String admin = login(account(Role.ADMINISTRADOR, false));
         UserAccount teacher = account(Role.DOCENTE, false);
@@ -264,6 +311,7 @@ class AccountSessionsDbTest {
                 + (valid.charAt(signatureStart) == 'A' ? "B" : "A") + valid.substring(signatureStart + 1);
         for (String token : List.of(legacy, expired, altered)) {
             assertStatus("GET", "/api/auth/me", token, null, 401);
+            assertStatus("PATCH", "/api/auth/change-temporary-password", token, passwordChangeBody("WrongFictitious123"), 401);
             assertThatThrownBy(() -> connect(token)).isInstanceOf(org.springframework.security.core.AuthenticationException.class);
         }
         String temporary = login(account(Role.ESTUDIANTE, true));
@@ -274,6 +322,7 @@ class AccountSessionsDbTest {
         valid = login(user);
         mutate(user, u -> u.setActive(false));
         String inactive = valid;
+        assertStatus("PATCH", "/api/auth/change-temporary-password", inactive, passwordChangeBody("WrongFictitious123"), 401);
         assertThatThrownBy(() -> connect(inactive)).isInstanceOf(org.springframework.security.core.AuthenticationException.class);
     }
 

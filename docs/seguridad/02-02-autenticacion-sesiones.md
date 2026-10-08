@@ -56,6 +56,7 @@ forma parte del contrato y no debe usarse para cambios de seguridad.
 | Logout | `revoked_at` solo en la sesión autenticada |
 | Cerrar todas | Incremento del contador de la cuenta, incluida la sesión que llama |
 | Cambio propio, temporal o normal | Nuevo hash y contador; sesión nueva emitida en la misma transacción |
+| Cambio propio rechazado por contraseña actual incorrecta | Sin cambios en hash, bandera temporal, contador ni filas de sesión; ambas sesiones previas siguen vigentes |
 | Reset administrativo o heredado | Nuevo hash temporal y contador; ninguna sesión nueva |
 | Desactivar/reactivar | Cambia contador; reactivar nunca recupera tokens anteriores |
 | Cambiar privilegios/ámbito | Cambia contador, mantiene las reglas de rol y propiedad |
@@ -83,6 +84,7 @@ Se conserva `Authorization: Bearer <token>` y no se introducen cookies ni refres
 | `POST /api/auth/login` | 200 con `AuthResponse` y token nuevo; cuenta inactiva o credenciales inválidas: 401 |
 | `GET /api/auth/me` | 200; en modo temporal solo identidad/rol/estado, con email y nombres nulos |
 | `PATCH /api/auth/change-temporary-password` | Acepta `currentPassword`, `newPassword`, `confirmPassword`; 200 con `message`, `temporaryPassword: false`, **`token` nuevo y `tokenType: Bearer`**. También sirve para cambio propio no temporal |
+| Cambio propio con sesión válida y `currentPassword` incorrecta | **400** con `status: 400`, `code: CURRENT_PASSWORD_INVALID`, `message: La contraseña actual es incorrecta.`; permite corregir el formulario sin cerrar la sesión |
 | `POST /api/auth/logout` | Cuerpo vacío o `{}`; 204. Solo revoca la sesión obtenida del contexto |
 | `POST /api/auth/logout-all` | Cuerpo vacío o `{}`; 204. Revoca todas las sesiones del usuario del contexto |
 | Cualquier ruta protegida con sesión ausente/inválida/expirada/revocada | 401 |
@@ -94,6 +96,14 @@ handshakes públicos conservan sus reglas para solicitudes sin Bearer; un Bearer
 presentado se valida. Los resets heredados conservan `message` y `temporaryPassword`;
 los campos de token del DTO compartido son nulos. El reset administrativo conserva
 su respuesta de contraseña temporal entregada una sola vez, sin JWT.
+
+El cambio propio primero revalida la sesión bajo bloqueo y después comprueba la
+contraseña actual. Solo una discrepancia de contraseña con sesión vigente lanza
+`CurrentPasswordInvalidException`, que no es una excepción de autenticación. No se
+modificó el mapeo global de `BadCredentialsException` ni `DisabledException`: siguen
+devolviendo 401. Una sesión revocada, expirada, inválida o una cuenta desactivada
+devuelve 401 también en este endpoint, aunque el formulario tenga una contraseña
+incorrecta. Los restantes errores de validación conservan su contrato 400 existente.
 
 ## Esquema, caducidad y actualización de una base existente
 
@@ -131,6 +141,13 @@ Se mantiene `sessionStorage`. El cambio propio guarda el token de reemplazo, cie
 conexiones anteriores del cliente y libera el guard temporal para los tres roles.
 La pantalla de cambio también acepta contraseñas propias no temporales. La barra
 común de seguridad ofrece cambio, logout y cierre global, incluida la pantalla temporal.
+
+Ante 400 `CURRENT_PASSWORD_INVALID`, el formulario muestra «La contraseña actual es
+incorrecta. Corrígela e inténtalo de nuevo.», habilita el reintento y conserva token,
+usuario y estado temporal. No cierra conexiones ni navega al login. Un segundo intento
+correcto reemplaza el token y libera el estado temporal. El interceptor no contiene
+excepciones para los 401 del endpoint de cambio: sigue limpiando y navegando al login
+cuando la sesión deja de ser válida durante ese flujo.
 
 Logout captura el Bearer actual, limpia inmediatamente estado local/examen/conexiones
 y solicita la revocación. Un 204 muestra confirmación; fallo HTTP/red o timeout de ocho
@@ -195,23 +212,28 @@ Verificación final completada el **8 de octubre de 2026 (America/Lima)**:
 
 | Comprobación ejecutada | Resultado |
 |---|---|
-| Backend `clean package`, suite completa | **424 pruebas, 0 fallos, 0 errores, 0 omitidas; BUILD SUCCESS** |
-| Dentro de ella, `AccountSessionsDbTest` | **12 pruebas PostgreSQL/HTTP aprobadas**, incluida la matriz de 118 rutas |
+| Backend `clean package`, suite completa | **438 pruebas, 0 fallos, 0 errores, 0 omitidas; BUILD SUCCESS** |
+| Dentro de ella, `AccountSessionsDbTest` | **18 pruebas PostgreSQL/HTTP aprobadas**, incluida la matriz de 118 rutas y seis casos de contraseña actual incorrecta |
+| Dentro de ella, `GlobalExceptionHandlerTest` | **12 pruebas aprobadas**; resolución MVC de errores de formulario, autenticación, validación, 404, 413 y 500 |
 | Regresión de T01 | Incluida: configuración segura, bootstrap, persistencia y rotación JWT |
-| Frontend Angular/Vitest | **32 pruebas aprobadas**, cinco archivos; 0 fallidas |
+| Frontend Angular/Vitest | **45 pruebas aprobadas**, cinco archivos; 0 fallidas |
 | Frontend producción `npm run build` | Aprobada; avisos previos de presupuesto inicial/SCSS |
 | Diff de los dos repositorios | `git diff --check` sin errores; solo código/documentación/pruebas T02 |
 
-Después de hacer determinista el cambio de un carácter de firma en el arnés, se
+En la verificación inicial de T02, después de hacer determinista el cambio de un carácter de firma en el arnés, se
 repitió `AccountSessionsDbTest#signatureExpirationLegacyClaimsAndConnectUseCentralValidation`:
 una prueba aprobada, cero fallos/errores/omisiones (`t02-signature-final.log`). No cambia
-el código de producción. Esa ejecución focalizada reemplaza el XML de esa clase en
-Surefire; el conteo completo de 424 corresponde al log de `clean package`.
+el código de producción. Aquella ejecución focalizada reemplazó el XML de esa clase en
+Surefire; su conteo completo de 424 corresponde al log histórico de `clean package`.
+La ejecución completa de esta corrección reemplazó todos los XML y acredita las 438
+pruebas de la tabla, incluida nuevamente la prueba de firma/expiración/CONNECT.
 
 Los XML de Surefire (`target/surefire-reports`) permiten repetir y contar resultados.
 Los logs de ejecución se conservaron localmente fuera de los repositorios:
-`t02-backend-verified.log`, `t02-frontend-tests-final.log`,
-`t02-frontend-build-final.log`, dentro del directorio de trabajo aislado.
+`t02-password-backend-green.log`, `t02-password-frontend-green.log`,
+`t02-password-frontend-build.log`, dentro del directorio de trabajo aislado. Los logs
+`t02-backend-verified.log`, `t02-frontend-tests-final.log` y
+`t02-frontend-build-final.log` conservan la verificación inicial.
 No se publican logs, bases, binarios, tokens, credenciales locales ni archivos temporales.
 El aviso de las pruebas Angular sobre `polyfills.ts` y los presupuestos de componentes
 preexistentes no impidieron compilación. El instalador npm informó avisos de seguridad
@@ -228,6 +250,14 @@ Cobertura específica de `AccountSessionsDbTest`:
   del docente ajeno. Las suites previas mantienen la cobertura de propiedad detallada.
 - Dos sesiones independientes, logout individual/global y reemplazo de ambas tras
   cambio propio para A/D/E. El cuerpo del logout no puede elegir otra cuenta/sesión.
+- Contraseña actual incorrecta para A/D/E, normal y temporal: 400 con código explícito;
+  comparación de la fila completa de cuenta y de todas sus sesiones antes/después,
+  sin cambios de hash, bandera, versión ni timestamps. Ambas sesiones siguen sirviendo
+  `/api/auth/me`. Un segundo intento correcto con el mismo token emite uno nuevo,
+  cambia el hash, retira la bandera temporal y revoca las dos sesiones anteriores.
+  Revocar realmente la sesión sustituta mediante logout y reutilizarla en el endpoint
+  de cambio devuelve 401. También se verifica ese endpoint con firma alterada,
+  expiración, JWT legado y cuenta desactivada.
 - Reset actual y heredado, desactivación por todas sus familias y edición `active`,
   reactivación sin recuperación de tokens futuros y cambio de rol/ámbito.
 - Firma alterada, expiración, JWT anterior sin datos nuevos, y CONNECT aceptado/rechazado
@@ -243,6 +273,36 @@ Frontend: tests Angular/Vitest con HttpTestingController y DOM jsdom, incluyendo
 pantalla real de cambio para A/D/E, guard temporal, sustitución de token, botones de
 cierre global, limpieza de conexiones, errores de logout, 401/403 paralelos, respuestas
 tardías, inicio de sesión y validación de arranque. No son pruebas Selenium de red.
+
+### Corrección previa al merge: contraseña actual incorrecta
+
+Se reprodujo el defecto **antes de corregir el código de producción**. La prueba
+`incorrectCurrentPasswordPreservesStateAndSessionsThenAllowsRetry` falló en los seis
+casos con `expected: 400, but was: 401` (cero errores de ejecución), registrado en
+`t02-password-backend-red.log`. Antes se corrigió un getter mal nombrado en el arnés;
+ese fallo de compilación no se cuenta como reproducción del defecto.
+
+En frontend, la caracterización del contrato anterior confirmó que un 401 con el
+mensaje de contraseña incorrecta borra el token y navega al login. Doce casos nuevos
+fallaron por el mensaje genérico que aún no reconocía el código explícito
+(`t02-password-frontend-red.log`: 12 fallidas, 33 aprobadas). La caracterización se
+conserva como protección contra excepciones por endpoint o texto del error.
+
+Tras la corrección, los mismos seis casos backend pasan dentro de la suite completa.
+En frontend se escriben los inputs y se pulsa el botón del componente real, con
+AuthService e interceptor reales: seis casos rol × estado para 400 seguido de reintento
+correcto y otros seis para 400 seguido de un 401 por revocación durante el reintento.
+Se verifica la alerta visible, botón habilitado, token/usuario/estado intactos, ausencia
+de redirección y limpieza, sustitución posterior del token y limpieza/navegación ante
+401. HttpTestingController controla esas respuestas; la revocación persistida y el
+401 real se acreditan en PostgreSQL/HTTP, no se presentan como prueba de navegador
+conectado al backend. No se modificó el interceptor.
+
+Al añadir el manejador específico se amplió la regresión MVC de
+`GlobalExceptionHandlerTest`: código 400 específico, `BadCredentialsException` y
+`DisabledException` todavía 401, validaciones/argumentos 400 sin ese código, recursos
+ausentes 404, tamaño de archivo 413 y error inesperado 500. La suite completa y ambas
+compilaciones están aprobadas; no queda pendiente funcional de esta corrección.
 
 ### Intentos fallidos, omisiones y límites
 

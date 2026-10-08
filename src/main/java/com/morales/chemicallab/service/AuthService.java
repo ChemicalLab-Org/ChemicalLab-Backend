@@ -7,6 +7,7 @@ import com.morales.chemicallab.dto.LoginRequest;
 import com.morales.chemicallab.dto.PasswordChangeResponse;
 import com.morales.chemicallab.entity.Role;
 import com.morales.chemicallab.entity.UserAccount;
+import com.morales.chemicallab.exception.CurrentPasswordInvalidException;
 import com.morales.chemicallab.repository.StudentProfileRepository;
 import com.morales.chemicallab.repository.TeacherProfileRepository;
 import com.morales.chemicallab.repository.UserAccountRepository;
@@ -43,7 +44,7 @@ public class AuthService {
         UserAccount user = sessions.currentLocked();
 
         if (!passwordEncoder.matches(request.currentPassword(), user.getPassword())) {
-            throw new BadCredentialsException("La contraseña actual es incorrecta.");
+            throw new CurrentPasswordInvalidException();
         }
 
         if (!request.newPassword().equals(request.confirmPassword())) {

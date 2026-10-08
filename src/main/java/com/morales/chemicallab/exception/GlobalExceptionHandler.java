@@ -22,6 +22,14 @@ import java.util.NoSuchElementException;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(CurrentPasswordInvalidException.class)
+    public ResponseEntity<Map<String, Object>> handleCurrentPasswordInvalid(CurrentPasswordInvalidException ex) {
+        return ResponseEntity.badRequest().body(Map.of(
+                "status", HttpStatus.BAD_REQUEST.value(),
+                "code", "CURRENT_PASSWORD_INVALID",
+                "message", ex.getMessage()));
+    }
+
     // Manejadores existentes — mantienen compatibilidad con el motor químico
 
     @ExceptionHandler(IllegalArgumentException.class)
