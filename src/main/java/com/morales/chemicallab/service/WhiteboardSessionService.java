@@ -9,6 +9,9 @@ import com.morales.chemicallab.repository.WhiteboardParticipantRepository;
 import com.morales.chemicallab.repository.WhiteboardSessionRepository;
 import com.morales.chemicallab.validation.InputValidation;
 import jakarta.persistence.EntityNotFoundException;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,6 +71,7 @@ public class WhiteboardSessionService {
     private final AuditLogService auditLogService;
     private final UsageMetricService usageMetricService;
     private final WhiteboardBroadcastService broadcastService;
+    private final EntityManager entityManager;
 
     // =========================================================================
     // DOCENTE
@@ -262,9 +266,10 @@ public class WhiteboardSessionService {
         if (stateJson != null && stateJson.length() > MAX_STATE_JSON_CHARS) {
             throw new IllegalArgumentException("El estado de la pizarra supera el tamaño máximo permitido.");
         }
-        session.setCurrentStateJson(stateJson);
-        session.setStateUpdatedAt(LocalDateTime.now());
-        sessionRepository.save(session);
+        // T03: snapshots are projections of committed STOMP operations, never client authority.
+        if (!java.util.Objects.equals(stateJson, session.getCurrentStateJson())) {
+            throw new IllegalArgumentException("El estado se guarda mediante eventos verificados. Recarga la pizarra.");
+        }
         return toBoardState(session);
     }
 
@@ -335,6 +340,12 @@ public class WhiteboardSessionService {
      * Se invoca desde el canal de presencia WebSocket; es best-effort y no difunde eventos.
      */
     public void registerPresence(String username, Long sessionId) {
+        UserAccount actor = userAccountRepository.findByUsername(username)
+                .orElseThrow(() -> new EntityNotFoundException("El usuario no existe."));
+        if (actor.getRole() == Role.DOCENTE) {
+            requireNotClosed(requireOwnedSession(sessionId, requireTeacher(username)));
+            return; // teacher heartbeat is valid; it never creates a student participation
+        }
         StudentProfile student = requireStudent(username);
         WhiteboardSession session = sessionRepository.findById(sessionId).orElse(null);
         if (session == null || !belongsToStudentSection(session, student)
@@ -438,6 +449,9 @@ public class WhiteboardSessionService {
     private WhiteboardSession requireOwnedSession(Long sessionId, TeacherProfile teacher) {
         WhiteboardSession session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new EntityNotFoundException("La sesión de pizarra no existe."));
+        if (!TransactionSynchronizationManager.isCurrentTransactionReadOnly()) {
+            entityManager.refresh(session, LockModeType.PESSIMISTIC_WRITE);
+        }
         if (!session.getTeacher().getId().equals(teacher.getId())) {
             throw new IllegalArgumentException("No tienes permiso para gestionar esta sesión.");
         }
@@ -622,8 +636,8 @@ public class WhiteboardSessionService {
         return new WhiteboardBoardStateResponse(
                 session.getId(),
                 session.getStatus(),
-                session.getCurrentStateJson(),
-                session.getStateUpdatedAt());
+                WhiteboardObjectState.snapshotForClient(session),
+                session.getStateUpdatedAt(), session.getStateRevision());
     }
 
     private WhiteboardHistoryItemResponse toHistoryItem(WhiteboardSession session) {

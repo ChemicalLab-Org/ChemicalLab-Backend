@@ -7,6 +7,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Difunde eventos de la pizarra a los suscriptores del canal de una sesión
@@ -37,6 +39,14 @@ public class WhiteboardBroadcastService {
     }
 
     private void send(Long sessionId, Object payload) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() { sendCommitted(sessionId, payload); }
+            });
+        } else sendCommitted(sessionId, payload);
+    }
+
+    private void sendCommitted(Long sessionId, Object payload) {
         if (sessionId == null) {
             return;
         }

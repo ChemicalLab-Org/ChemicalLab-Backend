@@ -1,6 +1,9 @@
 package com.morales.chemicallab.config;
 
 import com.morales.chemicallab.security.WhiteboardStompAuthChannelInterceptor;
+import com.morales.chemicallab.security.WhiteboardConnections;
+import com.morales.chemicallab.security.WhiteboardOutboundInterceptor;
+import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
@@ -33,12 +36,15 @@ import java.util.Arrays;
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final WhiteboardStompAuthChannelInterceptor authChannelInterceptor;
+    private final WhiteboardConnections connections;
+    private final WhiteboardOutboundInterceptor outboundInterceptor;
 
     @Value("${app.cors.allowed-origins}")
     private String allowedOrigins;
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+        registry.setPreserveReceiveOrder(true);
         String[] origins = parseOrigins();
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns(origins)
@@ -47,6 +53,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
+        registry.setPreservePublishOrder(true);
         registry.enableSimpleBroker("/topic", "/queue");
         registry.setApplicationDestinationPrefixes("/app");
         registry.setUserDestinationPrefix("/user");
@@ -63,5 +70,13 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 .map(String::trim)
                 .filter(origin -> !origin.isEmpty())
                 .toArray(String[]::new);
+    }
+
+    @Override public void configureClientOutboundChannel(ChannelRegistration registration) {
+        registration.interceptors(outboundInterceptor);
+    }
+
+    @Override public void configureWebSocketTransport(WebSocketTransportRegistration registration) {
+        registration.addDecoratorFactory(connections::decorate);
     }
 }

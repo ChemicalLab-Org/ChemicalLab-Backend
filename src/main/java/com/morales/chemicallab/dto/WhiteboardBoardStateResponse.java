@@ -13,6 +13,10 @@ public record WhiteboardBoardStateResponse(
         Long sessionId,
         WhiteboardSessionStatus status,
         String stateJson,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        long revision
 ) {
+    public WhiteboardBoardStateResponse(Long sessionId, WhiteboardSessionStatus status, String stateJson, LocalDateTime updatedAt) {
+        this(sessionId, status, stateJson, updatedAt, 0);
+    }
 }

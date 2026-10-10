@@ -10,6 +10,8 @@ import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.messaging.handler.annotation.Header;
+import com.morales.chemicallab.security.WhiteboardConnections;
 import org.springframework.messaging.simp.annotation.SendToUser;
 import org.springframework.stereotype.Controller;
 
@@ -37,18 +39,22 @@ public class WhiteboardWebSocketController {
 
     private final WhiteboardDrawEventService whiteboardDrawEventService;
     private final WhiteboardSessionService whiteboardSessionService;
+    private final WhiteboardConnections connections;
 
     @MessageMapping("/whiteboards/{sessionId}/draw")
     public void draw(@DestinationVariable Long sessionId,
                      @Payload WhiteboardDrawEventRequest request,
+                     @Header("simpSessionId") String connectionId,
                      Principal principal) {
         requirePrincipal(principal);
+        connections.observe(connectionId, sessionId);
         whiteboardDrawEventService.processDrawEvent(principal.getName(), sessionId, request);
     }
 
     @MessageMapping("/whiteboards/{sessionId}/presence")
-    public void presence(@DestinationVariable Long sessionId, Principal principal) {
+    public void presence(@DestinationVariable Long sessionId, @Header("simpSessionId") String connectionId, Principal principal) {
         requirePrincipal(principal);
+        connections.observe(connectionId, sessionId);
         whiteboardSessionService.registerPresence(principal.getName(), sessionId);
     }
 
@@ -58,9 +64,10 @@ public class WhiteboardWebSocketController {
      */
     @MessageExceptionHandler
     @SendToUser(destinations = "/queue/whiteboard-errors", broadcast = false)
-    public Map<String, String> handleError(Exception ex) {
+    public Map<String, Object> handleError(Exception ex) {
         log.debug("Evento de pizarra rechazado: {}", ex.getMessage());
-        return Map.of("error", ex.getMessage() != null ? ex.getMessage() : "Evento de pizarra inválido.");
+        String error = ex instanceof IllegalArgumentException ? ex.getMessage() : "No se pudo aplicar la acción. Resincroniza la pizarra.";
+        return Map.of("code", "DRAW_REJECTED", "resync", true, "error", error);
     }
 
     private void requirePrincipal(Principal principal) {
