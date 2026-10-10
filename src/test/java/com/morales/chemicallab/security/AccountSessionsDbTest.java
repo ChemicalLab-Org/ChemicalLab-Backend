@@ -459,11 +459,27 @@ class AccountSessionsDbTest {
 
     private void connect(String token) {
         var headers = StompHeaderAccessor.create(StompCommand.CONNECT);
+        String id = UUID.randomUUID().toString();
+        headers.setSessionId(id);
+        var socket = org.mockito.Mockito.mock(org.springframework.web.socket.WebSocketSession.class);
+        org.mockito.Mockito.when(socket.getId()).thenReturn(id);
+        var closed = new java.util.concurrent.atomic.AtomicReference<org.springframework.web.socket.CloseStatus>();
+        try { org.mockito.Mockito.doAnswer(inv -> { closed.set(inv.getArgument(0)); return null; }).when(socket).close(org.mockito.ArgumentMatchers.any()); }
+        catch (Exception ex) { throw new AssertionError(ex); }
+        var connections = app.getBean(WhiteboardConnections.class);
+        try { connections.decorate(new org.springframework.web.socket.handler.TextWebSocketHandler()).afterConnectionEstablished(socket); }
+        catch (Exception ex) { throw new AssertionError(ex); }
         headers.setNativeHeader("Authorization", "Bearer " + token);
         headers.setLeaveMutable(true);
         var message = MessageBuilder.createMessage(new byte[0], headers.getMessageHeaders());
-        app.getBean(WhiteboardStompAuthChannelInterceptor.class).preSend(message, new ExecutorSubscribableChannel());
-        assertThat(headers.getUser()).isNotNull();
+        try {
+            var result = app.getBean(WhiteboardStompAuthChannelInterceptor.class).preSend(message, new ExecutorSubscribableChannel());
+            if (result == null) {
+                if (closed.get().getCode() == 4001) throw new org.springframework.security.authentication.BadCredentialsException("SESSION_INVALID");
+                throw new org.springframework.security.access.AccessDeniedException("CONNECT_REJECTED");
+            }
+            assertThat(headers.getUser()).isNotNull();
+        } finally { connections.remove(id); }
     }
     private void restore(UserAccount user) {
         mutate(user, u -> { u.setActive(true); u.setTemporaryPassword(false); u.setPassword(app.getBean(PasswordEncoder.class).encode(PASSWORD)); });
