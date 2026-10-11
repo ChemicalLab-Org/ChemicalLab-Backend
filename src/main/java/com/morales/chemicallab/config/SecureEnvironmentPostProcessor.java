@@ -18,6 +18,9 @@ public class SecureEnvironmentPostProcessor implements EnvironmentPostProcessor,
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
         RuntimeEnvironment runtime = RuntimeEnvironment.from(environment);
+        if (!"none".equalsIgnoreCase(environment.getProperty("server.forward-headers-strategy", "none"))) {
+            throw new IllegalStateException("Use server.forward-headers-strategy=none; configure app.auth.trusted-proxies explicitly");
+        }
         JwtKeyValidator.validate(environment.getProperty("app.jwt.secret"), runtime == RuntimeEnvironment.PROD);
         if (runtime == RuntimeEnvironment.PROD) {
             require(environment, "spring.datasource.url", "SPRING_DATASOURCE_URL");

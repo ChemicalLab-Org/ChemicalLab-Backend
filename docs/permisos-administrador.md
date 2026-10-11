@@ -99,7 +99,7 @@ de seguridad en el servicio, no solo en el frontend:
   responsable **activo** para estudiantes).
 - Impide desactivar la propia cuenta autenticada y al último administrador activo.
 - No realiza eliminación física: desactivar conserva la información y el historial.
-- Al crear o restablecer, la contraseña temporal se genera, se cifra con BCrypt y se
+- Al crear o restablecer, la contraseña temporal se genera, se protege con Argon2id y se
   devuelve en texto plano **una sola vez**; nunca se persiste en claro ni se registra
   en los logs de auditoría (los eventos `USER_CREATED`, `USER_UPDATED`,
   `USER_DEACTIVATED`, `USER_REACTIVATED` y `PASSWORD_RESET` no incluyen datos sensibles).

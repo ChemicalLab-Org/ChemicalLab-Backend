@@ -30,6 +30,18 @@ public class GlobalExceptionHandler {
                 "message", ex.getMessage()));
     }
 
+    @ExceptionHandler(LoginRejectedException.class)
+    public ResponseEntity<Map<String, Object>> handleLoginRejected(LoginRejectedException ex) {
+        return ResponseEntity.status(401).body(Map.of("status", 401, "code", "LOGIN_INVALID", "message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(AuthenticationLimitException.class)
+    public ResponseEntity<Map<String, Object>> handleLimit(AuthenticationLimitException ex) {
+        return ResponseEntity.status(ex.status()).header("Retry-After", Long.toString(ex.retryAfter()))
+                .body(Map.of("status", ex.status(), "code", ex.status() == 429 ? "AUTH_RATE_LIMITED" : "AUTH_LIMITS_UNAVAILABLE",
+                        "message", ex.getMessage(), "retryAfterSeconds", ex.retryAfter()));
+    }
+
     // Manejadores existentes — mantienen compatibilidad con el motor químico
 
     @ExceptionHandler(IllegalArgumentException.class)

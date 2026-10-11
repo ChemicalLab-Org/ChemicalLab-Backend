@@ -33,6 +33,7 @@ import java.util.List;
 public class AdminController {
 
     private final AdminService adminService;
+    private final com.morales.chemicallab.security.AuthenticationLimits limits;
 
     @GetMapping("/summary")
     public AdminSummaryResponse resumen() {
@@ -90,6 +91,7 @@ public class AdminController {
      */
     @PatchMapping("/users/{userId}/password/reset")
     public AdminPasswordResetResponse restablecerContrasena(@PathVariable Long userId) {
+        limits.resetUser(userId);
         return adminService.resetUserPassword(userId);
     }
 }

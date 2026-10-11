@@ -48,6 +48,11 @@ public class UserAccount {
         if (!java.util.Objects.equals(password, value)) invalidateSessions();
         password = value;
     }
+    /** Caller holds the T02 row lock and has verified this exact hash. No credential change. */
+    public void upgradePasswordHash(String expected, String replacement) {
+        if (!java.util.Objects.equals(password, expected)) throw new IllegalStateException("Credential changed during upgrade");
+        password = replacement;
+    }
     public void setActive(Boolean value) {
         if (!java.util.Objects.equals(active, value)) invalidateSessions();
         active = value;

@@ -12,6 +12,9 @@ import com.morales.chemicallab.repository.StudentProfileRepository;
 import com.morales.chemicallab.repository.TeacherProfileRepository;
 import com.morales.chemicallab.repository.UserAccountRepository;
 import com.morales.chemicallab.security.AccountSessionService;
+import com.morales.chemicallab.security.AuthenticationLimits;
+import com.morales.chemicallab.security.CompatiblePasswordEncoder;
+import com.morales.chemicallab.exception.LoginRejectedException;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -100,34 +103,45 @@ public class AuthService {
     }
 
     @Transactional
-    public AuthResponse login(LoginRequest request) {
+    public AuthResponse login(LoginRequest request, AuthenticationLimits.LoginBudget budget) {
         String identifier = request.usernameOrEmail().trim();
 
-        // Buscar primero por username; si no existe y el identificador parece correo, buscar por email
+        // Consultar ambas rutas para correos, conservando la prioridad de username.
         Optional<UserAccount> userOpt = userAccountRepository.findByUsername(identifier);
-        if (userOpt.isEmpty() && identifier.contains("@")) {
-            userOpt = userAccountRepository.findByEmail(identifier);
+        if (identifier.contains("@")) {
+            Optional<UserAccount> emailMatch = userAccountRepository.findByEmail(identifier);
+            if (userOpt.isEmpty()) userOpt = emailMatch;
         }
 
-        if (userOpt.isEmpty()) {
-            auditLogService.recordLoginFailed(identifier, "Usuario o correo no registrado.");
-            throw new BadCredentialsException("El usuario o correo no está registrado.");
+        UserAccount user = userOpt.orElse(null);
+        // The controller reserved budgets before this transaction: never hold an account
+        // connection/lock while waiting for a second connection to the counter store.
+        // Bind admission to the resolved ID, in case identity ownership changed meanwhile.
+        boolean allowed = budget.allowed() && identifier.equals(budget.identifier())
+                && java.util.Objects.equals(budget.accountId(), user == null ? null : user.getId());
+        String verifiedHash = user == null ? null : user.getPassword();
+        // Saturated accounts get the same cryptographic work, but cannot test their real
+        // secret, issue a session or migrate a hash. Never expose the hidden budget.
+        boolean matches = passwordEncoder.matches(request.password(), !allowed ? null : verifiedHash);
+        boolean identity = user != null && (identifier.equals(user.getUsername()) || identifier.equals(user.getEmail()));
+        boolean active = user != null && Boolean.TRUE.equals(user.getActive());
+        if (!allowed || !matches || !identity || !active) {
+            String reason = !allowed ? "ACCOUNT_RATE_LIMITED" : user == null ? "ACCOUNT_NOT_FOUND" : !active ? "ACCOUNT_DISABLED" : !identity ? "IDENTITY_CHANGED" : "PASSWORD_MISMATCH";
+            auditLogService.recordLoginFailed(identifier, reason);
+            throw new LoginRejectedException();
         }
-
-        UserAccount user = userOpt.get();
+        // Failed attempts never serialize on a real account's row: otherwise parallel
+        // guesses could reveal alias association by waiting for another verification.
         sessions.lock(user);
-        if (!identifier.equals(user.getUsername()) && !identifier.equals(user.getEmail())) {
-            throw new BadCredentialsException("Credenciales inválidas.");
+        boolean stillMatches = java.util.Objects.equals(verifiedHash, user.getPassword())
+                || passwordEncoder.matches(request.password(), user.getPassword());
+        if (!stillMatches || !Boolean.TRUE.equals(user.getActive())
+                || !(identifier.equals(user.getUsername()) || identifier.equals(user.getEmail()))) {
+            auditLogService.recordLoginFailed(identifier, "ACCOUNT_CHANGED");
+            throw new LoginRejectedException();
         }
-
-        if (Boolean.FALSE.equals(user.getActive())) {
-            auditLogService.recordLoginFailed(identifier, "La cuenta se encuentra inactiva.");
-            throw new DisabledException("La cuenta se encuentra inactiva. Contacte al administrador.");
-        }
-
-        if (!passwordEncoder.matches(request.password(), user.getPassword())) {
-            auditLogService.recordLoginFailed(identifier, "Contraseña incorrecta.");
-            throw new BadCredentialsException("La contraseña es incorrecta.");
+        if (passwordEncoder instanceof CompatiblePasswordEncoder compatible && compatible.upgradeEncoding(user.getPassword())) {
+            user.upgradePasswordHash(user.getPassword(), compatible.upgradeVerified(request.password()));
         }
 
         String token = sessions.issue(user);

@@ -29,7 +29,7 @@ public class AccountSessionService {
     private final JwtService jwt;
     private final EntityManager entityManager;
 
-    /** All account writers and login must lock before examining/changing credentials. */
+    /** Account writers and successful login lock before changing credentials or issuing sessions. */
     @Transactional(propagation = Propagation.MANDATORY)
     public void lock(UserAccount user) {
         // refresh matters when the account was already loaded through a profile or OSIV.

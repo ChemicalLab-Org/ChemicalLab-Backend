@@ -19,7 +19,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.security.SecureRandom;
+import com.morales.chemicallab.security.PasswordPolicy;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -49,12 +49,6 @@ public class AdminService {
     private final com.morales.chemicallab.security.AccountSessionService sessions;
     private final PasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
-
-    // Alfabeto sin caracteres ambiguos (0/O, 1/l/I) para contraseñas temporales legibles.
-    private static final String TEMP_PASSWORD_ALPHABET =
-            "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
-    private static final int TEMP_PASSWORD_LENGTH = 10;
-    private final SecureRandom secureRandom = new SecureRandom();
 
     // Tipo de recurso afectado en los eventos de trazabilidad de gestión de usuarios.
     private static final String TARGET_USER = "UserAccount";
@@ -113,7 +107,7 @@ public class AdminService {
      * Restablece la contraseña de cualquier usuario administrable (docente, estudiante u
      * otro), tomando como base directamente {@link UserAccount}. No depende del perfil ni
      * de quién creó al usuario, ni de que tenga correo. Genera una contraseña temporal,
-     * la cifra con BCrypt, marca {@code temporaryPassword = true} y devuelve el texto plano
+     * la protege con Argon2id, marca {@code temporaryPassword = true} y devuelve el texto plano
      * una sola vez para que el administrador lo entregue al usuario.
      *
      * <p>No permite restablecer la contraseña de la propia cuenta autenticada: para eso
@@ -152,7 +146,7 @@ public class AdminService {
 
     /**
      * Crea un usuario desde el panel administrativo según el rol indicado. El backend
-     * genera una contraseña temporal, la cifra con BCrypt, marca {@code temporaryPassword}
+     * genera una contraseña temporal, la protege con Argon2id, marca {@code temporaryPassword}
      * y devuelve el texto plano una sola vez. Nunca se registra la contraseña en logs.
      *
      * <ul>
@@ -610,10 +604,6 @@ public class AdminService {
     }
 
     private String generateTemporaryPassword() {
-        StringBuilder builder = new StringBuilder(TEMP_PASSWORD_LENGTH);
-        for (int i = 0; i < TEMP_PASSWORD_LENGTH; i++) {
-            builder.append(TEMP_PASSWORD_ALPHABET.charAt(secureRandom.nextInt(TEMP_PASSWORD_ALPHABET.length())));
-        }
-        return builder.toString();
+        return PasswordPolicy.temporary();
     }
 }

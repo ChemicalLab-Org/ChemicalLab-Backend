@@ -384,12 +384,14 @@ class AccountSessionsDbTest {
 
     @Test void loginCommittingBeforeResetStillProducesOnlyARevokedOldSession() throws Exception {
         UserAccount user = account(Role.DOCENTE, false);
+        var loginRequest = new LoginRequest(user.getUsername(), PASSWORD);
+        var loginBudget = app.getBean(AuthenticationLimits.class).login(loginRequest);
         var pool = Executors.newFixedThreadPool(2);
         var issued = new CountDownLatch(1);
         var release = new CountDownLatch(1);
         try {
             var login = pool.submit(() -> tx().execute(status -> {
-                String token = app.getBean(AuthService.class).login(new LoginRequest(user.getUsername(), PASSWORD)).token();
+                String token = app.getBean(AuthService.class).login(loginRequest, loginBudget).token();
                 issued.countDown();
                 try { if (!release.await(15, TimeUnit.SECONDS)) throw new IllegalStateException("test timeout"); }
                 catch (InterruptedException e) { throw new RuntimeException(e); }
@@ -422,7 +424,7 @@ class AccountSessionsDbTest {
         assertThatThrownBy(() -> tx().executeWithoutResult(status -> {
             var managed = users().findById(user.getId()).orElseThrow();
             sessions().lock(managed);
-            managed.setPassword(app.getBean(PasswordEncoder.class).encode("RolledBack123"));
+            managed.setPassword(app.getBean(PasswordEncoder.class).encode("RolledBackPhrase123"));
             sessions().issue(managed);
             throw new IllegalStateException("Force rollback of both credential and session");
         })).isInstanceOf(IllegalStateException.class);

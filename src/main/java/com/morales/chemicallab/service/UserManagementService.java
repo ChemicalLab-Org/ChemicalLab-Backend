@@ -109,7 +109,7 @@ public class UserManagementService {
 
     /**
      * Restablece la contraseña temporal de un docente. La realiza el administrador:
-     * la nueva contraseña se cifra con BCrypt y el docente queda obligado a cambiarla
+     * la nueva contraseña se protege con Argon2id y el docente queda obligado a cambiarla
      * en su próximo ingreso (temporaryPassword = true).
      */
     public PasswordChangeResponse resetTeacherPassword(Long teacherUserId, ResetPasswordRequest request) {
@@ -296,7 +296,7 @@ public class UserManagementService {
 
     /**
      * Restablece la contraseña temporal de un estudiante. La realiza el docente
-     * dueño del estudiante: la nueva contraseña se cifra con BCrypt y el estudiante
+     * dueño del estudiante: la nueva contraseña se protege con Argon2id y el estudiante
      * queda obligado a cambiarla en su próximo ingreso (temporaryPassword = true).
      */
     public PasswordChangeResponse resetStudentPassword(Long teacherUserId, Long studentId, ResetPasswordRequest request) {
