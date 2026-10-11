@@ -195,9 +195,11 @@ Los servicios de docente/alumno comparten la implementación del transporte, con
 instancias independientes. `beforeConnect` lee el token vigente en cada intento.
 Los eventos incluyen `ownerUserId` y `revision`, y GET state incluye la revisión.
 Al conectar/reconectar, recibir un rechazo o detectar un salto de revisión, se
-recupera el estado persistido y se ignoran respuestas HTTP antiguas y eventos ya
-incluidos en él. Se cancelan herramientas activas y se sustituyen los cambios
-optimistas; un rechazo limpia además el historial local de deshacer/rehacer.
+recupera el estado persistido y se ignoran respuestas HTTP antiguas. Los eventos ya
+incluidos en el snapshot no vuelven a mutarlo, pero sí retiran su operación local
+pendiente. Los saltos conservan esas operaciones y los eventos recibidos durante
+la carga. Conectar/reconectar o un rechazo sustituye los cambios optimistas sin
+reenviarlos; un rechazo limpia además el historial local de deshacer/rehacer.
 Si falla la carga se bloquea el dibujo y se muestra un aviso para reintentar.
 Perder permiso de dibujo no impide observar; perder acceso a la pizarra detiene
 esa conexión sin cerrar toda la plataforma.
@@ -324,3 +326,126 @@ de las dos PRs dependientes y del procedimiento de integración autorizado.
 
 Referencias de implementación: [interceptores Spring](https://docs.spring.io/spring-framework/reference/web/websocket/stomp/interceptors.html)
 y [orden de mensajes Spring](https://docs.spring.io/spring-framework/reference/web/websocket/stomp/ordered-messages.html).
+
+## Corrección previa al merge: confirmaciones propias concurrentes (10 de octubre)
+
+### Reproducción y causa
+
+Sobre el frontend `4bf323aa4e81a1dd765e5e1c05cfe8702d534841`, antes de modificar
+producción, se reprodujo en ambos componentes reales: estado confirmado x=1,
+operación local optimista A x=10, evento remoto B x=20/revisión 2 y confirmación
+propia A x=10/revisión 3. Los seis casos (texto, forma y trazo por docente/alumno)
+fallaron: x permanecía en 20 aunque `appliedRevision` era 3. Los seis casos previos
+pasaron. El descarte por `ownEventIds` confundía haber dibujado una intención con
+haber aplicado la operación confirmada después de otra modificación.
+
+### Corrección
+
+`WhiteboardReconciliation` mantiene una proyección confirmada y un registro
+ordenado de payloads locales pendientes, copiados al enviarlos. Cada evento nuevo,
+incluida una confirmación propia, actualiza la proyección; después se retira su
+pendiente y se reconstruye la vista con las operaciones posteriores aún sin ACK.
+Por ejemplo, con A1=10 y A2=30 pendientes, confirmar A1 actualiza la base a 10 pero
+la vista conserva 30. Confirmar A2 deja base y vista en 30, con la misma revisión
+que GET state. La autoría sigue procediendo exclusivamente del servidor.
+
+La deduplicación depende de la revisión: un evento antiguo nunca vuelve a mutar
+la base. Puede retirar un pendiente si su efecto ya está incluido en el snapshot.
+Los upserts reemplazan por identidad estable, conservando la posición del trazo
+y el orden frente a borradores. La vista se sustituye sin concatenar trazos.
+Las copias impiden que un gesto posterior cambie un payload ya enviado. Se
+conservan el trazo y los arrastres todavía en curso, hasta que pointer-up los envía.
+
+Los efectos locales de borrar/cancelar selección/limpiar historial no se repiten
+al confirmar una operación propia: hacerlo cancelaría ediciones o historial
+posteriores. Esto no omite la mutación confirmada. La autoría de los trazos se
+mantiene en el registro verificado, separada de los objetos de UI que compara
+deshacer/rehacer. Se prueba el ciclo completo con ACKs.
+
+Ante un salto se conserva también el evento que lo detectó. Los eventos llegados
+durante GET se ordenan y aplican después del snapshot; los incluidos solo retiran
+pendientes. Si el snapshot sigue dejando un hueco, la edición queda bloqueada y
+se conserva la cola con aviso de reintento, sin encadenar peticiones HTTP. Las
+respuestas de cargas anteriores siguen descartándose por secuencia.
+
+No se modifican permisos, validación STOMP, revocación ni producción backend para
+esta corrección. La PR backend incorpora esta evidencia; la implementación y las
+pruebas nuevas están en la misma PR frontend #79.
+
+### Pruebas y reproducción integrada
+
+`whiteboard-reconciliation.spec.ts` instancia los componentes reales docente y
+alumno. Comprueba valores, identidades, orden, autoría y revisión final para texto,
+forma y trazo: B antes de ACK A, varias operaciones pendientes con remotos
+intercalados, borrado/restauración legítimos, duplicados y ACKs incluidos en un
+snapshot, llegadas durante recuperación, snapshot insuficiente sin bucle, borrador,
+deshacer/rehacer, historial posterior a CLEAR y gestos en curso.
+
+`whiteboard-reconciliation-live.spec.ts` es opt-in mediante `T03_LIVE_FIXTURE`.
+Usa dos logins ficticios, dos conexiones SockJS/STOMP al backend real y PostgreSQL
+desechable. Un alumno crea el texto; alumno y docente pueden modificarlo
+legítimamente. Se ejecuta para cada rol de componente: A1 queda retenida en el
+arnés, B se confirma, se crea A2, se confirma A1, se intercala C y se confirma A2.
+Se compara todo el array de textos y la revisión con GET state persistido; también
+el contenido y las coordenadas de cada `.text-item` renderizado por la plantilla
+Angular real. El estado intermedio confirma x=10 en servidor y x=30 en la vista
+por A2 pendiente; al terminar ambos tienen x=30, revisión idéntica y cero pendientes.
+Se comprueban autoría, ausencia de errores privados e inocuidad de ACKs duplicados.
+
+Para repetir, arrancar `WhiteboardBrowserFixture` con las propiedades JDBC
+desechables indicadas arriba, `-Dt03.fixture-file=<ruta-absoluta.json>` y
+`-Dt03.stop-file=<ruta-absoluta.stop>` (archivo stop inicialmente inexistente).
+En otra terminal PowerShell, desde el frontend, con Node 24:
+
+```powershell
+$env:T03_LIVE_FIXTURE = Get-Content '<ruta-absoluta.json>' -Raw
+npm test -- --watch=false
+npm run build
+```
+
+Crear el archivo stop al terminar limpia el schema y cierra la fixture. Sin la
+variable, los dos casos integrados se omiten explícitamente; no deben contarse
+como aprobados. El arnés exige origen `http://127.0.0.1:18087` y cuentas ficticias.
+El transporte nativo vive en un worker Node para no mezclar sus clases Event con
+las de jsdom; no se añaden dependencias ni cambios de CORS.
+
+### Resultados finales y límites
+
+| Verificación final del 10 de octubre, hora de Lima | Resultado |
+|---|---|
+| Reproducción previa al cambio de producción | 6 fallos esperados (2 roles × 3 tipos), con estado x=20 incorrecto y revisión 3 |
+| Suite frontend con fixture activa, 19:47 | 108 pruebas en 8 archivos, todas aprobadas; 45 casos deterministas de reconciliación y 2 integrados |
+| Suite frontend sin fixture | 106 aprobadas y 2 integradas omitidas explícitamente |
+| Compilación Angular de producción final | Aprobada; avisos de presupuesto inicial/SCSS existentes |
+| Backend `mvn -o clean package`, 19:46 | 456 pruebas, 0 fallos, 0 errores y 0 omitidas; 3 min 13 s; JAR generado |
+| Regresión de permisos y revocación | Incluye los 18 casos T03 de transporte y la regresión T01/T02, sin cambiar sus controles |
+
+Entorno: Node 24.13.0, Java 17 y PostgreSQL 18 local desechable. Permanecen los
+avisos de hoisting de mocks y de `polyfills.ts` del toolchain existente. Los logs,
+credenciales ficticias de fixture y temporales quedan fuera de los repositorios.
+Esta tabla actualiza la evidencia frontend de 67 casos de la entrega inicial;
+la comprobación de navegador del 9 de octubre conserva su alcance original.
+
+El primer intento integrado pasó las aserciones pero produjo cuatro errores no
+capturados por la mezcla de Event entre jsdom/undici; no se contó como aprobado.
+Se sustituyó únicamente el transporte del arnés por el worker Node y las
+repeticiones terminaron sin esos errores. Una ejecución se pospuso por el límite
+de uso de la herramienta de aprobación; no constituye evidencia funcional.
+
+La prueba integrada controla el orden de envío desde el arnés y monta un rol de
+componente por caso con su plantilla real en jsdom. No es una prueba de dos
+navegadores completos ni compara píxeles de canvas: los trazos y formas se cubren
+mediante estado de los componentes y llamadas de render en los casos deterministas.
+El arranque inicial del componente se sustituye por el snapshot autenticado para
+aislar esta carrera. Las pruebas existentes cubren por separado el servicio de
+transporte Angular y los permisos/revocación backend.
+
+El snapshot no contiene un catálogo de `clientEventId` confirmados. Si un ACK se
+pierde definitivamente, su pendiente no puede reconocerse solo por igualdad de
+objetos; conectar/reconectar o recargar vuelve a la proyección persistida y descarta
+intenciones de resultado incierto, sin reenvío automático. Se conserva el límite
+de entrega del broker descrito arriba. Reconstruir la proyección requiere recorrer
+objetos y pendientes; no se realizó un ensayo de capacidad prolongado.
+
+Se preserva el trabajo anterior. No se hace merge, despliegue manual, cambio de
+base escolar, rotación ni avance a T04. Ambas PRs continúan para revisión conjunta.
