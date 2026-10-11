@@ -73,11 +73,7 @@ public class EvaluationAnswer {
 
     @PrePersist
     protected void onCreate() {
-        answeredAt = LocalDateTime.now();
+        if (answeredAt == null) answeredAt = LocalDateTime.now(java.time.ZoneId.of("America/Lima"));
     }
 
-    @PreUpdate
-    protected void onUpdate() {
-        answeredAt = LocalDateTime.now();
-    }
 }

@@ -7,7 +7,8 @@ import java.util.List;
 
 /**
  * Vista de un intento de evaluación del estudiante, con sus respuestas. El puntaje
- * ({@code score}/{@code maxScore}) queda disponible una vez enviado el intento.
+ * ({@code score}/{@code maxScore}) queda disponible al cerrar las oportunidades de
+ * todos los grupos y la nota del intento; los valores restringidos son null.
  *
  * <p>{@code questionOrder} es el orden de preguntas fijado para este intento (IDs); el
  * frontend debe presentar las preguntas en ese orden. {@code currentQuestionIndex}
@@ -32,5 +33,9 @@ public record AttemptResponse(
         Integer currentQuestionIndex,
         boolean allowChemicalCalculator,
         boolean allowPeriodicTable,
-        List<EvaluationAnswerResponse> answers
+        List<EvaluationAnswerResponse> answers,
+        boolean canAnswer,
+        LocalDateTime answerDeadlineAt,
+        boolean correctionVisible,
+        LocalDateTime serverNow
 ) {}

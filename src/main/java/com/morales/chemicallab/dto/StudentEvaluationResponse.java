@@ -28,5 +28,9 @@ public record StudentEvaluationResponse(
         LocalDateTime startAt,
         LocalDateTime dueAt,
         AttemptStatus attemptStatus,
-        int attemptsUsed
+        int attemptsUsed,
+        String accessState,
+        boolean canStart,
+        Long inProgressAttemptId,
+        java.time.LocalDateTime serverNow
 ) {}

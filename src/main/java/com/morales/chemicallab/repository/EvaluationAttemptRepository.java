@@ -14,6 +14,7 @@ import java.util.Optional;
 
 @Repository
 public interface EvaluationAttemptRepository extends JpaRepository<EvaluationAttempt, Long> {
+    long countByEvaluation(Evaluation evaluation);
 
     // Cuenta de intentos de un estudiante en una evaluación (control de maxAttempts).
     long countByEvaluationAndStudent(Evaluation evaluation, StudentProfile student);

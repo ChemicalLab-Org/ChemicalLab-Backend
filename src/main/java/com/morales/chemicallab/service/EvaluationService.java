@@ -40,8 +40,8 @@ import java.util.stream.Collectors;
  * con su {@code score}, {@code maxScore} y {@code gradedAt}. El docente consulta los
  * resultados de sus evaluaciones y el detalle de cada intento; el estudiante consulta
  * sus propias calificaciones. La retroalimentación detallada (alternativa correcta)
- * se le muestra al estudiante solo cuando ya no le quedan intentos disponibles o la
- * evaluación está archivada, para no facilitar la trampa.</p>
+ * se le muestra al estudiante solo al cerrar las oportunidades de todos los grupos y la
+ * calificación de su intento.</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -60,6 +60,8 @@ public class EvaluationService {
     private final TeacherProfileRepository teacherProfileRepository;
     private final StudentProfileRepository studentProfileRepository;
     private final AuditLogService auditLogService;
+    private final EvaluationAccessPolicy accessPolicy;
+    private final EvaluationAccessLock accessLock;
 
     private static final String TARGET_EVALUATION = "Evaluation";
 
@@ -77,11 +79,7 @@ public class EvaluationService {
     // ajustes manuales se aplican sobre esta misma escala.
     private static final BigDecimal MAX_GRADE = new BigDecimal("20");
 
-    // Margen de gracia (segundos) sobre el límite de tiempo, para tolerar latencia de red
-    // y desfase de reloj en el envío automático del frontend. Pasado este margen, el
-    // backend deja de aceptar respuestas nuevas: el tiempo deja de protegerse solo en el
-    // frontend.
-    private static final long SUBMIT_GRACE_SECONDS = 60;
+    // No se admite gracia para modificar respuestas tras abrir la revisión.
 
     // Ventana mínima (segundos) entre incidencias de foco idénticas. Evita registrar
     // ráfagas de eventos duplicados (control simple de throttling).
@@ -131,6 +129,8 @@ public class EvaluationService {
                 .active(true)
                 .build();
 
+        evaluation.setUpdatedAt(accessPolicy.now());
+        if (evaluation.getCreatedAt() == null) evaluation.setCreatedAt(accessPolicy.now());
         evaluationRepository.save(evaluation);
 
         auditLogService.recordInfo(LogEventType.EVALUATION_CREATED, TARGET_EVALUATION, evaluation.getId(),
@@ -140,7 +140,6 @@ public class EvaluationService {
         return toEvaluationResponse(evaluation);
     }
 
-    @Transactional(readOnly = true)
     public List<EvaluationResponse> listTeacherEvaluations(String username) {
         TeacherProfile teacher = requireTeacher(username);
         return evaluationRepository.findByCreatedByTeacherOrderByCreatedAtDesc(teacher)
@@ -149,7 +148,6 @@ public class EvaluationService {
                 .toList();
     }
 
-    @Transactional(readOnly = true)
     public EvaluationDetailResponse getTeacherEvaluationDetail(String username, Long evaluationId) {
         TeacherProfile teacher = requireTeacher(username);
         return toEvaluationDetailResponse(requireOwnedEvaluation(evaluationId, teacher));
@@ -160,6 +158,13 @@ public class EvaluationService {
         Evaluation evaluation = requireOwnedEvaluation(evaluationId, teacher);
 
         // Configuración avanzada previa, para detectar si cambió y registrar el log.
+        if (attemptRepository.countByEvaluation(evaluation) > 0
+                && (request.maxAttempts() > evaluation.getMaxAttempts()
+                || !java.util.Objects.equals(request.timeLimitMinutes(), evaluation.getTimeLimitMinutes())
+                || (request.questionDisplayMode() == null ? QuestionDisplayMode.ALL_AT_ONCE : request.questionDisplayMode())
+                    != evaluation.getQuestionDisplayMode())) {
+            throw new IllegalArgumentException("Con intentos existentes no se pueden ampliar oportunidades ni cambiar duración o modo. Crea otra evaluación.");
+        }
         boolean trackTabExitBefore = Boolean.TRUE.equals(evaluation.getTrackTabExit());
 
         evaluation.setTitle(request.title().trim());
@@ -175,6 +180,8 @@ public class EvaluationService {
                 ? QuestionDisplayMode.ALL_AT_ONCE : request.questionDisplayMode());
         evaluation.setRandomizeQuestions(Boolean.TRUE.equals(request.randomizeQuestions()));
 
+        evaluation.setUpdatedAt(accessPolicy.now());
+        if (evaluation.getCreatedAt() == null) evaluation.setCreatedAt(accessPolicy.now());
         evaluationRepository.save(evaluation);
 
         // Trazabilidad de la edición de configuración avanzada. Descripción segura: solo
@@ -227,6 +234,8 @@ public class EvaluationService {
         }
 
         evaluation.setStatus(EvaluationStatus.PUBLISHED);
+        evaluation.setUpdatedAt(accessPolicy.now());
+        if (evaluation.getCreatedAt() == null) evaluation.setCreatedAt(accessPolicy.now());
         evaluationRepository.save(evaluation);
 
         auditLogService.recordInfo(LogEventType.EVALUATION_PUBLISHED, TARGET_EVALUATION, evaluation.getId(),
@@ -241,6 +250,8 @@ public class EvaluationService {
         Evaluation evaluation = requireOwnedEvaluation(evaluationId, teacher);
 
         evaluation.setStatus(EvaluationStatus.ARCHIVED);
+        evaluation.setUpdatedAt(accessPolicy.now());
+        if (evaluation.getCreatedAt() == null) evaluation.setCreatedAt(accessPolicy.now());
         evaluationRepository.save(evaluation);
         return toEvaluationResponse(evaluation);
     }
@@ -352,6 +363,11 @@ public class EvaluationService {
             throw new IllegalArgumentException("No se puede asignar una evaluación archivada.");
         }
 
+        accessPolicy.validateInterval(request.startAt(), request.dueAt());
+        if (attemptRepository.countByEvaluationAndStatusIn(evaluation, RESULT_STATUSES) > 0) {
+            throw new IllegalArgumentException("Con resultados existentes no se pueden abrir nuevas asignaciones. Crea otra evaluación.");
+        }
+
         String grade = request.grade().trim();
         String section = request.section().trim();
 
@@ -366,6 +382,7 @@ public class EvaluationService {
                 .section(section)
                 .startAt(request.startAt())
                 .dueAt(request.dueAt())
+                .assignedAt(accessPolicy.now())
                 .active(true)
                 .build();
 
@@ -399,21 +416,19 @@ public class EvaluationService {
     // ESTUDIANTE
     // =========================================================================
 
-    @Transactional(readOnly = true)
     public List<StudentEvaluationResponse> listAvailableEvaluationsForStudent(String username) {
         StudentProfile student = requireStudent(username);
-        return assignmentRepository
-                .findActiveForSection(student.getGrade(), student.getSection(), EvaluationStatus.PUBLISHED)
-                .stream()
-                .map(assignment -> toStudentEvaluationResponse(assignment, student))
-                .toList();
+        var assignments = assignmentRepository.findActiveForSection(student.getGrade(), student.getSection(), EvaluationStatus.PUBLISHED);
+        assignments.stream().sorted(Comparator.comparing(a -> a.getEvaluation().getId()))
+                .forEach(accessLock::assignment);
+        return assignments.stream().filter(a -> Boolean.TRUE.equals(a.getActive()) && accessPolicy.published(a.getEvaluation()))
+                .map(a -> toStudentEvaluationResponse(a, student)).toList();
     }
 
-    @Transactional(readOnly = true)
     public StudentEvaluationDetailResponse getStudentEvaluationDetail(String username, Long evaluationId) {
         StudentProfile student = requireStudent(username);
         EvaluationAssignment assignment = requireActiveAssignmentForStudent(evaluationId, student);
-        return toStudentEvaluationDetailResponse(assignment.getEvaluation(), assignment.getId());
+        return toStudentEvaluationDetailResponse(assignment);
     }
 
     public AttemptResponse startAttempt(String username, Long evaluationId, StartEvaluationAttemptRequest request) {
@@ -421,9 +436,7 @@ public class EvaluationService {
         EvaluationAssignment assignment = requireActiveAssignmentForStudent(evaluationId, student);
         Evaluation evaluation = assignment.getEvaluation();
 
-        if (assignment.getDueAt() != null && LocalDateTime.now().isAfter(assignment.getDueAt())) {
-            throw new IllegalArgumentException("El plazo de la evaluación ya venció.");
-        }
+        accessPolicy.requireStart(assignment);
 
         attemptRepository.findByEvaluationAndStudentAndStatus(evaluation, student, AttemptStatus.IN_PROGRESS)
                 .ifPresent(a -> { throw new IllegalArgumentException("Ya existe un intento en progreso."); });
@@ -443,6 +456,7 @@ public class EvaluationService {
                 .student(student)
                 .attemptNumber((int) used + 1)
                 .status(AttemptStatus.IN_PROGRESS)
+                .startedAt(accessPolicy.now())
                 .questionOrder(serializeOrder(order))
                 .currentQuestionIndex(0)
                 .active(true)
@@ -461,6 +475,9 @@ public class EvaluationService {
     public AttemptResponse getAttempt(String username, Long attemptId) {
         StudentProfile student = requireStudent(username);
         EvaluationAttempt attempt = requireOwnedAttempt(attemptId, student);
+        if (attempt.getStatus() == AttemptStatus.IN_PROGRESS && !accessPolicy.canWrite(attempt)) {
+            return submitAttempt(username, attemptId, null);
+        }
         // Garantiza el orden de preguntas también para intentos antiguos (sin orden guardado).
         ensureAttemptOrder(attempt);
         return toAttemptResponse(attempt);
@@ -472,9 +489,9 @@ public class EvaluationService {
         requireInProgress(attempt);
 
         // El tiempo se protege en el backend, no solo en el frontend: una vez vencido el
-        // límite (con su margen de gracia) ya no se aceptan respuestas nuevas.
-        if (isPastTimeLimit(attempt)) {
-            throw new IllegalArgumentException("El tiempo de la evaluación ya finalizó.");
+        // límite exclusivo ya no se aceptan respuestas nuevas.
+        if (!accessPolicy.canWrite(attempt)) {
+            throw new IllegalArgumentException("La ventana para responder ya cerró. Finaliza con las respuestas guardadas.");
         }
 
         Evaluation evaluation = attempt.getEvaluation();
@@ -523,10 +540,10 @@ public class EvaluationService {
         EvaluationAttempt attempt = requireOwnedAttempt(attemptId, student);
         requireInProgress(attempt);
 
-        // Si el envío llega fuera de tiempo (más allá del margen de gracia) se ignoran las
+        // Si el envío llega fuera de la ventana autorizada se ignoran las
         // respuestas que vengan en el cuerpo: solo se califican las guardadas a tiempo. El
         // intento se cierra igualmente para no dejarlo abierto indefinidamente.
-        boolean pastTimeLimit = isPastTimeLimit(attempt);
+        boolean pastTimeLimit = !accessPolicy.canWrite(attempt);
         // En el modo una por una las respuestas ya se guardaron al avanzar; reprocesar el
         // cuerpo del envío chocaría con el bloqueo de preguntas anteriores, así que se
         // ignora. En "todas juntas" sí se persisten las respuestas que lleguen (a tiempo).
@@ -556,7 +573,7 @@ public class EvaluationService {
         // preguntas abiertas sin revisar, queda PENDING_MANUAL_REVIEW (puntaje parcial, sin
         // gradedAt); si no, queda directamente GRADED.
         boolean pendingReview = hasPendingManualReview(attempt);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = accessPolicy.now();
         attempt.setSubmittedAt(now);
         if (pendingReview) {
             // Queda pendiente de revisión manual: la calificación no se cierra (el estudiante
@@ -566,7 +583,7 @@ public class EvaluationService {
             attempt.setGradeClosed(false);
         } else {
             // Solo alternativa única: se califica y se cierra automáticamente, como hasta ahora,
-            // para que el resultado quede visible de inmediato sin acción del docente.
+            // sin acción docente; la exposición todavía exige cierre de oportunidades.
             attempt.setStatus(AttemptStatus.GRADED);
             attempt.setGradedAt(now);
             attempt.setGradeClosed(true);
@@ -669,7 +686,7 @@ public class EvaluationService {
         // manual igual que un envío normal (el docente las calificará, normalmente con 0 si
         // quedaron en blanco). Si no, se cierra como GRADED.
         boolean pendingReview = hasPendingManualReview(attempt);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = accessPolicy.now();
         attempt.setSubmittedAt(now);
         if (pendingReview) {
             // Queda pendiente de revisión manual: la calificación no se cierra (el estudiante
@@ -679,7 +696,7 @@ public class EvaluationService {
             attempt.setGradeClosed(false);
         } else {
             // Solo alternativa única: se califica y se cierra automáticamente, como hasta ahora,
-            // para que el resultado quede visible de inmediato sin acción del docente.
+            // sin acción docente; la exposición todavía exige cierre de oportunidades.
             attempt.setStatus(AttemptStatus.GRADED);
             attempt.setGradedAt(now);
             attempt.setGradeClosed(true);
@@ -756,6 +773,7 @@ public class EvaluationService {
                     .eventType(type)
                     .description(trimOrNull(request.description()))
                     .metadata(buildSafeMetadata(request.tool(), request.source()))
+                    .occurredAt(accessPolicy.now())
                     .build();
             attemptEventRepository.save(event);
             recorded = true;
@@ -773,7 +791,6 @@ public class EvaluationService {
      * la línea de tiempo de eventos. Solo accesible si el intento pertenece a una
      * evaluación creada por el docente autenticado. Nunca expone respuestas ni claves.
      */
-    @Transactional(readOnly = true)
     public AttemptTraceabilityResponse getAttemptTraceability(String username, Long attemptId) {
         TeacherProfile teacher = requireTeacher(username);
         EvaluationAttempt attempt = attemptRepository.findById(attemptId)
@@ -825,7 +842,6 @@ public class EvaluationService {
     // ADMINISTRADOR
     // =========================================================================
 
-    @Transactional(readOnly = true)
     public List<EvaluationResponse> listAllEvaluations() {
         return evaluationRepository.findAll()
                 .stream()
@@ -839,7 +855,6 @@ public class EvaluationService {
      * cada pregunta: el administrador supervisa, pero nunca visualiza la clave de
      * respuestas (esa información queda reservada al docente).
      */
-    @Transactional(readOnly = true)
     public AdminEvaluationDetailResponse getAdminEvaluationDetail(Long evaluationId) {
         Evaluation evaluation = evaluationRepository.findById(evaluationId)
                 .orElseThrow(() -> new EntityNotFoundException("La evaluación no existe."));
@@ -940,7 +955,6 @@ public class EvaluationService {
      * pendientes de calificar por contener preguntas abiertas. No expone el texto de las
      * respuestas, solo el resumen del intento.
      */
-    @Transactional(readOnly = true)
     public List<PendingReviewAttemptResponse> listPendingManualReview(String username) {
         TeacherProfile teacher = requireTeacher(username);
         return attemptRepository
@@ -956,7 +970,6 @@ public class EvaluationService {
      * respuesta del estudiante, el puntaje máximo y el criterio de corrección (solo
      * docente). Solo accesible si el intento pertenece a una evaluación del docente.
      */
-    @Transactional(readOnly = true)
     public TeacherAttemptReviewResponse getAttemptReview(String username, Long attemptId) {
         TeacherProfile teacher = requireTeacher(username);
         EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
@@ -993,7 +1006,7 @@ public class EvaluationService {
         answer.setPointsAwarded(request.score());
         answer.setTeacherFeedback(trimOrNull(request.feedback()));
         answer.setReviewed(true);
-        answer.setReviewedAt(LocalDateTime.now());
+        answer.setReviewedAt(accessPolicy.now());
         answer.setReviewedBy(teacher);
         answer.setCorrect(null);
         answerRepository.save(answer);
@@ -1031,7 +1044,7 @@ public class EvaluationService {
         gradeAttempt(attempt);
         attempt.setStatus(AttemptStatus.GRADED);
         if (attempt.getGradedAt() == null) {
-            attempt.setGradedAt(LocalDateTime.now());
+            attempt.setGradedAt(accessPolicy.now());
         }
         recomputeFinalScore(attempt);
         attemptRepository.save(attempt);
@@ -1063,7 +1076,7 @@ public class EvaluationService {
         // calificación de forma explícita para que el estudiante vea su nota final.
         attempt.setStatus(AttemptStatus.GRADED);
         if (attempt.getGradedAt() == null) {
-            attempt.setGradedAt(LocalDateTime.now());
+            attempt.setGradedAt(accessPolicy.now());
         }
         recomputeFinalScore(attempt);
         attemptRepository.save(attempt);
@@ -1109,7 +1122,7 @@ public class EvaluationService {
 
         EvaluationAttemptAdjustment adjustment = EvaluationAttemptAdjustment.builder()
                 .attempt(attempt).amount(amount).type(type).reason(reason)
-                .createdBy(teacher).active(true).build();
+                .createdBy(teacher).createdAt(accessPolicy.now()).active(true).build();
         adjustmentRepository.save(adjustment);
 
         recomputeFinalScore(attempt);
@@ -1211,7 +1224,7 @@ public class EvaluationService {
         gradeAttempt(attempt);
         attempt.setStatus(AttemptStatus.GRADED);
         recomputeFinalScore(attempt);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = accessPolicy.now();
         if (attempt.getGradedAt() == null) {
             attempt.setGradedAt(now);
         }
@@ -1299,6 +1312,7 @@ public class EvaluationService {
                         .attempt(attempt)
                         .question(question)
                         .reviewed(false)
+                        .answeredAt(accessPolicy.now())
                         .build());
             }
         }
@@ -1364,6 +1378,7 @@ public class EvaluationService {
         if (!attempt.getEvaluation().getCreatedByTeacher().getId().equals(teacher.getId())) {
             throw new IllegalArgumentException("No tienes permiso para ver este intento.");
         }
+        accessLock.attempt(attempt);
         return attempt;
     }
 
@@ -1374,11 +1389,10 @@ public class EvaluationService {
     /** Lista las calificaciones de los intentos terminales del estudiante autenticado. */
     public List<StudentResultSummaryResponse> listStudentResults(String username) {
         StudentProfile student = requireStudent(username);
-        return attemptRepository
-                .findByStudentAndStatusInOrderBySubmittedAtDesc(student, RESULT_STATUSES)
-                .stream()
-                .map(this::toStudentResultSummary)
-                .toList();
+        var attempts = attemptRepository.findByStudentAndStatusInOrderBySubmittedAtDesc(student, RESULT_STATUSES);
+        attempts.stream().map(EvaluationAttempt::getEvaluation).distinct()
+                .sorted(Comparator.comparing(Evaluation::getId)).forEach(accessLock::evaluation);
+        return attempts.stream().map(this::toStudentResultSummary).toList();
     }
 
     /** Detalle del resultado de un intento propio del estudiante. */
@@ -1402,12 +1416,12 @@ public class EvaluationService {
         // revisión. Solo se revela todo (nota, puntajes por pregunta, comentarios) al cerrar
         // y siempre que la revisión esté disponible para el grupo.
         boolean closed = Boolean.TRUE.equals(attempt.getGradeClosed());
-        boolean showDetail = reviewAvailable && closed;
+        boolean showDetail = accessPolicy.exposeCorrection(attempt, reviewAvailable);
 
         // Si la revisión está bloqueada, no se envía ninguna respuesta (ni siquiera la propia
         // sin corregir): el estudiante solo ve estado y mensaje. Al desbloquearse, la
         // corrección pregunta a pregunta se sigue gobernando por el cierre de la calificación.
-        List<StudentAnswerResultResponse> answers = !reviewAvailable ? List.of()
+        List<StudentAnswerResultResponse> answers = !reviewAvailable || accessPolicy.beforeStart(attempt.getAssignment()) ? List.of()
                 : answerDetailsOf(attempt).stream()
                 .map(d -> {
                     boolean open = d.question.getQuestionType() == QuestionType.OPEN_TEXT;
@@ -1416,16 +1430,16 @@ public class EvaluationService {
                             // El estudiante siempre ve su alternativa elegida o su propio texto.
                             d.selected == null ? null : d.selected.getOptionText(),
                             open ? d.answerText : null,
-                            closed && !open ? d.isCorrect : null,
+                            showDetail && !open ? d.isCorrect : null,
                             d.question.getPoints(),
                             // El puntaje por pregunta y la retroalimentación solo se muestran con
                             // la calificación cerrada (y, en abiertas, una vez revisadas).
-                            closed && !(open && !d.reviewed) ? d.pointsAwarded : null,
-                            closed && d.reviewed,
-                            closed && open && d.reviewed ? d.teacherFeedback : null,
-                            closed && !open && d.correctOption != null
+                            showDetail && !(open && !d.reviewed) ? d.pointsAwarded : null,
+                            showDetail && d.reviewed,
+                            showDetail && open && d.reviewed ? d.teacherFeedback : null,
+                            showDetail && !open && d.correctOption != null
                                     ? d.correctOption.getOptionText() : null,
-                            closed ? d.question.getExplanation() : null);
+                            showDetail ? d.question.getExplanation() : null);
                 })
                 .toList();
 
@@ -1438,7 +1452,7 @@ public class EvaluationService {
                 showDetail ? computeFinalScore(attempt) : null,
                 showDetail ? attempt.getOverallFeedback() : null,
                 closed,
-                attempt.getSubmittedAt(), reviewAvailable, answers,
+                attempt.getSubmittedAt(), showDetail, answers,
                 reviewAvailable, !reviewAvailable, availability.reason(), availability.deadlineAt(),
                 availability.assignedStudentsCount(), availability.finishedStudentsCount(),
                 availability.pendingStudentsCount(), availability.messageWhenLocked());
@@ -1514,6 +1528,7 @@ public class EvaluationService {
     }
 
     private StudentResultSummaryResponse toStudentResultSummary(EvaluationAttempt attempt) {
+        accessLock.attempt(attempt);
         ensureScored(attempt);
         Evaluation evaluation = attempt.getEvaluation();
         StudentProfile student = attempt.getStudent();
@@ -1525,7 +1540,7 @@ public class EvaluationService {
         // como "revisión pendiente" sin puntaje.
         StudentReviewAvailability availability = computeReviewAvailability(evaluation);
         boolean reviewAvailable = availability.reviewAvailable();
-        boolean showScore = reviewAvailable && closed;
+        boolean showScore = accessPolicy.exposeCorrection(attempt, reviewAvailable);
 
         return new StudentResultSummaryResponse(
                 attempt.getId(), evaluation.getId(), evaluation.getTitle(), evaluation.getTopic(),
@@ -1589,8 +1604,8 @@ public class EvaluationService {
      * por lo que también habilita la revisión, conservando el comportamiento previo.</p>
      */
     private StudentReviewAvailability computeReviewAvailability(Evaluation evaluation) {
-        List<EvaluationAssignment> activeAssignments =
-                assignmentRepository.findByEvaluationOrderByAssignedAtDesc(evaluation).stream()
+        List<EvaluationAssignment> assignments = assignmentRepository.findByEvaluationOrderByAssignedAtDesc(evaluation);
+        List<EvaluationAssignment> activeAssignments = assignments.stream()
                         .filter(a -> Boolean.TRUE.equals(a.getActive()))
                         .toList();
 
@@ -1609,10 +1624,15 @@ public class EvaluationService {
 
         int assignedCount = assignedStudents.size();
         int finishedCount = 0;
+        int closedOpportunityCount = 0;
         for (StudentProfile candidate : assignedStudents.values()) {
-            if (studentFinishedAttempts(evaluation, candidate)) {
-                finishedCount++;
-            }
+            boolean hasOpenOpportunity = activeAssignments.stream()
+                    .filter(a -> a.getGrade().equals(candidate.getGrade()) && a.getSection().equals(candidate.getSection()))
+                    .anyMatch(a -> accessPolicy.window(a) == EvaluationAccessPolicy.Window.AVAILABLE
+                            || accessPolicy.window(a) == EvaluationAccessPolicy.Window.SCHEDULED);
+            boolean finished = studentFinishedAttempts(evaluation, candidate);
+            if (finished) finishedCount++;
+            if (!hasOpenOpportunity || finished) closedOpportunityCount++;
         }
         int pendingCount = assignedCount - finishedCount;
 
@@ -1627,13 +1647,16 @@ public class EvaluationService {
                         .max(Comparator.naturalOrder())
                         .orElse(null)
                 : null;
-        boolean deadlineReached = deadlineAt != null && !LocalDateTime.now().isBefore(deadlineAt);
+        boolean deadlineReached = deadlineAt != null && !accessPolicy.now().isBefore(deadlineAt);
 
         // Sin estudiantes asignadas no se habilita la revisión por accidente.
-        boolean allAssignedStudentsFinished = assignedCount > 0 && pendingCount == 0;
-        boolean archived = evaluation.getStatus() == EvaluationStatus.ARCHIVED;
+        boolean allAssignedStudentsFinished = assignedCount > 0 && closedOpportunityCount == assignedCount;
+        boolean archived = !accessPolicy.published(evaluation);
 
-        boolean reviewAvailable = deadlineReached || allAssignedStudentsFinished || archived;
+        // No active assignment means no new opportunity; in-progress attempts also
+        // cannot write under this policy. Deactivation and archive therefore close safely.
+        boolean reviewAvailable = deadlineReached || allAssignedStudentsFinished || archived
+                || (!assignments.isEmpty() && activeAssignments.isEmpty());
 
         ReviewUnlockReason reason;
         if (reviewAvailable) {
@@ -1657,12 +1680,10 @@ public class EvaluationService {
      * intento; con más intentos, debe haberlos usado todos.
      */
     private boolean studentFinishedAttempts(Evaluation evaluation, StudentProfile student) {
-        boolean hasInProgress = attemptRepository
+        boolean canStillWrite = attemptRepository
                 .findByEvaluationAndStudentAndStatus(evaluation, student, AttemptStatus.IN_PROGRESS)
-                .isPresent();
-        if (hasInProgress) {
-            return false;
-        }
+                .map(accessPolicy::canWrite).orElse(false);
+        if (canStillWrite) return false;
         long attemptsUsed = attemptRepository.countByEvaluationAndStudent(evaluation, student);
         return attemptsUsed >= evaluation.getMaxAttempts();
     }
@@ -1713,7 +1734,7 @@ public class EvaluationService {
             // revisión manual conserva gradedAt en null hasta que el docente cierre la revisión.
             if (attempt.getStatus() == AttemptStatus.GRADED && attempt.getGradedAt() == null) {
                 attempt.setGradedAt(attempt.getSubmittedAt() != null
-                        ? attempt.getSubmittedAt() : LocalDateTime.now());
+                        ? attempt.getSubmittedAt() : accessPolicy.now());
             }
             recomputeFinalScore(attempt);
             attemptRepository.save(attempt);
@@ -1755,7 +1776,7 @@ public class EvaluationService {
             return null;
         }
         LocalDateTime end = attempt.getSubmittedAt() != null
-                ? attempt.getSubmittedAt() : LocalDateTime.now();
+                ? attempt.getSubmittedAt() : accessPolicy.now();
         return Math.max(0, Duration.between(attempt.getStartedAt(), end).getSeconds());
     }
 
@@ -1772,6 +1793,7 @@ public class EvaluationService {
                 .eventType(type)
                 .description(description)
                 .metadata(metadata)
+                .occurredAt(accessPolicy.now())
                 .build());
     }
 
@@ -1945,6 +1967,7 @@ public class EvaluationService {
         if (!evaluation.getCreatedByTeacher().getId().equals(teacher.getId())) {
             throw new IllegalArgumentException("No tienes permiso para modificar esta evaluación.");
         }
+        accessLock.evaluation(evaluation);
         return evaluation;
     }
 
@@ -1958,9 +1981,13 @@ public class EvaluationService {
     }
 
     private EvaluationAssignment requireActiveAssignmentForStudent(Long evaluationId, StudentProfile student) {
-        return assignmentRepository.findActiveForSectionByEvaluation(
+        EvaluationAssignment assignment = assignmentRepository.findActiveForSectionByEvaluation(
                         evaluationId, student.getGrade(), student.getSection(), EvaluationStatus.PUBLISHED)
                 .orElseThrow(() -> new EntityNotFoundException("La evaluación no está asignada a tu sección."));
+        accessLock.assignment(assignment);
+        if (!Boolean.TRUE.equals(assignment.getActive()) || !accessPolicy.published(assignment.getEvaluation()))
+            throw new EntityNotFoundException("La evaluación no está asignada a tu sección.");
+        return assignment;
     }
 
     private EvaluationAttempt requireOwnedAttempt(Long attemptId, StudentProfile student) {
@@ -1968,6 +1995,13 @@ public class EvaluationService {
                 .orElseThrow(() -> new EntityNotFoundException("El intento no existe."));
         if (!attempt.getStudent().getId().equals(student.getId())) {
             throw new IllegalArgumentException("No tienes permiso para acceder a este intento.");
+        }
+        accessLock.attempt(attempt);
+        // Legacy attempts without assignment retain their current academic section window.
+        if (attempt.getAssignment() == null) {
+            assignmentRepository.findActiveForSectionByEvaluation(attempt.getEvaluation().getId(),
+                    student.getGrade(), student.getSection(), EvaluationStatus.PUBLISHED)
+                    .ifPresent(attempt::setAssignment);
         }
         return attempt;
     }
@@ -1978,21 +2012,6 @@ public class EvaluationService {
         }
     }
 
-    /**
-     * Indica si un intento superó el límite de tiempo de su evaluación, contando un
-     * margen de gracia para tolerar latencia de red y desfase de reloj. Si la evaluación
-     * no define límite o el intento no tiene inicio registrado, nunca está fuera de tiempo.
-     */
-    private boolean isPastTimeLimit(EvaluationAttempt attempt) {
-        Integer limitMinutes = attempt.getEvaluation().getTimeLimitMinutes();
-        if (limitMinutes == null || limitMinutes <= 0 || attempt.getStartedAt() == null) {
-            return false;
-        }
-        LocalDateTime deadline = attempt.getStartedAt()
-                .plusMinutes(limitMinutes)
-                .plusSeconds(SUBMIT_GRACE_SECONDS);
-        return LocalDateTime.now().isAfter(deadline);
-    }
 
     /**
      * Control simple de duplicados: considera duplicada una incidencia si coincide en
@@ -2003,7 +2022,7 @@ public class EvaluationService {
         return attemptEventRepository.findFirstByAttemptOrderByOccurredAtDesc(attempt)
                 .filter(last -> last.getEventType() == eventType)
                 .filter(last -> last.getOccurredAt() != null
-                        && last.getOccurredAt().isAfter(LocalDateTime.now().minusSeconds(EVENT_THROTTLE_SECONDS)))
+                        && last.getOccurredAt().isAfter(accessPolicy.now().minusSeconds(EVENT_THROTTLE_SECONDS)))
                 .isPresent();
     }
 
@@ -2090,6 +2109,7 @@ public class EvaluationService {
                         .question(question)
                         .build());
 
+        answer.setAnsweredAt(accessPolicy.now());
         if (question.getQuestionType() == QuestionType.OPEN_TEXT) {
             // Pregunta abierta: se guarda el texto del estudiante y queda pendiente de
             // revisión manual (sin alternativa ni corrección automática).
@@ -2346,13 +2366,19 @@ public class EvaluationService {
                 assignment.getStartAt(),
                 assignment.getDueAt(),
                 lastStatus,
-                attemptsUsed
+                attemptsUsed, accessPolicy.window(assignment).name(),
+                accessPolicy.window(assignment) == EvaluationAccessPolicy.Window.AVAILABLE
+                        && lastStatus != AttemptStatus.IN_PROGRESS && attemptsUsed < evaluation.getMaxAttempts(),
+                attemptRepository.findByEvaluationAndStudentAndStatus(evaluation, student, AttemptStatus.IN_PROGRESS)
+                        .map(EvaluationAttempt::getId).orElse(null), accessPolicy.now()
         );
     }
 
-    private StudentEvaluationDetailResponse toStudentEvaluationDetailResponse(Evaluation evaluation, Long assignmentId) {
+    private StudentEvaluationDetailResponse toStudentEvaluationDetailResponse(EvaluationAssignment assignment) {
+        Evaluation evaluation = assignment.getEvaluation();
+        boolean questionsVisible = accessPolicy.window(assignment) == EvaluationAccessPolicy.Window.AVAILABLE;
         List<StudentQuestionResponse> questions =
-                questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(evaluation)
+                !questionsVisible ? List.of() : questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(evaluation)
                         .stream()
                         .map(this::toStudentQuestionResponse)
                         .toList();
@@ -2370,7 +2396,8 @@ public class EvaluationService {
                 evaluation.getQuestionDisplayMode(),
                 evaluation.getRandomizeQuestions(),
                 questions,
-                assignmentId
+                assignment.getId(), assignment.getStartAt(), assignment.getDueAt(),
+                accessPolicy.window(assignment).name(), questionsVisible, accessPolicy.now()
         );
     }
 
@@ -2394,8 +2421,11 @@ public class EvaluationService {
     }
 
     private AttemptResponse toAttemptResponse(EvaluationAttempt attempt) {
+        boolean correctionVisible = accessPolicy.exposeCorrection(attempt,
+                computeReviewAvailability(attempt.getEvaluation()).reviewAvailable());
+        boolean beforeStart = accessPolicy.beforeStart(attempt.getAssignment());
         List<EvaluationAnswerResponse> answers =
-                answerRepository.findByAttemptOrderByAnsweredAtAsc(attempt)
+                beforeStart ? List.of() : answerRepository.findByAttemptOrderByAnsweredAtAsc(attempt)
                         .stream()
                         .map(a -> new EvaluationAnswerResponse(
                                 a.getId(),
@@ -2403,8 +2433,8 @@ public class EvaluationService {
                                 a.getQuestion().getQuestionType(),
                                 a.getSelectedOption() == null ? null : a.getSelectedOption().getId(),
                                 a.getAnswerText(),
-                                a.getCorrect(),
-                                a.getPointsAwarded(),
+                                correctionVisible ? a.getCorrect() : null,
+                                correctionVisible ? a.getPointsAwarded() : null,
                                 a.getAnsweredAt()))
                         .toList();
 
@@ -2416,13 +2446,14 @@ public class EvaluationService {
                 attempt.getAttemptNumber(),
                 attempt.getStartedAt(),
                 attempt.getSubmittedAt(),
-                attempt.getScore(),
-                attempt.getMaxScore(),
-                parseOrder(attempt.getQuestionOrder()),
+                correctionVisible ? attempt.getScore() : null,
+                correctionVisible ? attempt.getMaxScore() : null,
+                beforeStart ? List.of() : parseOrder(attempt.getQuestionOrder()),
                 attempt.getCurrentQuestionIndex(),
                 Boolean.TRUE.equals(attempt.getEvaluation().getAllowChemicalCalculator()),
                 Boolean.TRUE.equals(attempt.getEvaluation().getAllowPeriodicTable()),
-                answers
+                answers, accessPolicy.canWrite(attempt), accessPolicy.answerDeadline(attempt),
+                correctionVisible, accessPolicy.now()
         );
     }
 }

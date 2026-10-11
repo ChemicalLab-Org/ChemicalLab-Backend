@@ -33,6 +33,40 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class EvaluationServiceTest {
 
+    @Test
+    void t05Sec11GeneralAttemptMustNotRevealCorrectionWhileGroupCanAnswer() {
+        var owner = teacher(1L, "docente1");
+        var pupil = student(2L, "T05A", "3", "A");
+        stubStudent(pupil);
+        var exam = evaluation(10L, owner, EvaluationStatus.PUBLISHED, 2);
+        var attempt = gradedAttempt(20L, exam, pupil, 1, 3, 5);
+        attempt.setQuestionOrder("30");
+        stubGroup(exam, assignment(11L, exam, owner, "3", "A"), List.of(pupil));
+        when(attemptRepository.findById(20L)).thenReturn(Optional.of(attempt));
+        var q = question(30L, exam, 5);
+        var answer = EvaluationAnswer.builder().id(40L).attempt(attempt).question(q)
+                .selectedOption(option(50L, q, true)).correct(true).pointsAwarded(3).build();
+        when(answerRepository.findByAttemptOrderByAnsweredAtAsc(attempt)).thenReturn(List.of(answer));
+        var result = service.getAttempt("T05A", 20L);
+        assertThat(result.score()).as("SEC-11 score").isNull();
+        assertThat(result.answers().get(0).correct()).as("SEC-11 correctness").isNull();
+        assertThat(result.answers().get(0).pointsAwarded()).isNull();
+    }
+
+    @Test
+    void t05Sec12ScheduledDetailMustNotRevealQuestions() {
+        var owner = teacher(1L, "docente1");
+        var pupil = student(2L, "T05A", "3", "A");
+        stubStudent(pupil);
+        var exam = evaluation(10L, owner, EvaluationStatus.PUBLISHED, 2);
+        var slot = assignment(11L, exam, owner, "3", "A");
+        slot.setStartAt(LocalDateTime.now().plusDays(1));
+        when(assignmentRepository.findActiveForSectionByEvaluation(10L, "3", "A", EvaluationStatus.PUBLISHED))
+                .thenReturn(Optional.of(slot));
+
+        assertThat(service.getStudentEvaluationDetail("T05A", 10L).questions()).as("SEC-12 questions").isEmpty();
+    }
+
     @Mock
     private EvaluationRepository evaluationRepository;
     @Mock
@@ -57,6 +91,10 @@ class EvaluationServiceTest {
     private StudentProfileRepository studentProfileRepository;
     @Mock
     private AuditLogService auditLogService;
+
+    @org.mockito.Spy
+    private EvaluationAccessPolicy accessPolicy = new EvaluationAccessPolicy(java.time.Clock.system(EvaluationAccessPolicy.ACADEMIC_ZONE));
+    @Mock private EvaluationAccessLock accessLock;
 
     @InjectMocks
     private EvaluationService service;
@@ -139,7 +177,7 @@ class EvaluationServiceTest {
         // Resultado de alternativa única: se califica y se cierra automáticamente al enviarse,
         // por lo que la calificación queda cerrada (gradeClosed = true) y visible al estudiante.
         return EvaluationAttempt.builder()
-                .id(id).evaluation(evaluation).student(student).attemptNumber(attemptNumber)
+                .id(id).evaluation(evaluation).assignment(assignment(999L, evaluation, evaluation.getCreatedByTeacher(), student.getGrade(), student.getSection())).student(student).attemptNumber(attemptNumber)
                 .status(AttemptStatus.GRADED).score(score).maxScore(maxScore)
                 .gradeClosed(true).gradeClosedAt(LocalDateTime.now())
                 .startedAt(LocalDateTime.now()).submittedAt(LocalDateTime.now()).gradedAt(LocalDateTime.now())
@@ -460,7 +498,7 @@ class EvaluationServiceTest {
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
         EvaluationAssignment asig = assignment(40L, eval, docente, "3", "A");
         EvaluationAttempt enCurso = EvaluationAttempt.builder()
-                .id(99L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(99L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).active(true).build();
         when(assignmentRepository.findActiveForSectionByEvaluation(10L, "3", "A", EvaluationStatus.PUBLISHED))
                 .thenReturn(Optional.of(asig));
@@ -485,7 +523,7 @@ class EvaluationServiceTest {
         EvaluationQuestion q = question(20L, eval, 1);
         EvaluationOption opt = option(32L, q, true);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
         when(questionRepository.findById(20L)).thenReturn(Optional.of(q));
@@ -515,7 +553,7 @@ class EvaluationServiceTest {
         EvaluationQuestion otra = question(21L, eval, 1);
         EvaluationOption optDeOtra = option(99L, otra, true);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
         when(questionRepository.findById(20L)).thenReturn(Optional.of(q));
@@ -541,7 +579,7 @@ class EvaluationServiceTest {
         EvaluationAnswer answer = EvaluationAnswer.builder()
                 .id(60L).attempt(null).question(q).selectedOption(correcta).build();
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
         when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval)).thenReturn(List.of(q));
@@ -554,8 +592,9 @@ class EvaluationServiceTest {
                 "EST0001", 50L, new SubmitEvaluationAttemptRequest(null));
 
         assertThat(response.status()).isEqualTo(AttemptStatus.GRADED);
-        assertThat(response.score()).isEqualTo(2);
-        assertThat(response.maxScore()).isEqualTo(2);
+        assertThat(response.score()).isNull();
+        assertThat(attempt.getScore()).isEqualTo(2);
+        assertThat(attempt.getMaxScore()).isEqualTo(2);
     }
 
     // =========================================================================
@@ -569,7 +608,7 @@ class EvaluationServiceTest {
         TeacherProfile docente = teacher(1L, "docente1");
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.SUBMITTED).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
 
@@ -635,7 +674,7 @@ class EvaluationServiceTest {
         EvaluationAnswer answer = EvaluationAnswer.builder()
                 .id(60L).attempt(null).question(q).selectedOption(incorrecta).build();
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
         when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval)).thenReturn(List.of(q));
@@ -648,8 +687,9 @@ class EvaluationServiceTest {
                 "EST0001", 50L, new SubmitEvaluationAttemptRequest(null));
 
         assertThat(response.status()).isEqualTo(AttemptStatus.GRADED);
-        assertThat(response.score()).isZero();
-        assertThat(response.maxScore()).isEqualTo(2);
+        assertThat(response.score()).isNull();
+        assertThat(attempt.getScore()).isZero();
+        assertThat(attempt.getMaxScore()).isEqualTo(2);
         assertThat(answer.getCorrect()).isFalse();
         assertThat(answer.getPointsAwarded()).isZero();
     }
@@ -896,7 +936,7 @@ class EvaluationServiceTest {
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
         EvaluationAttempt terminado = gradedAttempt(50L, eval, alumno, 1, 2, 2);
         EvaluationAttempt enProgreso = EvaluationAttempt.builder()
-                .id(51L).evaluation(eval).student(alumno).attemptNumber(2)
+                .id(51L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(2)
                 .status(AttemptStatus.IN_PROGRESS).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(terminado));
         when(assignmentRepository.findByEvaluationOrderByAssignedAtDesc(eval))
@@ -955,7 +995,7 @@ class EvaluationServiceTest {
         TeacherProfile docente = teacher(1L, "docente1");
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
         EvaluationAttempt at = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(at));
 
@@ -1049,7 +1089,7 @@ class EvaluationServiceTest {
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
         eval.setTrackTabExit(true);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).startedAt(LocalDateTime.now()).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
         when(attemptEventRepository.findFirstByAttemptOrderByOccurredAtDesc(attempt)).thenReturn(Optional.empty());
@@ -1077,7 +1117,7 @@ class EvaluationServiceTest {
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
         eval.setTrackTabExit(false);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).startedAt(LocalDateTime.now()).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
 
@@ -1100,7 +1140,7 @@ class EvaluationServiceTest {
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
         eval.setTrackTabExit(true);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(otro).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), otro.getGrade(), otro.getSection())).student(otro).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).startedAt(LocalDateTime.now()).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
 
@@ -1122,7 +1162,7 @@ class EvaluationServiceTest {
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
         eval.setTrackTabExit(true);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).startedAt(LocalDateTime.now()).active(true).build();
         EvaluationAttemptEvent ultimo = EvaluationAttemptEvent.builder()
                 .id(70L).attempt(attempt).eventType(AttemptEventType.TAB_HIDDEN)
@@ -1152,13 +1192,13 @@ class EvaluationServiceTest {
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
         eval.setTimeLimitMinutes(30);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).startedAt(LocalDateTime.now().minusMinutes(90)).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
 
         assertThatThrownBy(() -> service.saveAnswer(
                 "EST0001", 50L, new SubmitEvaluationAnswerRequest(20L, 32L, null)))
-                .hasMessageContaining("tiempo de la evaluación ya finalizó");
+                .hasMessageContaining("ventana para responder ya cerró");
         verify(answerRepository, never()).save(any(EvaluationAnswer.class));
     }
 
@@ -1174,7 +1214,7 @@ class EvaluationServiceTest {
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
         eval.setTimeLimitMinutes(30);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).startedAt(LocalDateTime.now().minusMinutes(90)).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
         when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval)).thenReturn(List.of());
@@ -1233,7 +1273,7 @@ class EvaluationServiceTest {
         TeacherProfile docente = teacher(1L, "docente1");
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).questionOrder("22,20,21").currentQuestionIndex(0)
                 .startedAt(LocalDateTime.now()).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
@@ -1262,7 +1302,7 @@ class EvaluationServiceTest {
         EvaluationQuestion q = question(20L, eval, 1);
         EvaluationOption opt = option(32L, q, true);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).questionOrder("20,21").currentQuestionIndex(0)
                 .startedAt(LocalDateTime.now()).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
@@ -1292,7 +1332,7 @@ class EvaluationServiceTest {
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
         eval.setQuestionDisplayMode(QuestionDisplayMode.ONE_BY_ONE);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).questionOrder("20,21").currentQuestionIndex(1)
                 .startedAt(LocalDateTime.now()).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
@@ -1315,7 +1355,7 @@ class EvaluationServiceTest {
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
         eval.setQuestionDisplayMode(QuestionDisplayMode.ONE_BY_ONE);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).questionOrder("20,21,22").currentQuestionIndex(0)
                 .startedAt(LocalDateTime.now()).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
@@ -1338,7 +1378,7 @@ class EvaluationServiceTest {
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
         eval.setQuestionDisplayMode(QuestionDisplayMode.ONE_BY_ONE);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).questionOrder("20,21,22").currentQuestionIndex(2)
                 .startedAt(LocalDateTime.now()).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
@@ -1366,7 +1406,7 @@ class EvaluationServiceTest {
         EvaluationAnswer previa = EvaluationAnswer.builder()
                 .id(60L).attempt(null).question(q).selectedOption(option(32L, q, true)).build();
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).questionOrder("20").currentQuestionIndex(0)
                 .startedAt(LocalDateTime.now()).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
@@ -1395,7 +1435,7 @@ class EvaluationServiceTest {
         TeacherProfile docente = teacher(1L, "docente1");
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(otro).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), otro.getGrade(), otro.getSection())).student(otro).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).questionOrder("20").currentQuestionIndex(0)
                 .startedAt(LocalDateTime.now()).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
@@ -1478,7 +1518,7 @@ class EvaluationServiceTest {
         EvaluationAnswer answer = EvaluationAnswer.builder()
                 .id(60L).attempt(null).question(respondida).selectedOption(correcta).build();
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
         when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval))
@@ -1493,8 +1533,9 @@ class EvaluationServiceTest {
 
         // El intento queda finalizado (GRADED) y calificado con lo respondido: 2 de 5 puntos.
         assertThat(response.status()).isEqualTo(AttemptStatus.GRADED);
-        assertThat(response.score()).isEqualTo(2);
-        assertThat(response.maxScore()).isEqualTo(5);
+        assertThat(response.score()).isNull();
+        assertThat(attempt.getScore()).isEqualTo(2);
+        assertThat(attempt.getMaxScore()).isEqualTo(5);
         assertThat(attempt.getSubmittedAt()).isNotNull();
     }
 
@@ -1509,7 +1550,7 @@ class EvaluationServiceTest {
         TeacherProfile docente = teacher(1L, "docente1");
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.GRADED).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
 
@@ -1531,7 +1572,7 @@ class EvaluationServiceTest {
         TeacherProfile docente = teacher(1L, "docente1");
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(dueno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), dueno.getGrade(), dueno.getSection())).student(dueno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
 
@@ -1586,7 +1627,7 @@ class EvaluationServiceTest {
         EvaluationAnswer answer = EvaluationAnswer.builder()
                 .id(60L).attempt(null).question(q).selectedOption(correcta).build();
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).startedAt(LocalDateTime.now()).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
         when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval)).thenReturn(List.of(q));
@@ -1616,7 +1657,7 @@ class EvaluationServiceTest {
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
         eval.setTrackTabExit(false);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).startedAt(LocalDateTime.now()).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
         when(attemptEventRepository.findFirstByAttemptOrderByOccurredAtDesc(attempt)).thenReturn(Optional.empty());
@@ -1646,7 +1687,7 @@ class EvaluationServiceTest {
         TeacherProfile docente = teacher(1L, "docente1");
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).startedAt(LocalDateTime.now()).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
         when(attemptEventRepository.findFirstByAttemptOrderByOccurredAtDesc(attempt)).thenReturn(Optional.empty());
@@ -1676,7 +1717,7 @@ class EvaluationServiceTest {
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
         eval.setTrackTabExit(true);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).startedAt(LocalDateTime.now()).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
 
@@ -1697,7 +1738,7 @@ class EvaluationServiceTest {
         TeacherProfile docente = teacher(1L, "docente1");
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).startedAt(LocalDateTime.now()).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
         when(attemptEventRepository.findFirstByAttemptOrderByOccurredAtDesc(attempt)).thenReturn(Optional.empty());
@@ -1730,7 +1771,7 @@ class EvaluationServiceTest {
         eval.setTrackTabExit(true);
         LocalDateTime inicio = LocalDateTime.now().minusMinutes(10);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.GRADED).startedAt(inicio).submittedAt(inicio.plusMinutes(8))
                 .active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
@@ -1776,7 +1817,7 @@ class EvaluationServiceTest {
         StudentProfile alumno = student(5L, "EST0001", "3", "A");
         Evaluation eval = evaluation(10L, docenteDueno, EvaluationStatus.PUBLISHED, 1);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.GRADED).startedAt(LocalDateTime.now()).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
 
@@ -1861,7 +1902,7 @@ class EvaluationServiceTest {
         EvaluationQuestion open = openQuestion(21L, eval, 3, false);
         EvaluationOption correcta = option(32L, mc, true);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).active(true).build();
         EvaluationAnswer mcAnswer = EvaluationAnswer.builder()
                 .id(60L).attempt(attempt).question(mc).selectedOption(correcta).reviewed(true).build();
@@ -1883,8 +1924,9 @@ class EvaluationServiceTest {
 
         // La parte de alternativa única se califica (2 pts); la abierta queda pendiente.
         assertThat(response.status()).isEqualTo(AttemptStatus.PENDING_MANUAL_REVIEW);
-        assertThat(response.score()).isEqualTo(2);
-        assertThat(response.maxScore()).isEqualTo(5);
+        assertThat(response.score()).isNull();
+        assertThat(attempt.getScore()).isEqualTo(2);
+        assertThat(attempt.getMaxScore()).isEqualTo(5);
         assertThat(attempt.getGradedAt()).isNull();
         verify(auditLogService).recordInfo(eq(LogEventType.EVALUATION_ATTEMPT_PENDING_REVIEW),
                 any(), any(), any(), any(), any(), any());
@@ -1898,7 +1940,7 @@ class EvaluationServiceTest {
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
         EvaluationQuestion open = openQuestion(21L, eval, 3, true);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.IN_PROGRESS).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
         when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval))
@@ -1921,7 +1963,7 @@ class EvaluationServiceTest {
         EvaluationQuestion open = openQuestion(21L, eval, 3, false);
         EvaluationOption correcta = option(32L, mc, true);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.PENDING_MANUAL_REVIEW).score(2).maxScore(5)
                 .startedAt(LocalDateTime.now()).submittedAt(LocalDateTime.now()).active(true).build();
         EvaluationAnswer mcAnswer = EvaluationAnswer.builder()
@@ -1944,7 +1986,7 @@ class EvaluationServiceTest {
         // Al revisar la única abierta, el intento pasa a GRADED con nota completa (2 + 3).
         assertThat(response.status()).isEqualTo(AttemptStatus.GRADED);
         assertThat(response.score()).isEqualTo(5);
-        assertThat(response.maxScore()).isEqualTo(5);
+        assertThat(attempt.getMaxScore()).isEqualTo(5);
         assertThat(response.pendingOpenCount()).isZero();
         assertThat(openAnswer.getReviewed()).isTrue();
         assertThat(openAnswer.getPointsAwarded()).isEqualTo(3);
@@ -1967,7 +2009,7 @@ class EvaluationServiceTest {
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
         EvaluationQuestion open = openQuestion(21L, eval, 3, false);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.PENDING_MANUAL_REVIEW).score(0).maxScore(3).active(true).build();
         EvaluationAnswer openAnswer = EvaluationAnswer.builder()
                 .id(61L).attempt(attempt).question(open).answerText("Texto").reviewed(false).build();
@@ -1988,7 +2030,7 @@ class EvaluationServiceTest {
         StudentProfile alumno = student(5L, "EST0001", "3", "A");
         Evaluation eval = evaluation(10L, docenteDueno, EvaluationStatus.PUBLISHED, 1);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.PENDING_MANUAL_REVIEW).active(true).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
 
@@ -2029,7 +2071,7 @@ class EvaluationServiceTest {
     private EvaluationAttempt openGradedAttempt(Long id, Evaluation eval, StudentProfile alumno,
                                                 int score, int maxScore) {
         return EvaluationAttempt.builder()
-                .id(id).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(id).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.GRADED).score(score).maxScore(maxScore).gradeClosed(false)
                 .startedAt(LocalDateTime.now()).submittedAt(LocalDateTime.now())
                 .gradedAt(LocalDateTime.now()).active(true).build();
@@ -2316,7 +2358,7 @@ class EvaluationServiceTest {
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 2);
         EvaluationQuestion open = openQuestion(21L, eval, 4, false);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.PENDING_MANUAL_REVIEW).score(0).maxScore(4).gradeClosed(false)
                 .active(true).build();
         EvaluationAnswer openAnswer = EvaluationAnswer.builder()
@@ -2341,7 +2383,7 @@ class EvaluationServiceTest {
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
         EvaluationQuestion open = openQuestion(21L, eval, 3, false);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.PENDING_MANUAL_REVIEW).score(2).maxScore(5)
                 .finalScore(new BigDecimal("8.00")).gradeClosed(false)
                 .overallFeedback("Comentario interno").submittedAt(LocalDateTime.now()).active(true).build();
@@ -2375,7 +2417,7 @@ class EvaluationServiceTest {
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
         EvaluationQuestion open = openQuestion(21L, eval, 5, false);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
-                .id(50L).evaluation(eval).student(alumno).attemptNumber(1)
+                .id(50L).evaluation(eval).assignment(assignment(999L, eval, eval.getCreatedByTeacher(), alumno.getGrade(), alumno.getSection())).student(alumno).attemptNumber(1)
                 .status(AttemptStatus.GRADED).score(4).maxScore(5)
                 .finalScore(new BigDecimal("16.00")).gradeClosed(true).gradeClosedAt(LocalDateTime.now())
                 .overallFeedback("Buen trabajo.").submittedAt(LocalDateTime.now()).gradedAt(LocalDateTime.now())

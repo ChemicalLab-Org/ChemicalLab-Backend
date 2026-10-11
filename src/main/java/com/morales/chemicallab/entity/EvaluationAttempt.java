@@ -110,6 +110,6 @@ public class EvaluationAttempt {
 
     @PrePersist
     protected void onCreate() {
-        startedAt = LocalDateTime.now();
+        if (startedAt == null) startedAt = LocalDateTime.now(java.time.ZoneId.of("America/Lima"));
     }
 }
