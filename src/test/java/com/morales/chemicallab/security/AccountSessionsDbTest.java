@@ -422,7 +422,7 @@ class AccountSessionsDbTest {
         assertThatThrownBy(() -> tx().executeWithoutResult(status -> {
             var managed = users().findById(user.getId()).orElseThrow();
             sessions().lock(managed);
-            managed.setPassword(app.getBean(PasswordEncoder.class).encode("RolledBack123"));
+            managed.setPassword(app.getBean(PasswordEncoder.class).encode("RolledBackPhrase123"));
             sessions().issue(managed);
             throw new IllegalStateException("Force rollback of both credential and session");
         })).isInstanceOf(IllegalStateException.class);

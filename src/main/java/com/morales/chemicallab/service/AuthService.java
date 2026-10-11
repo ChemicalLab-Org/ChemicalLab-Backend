@@ -12,6 +12,8 @@ import com.morales.chemicallab.repository.StudentProfileRepository;
 import com.morales.chemicallab.repository.TeacherProfileRepository;
 import com.morales.chemicallab.repository.UserAccountRepository;
 import com.morales.chemicallab.security.AccountSessionService;
+import com.morales.chemicallab.security.CompatiblePasswordEncoder;
+import com.morales.chemicallab.exception.LoginRejectedException;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -109,25 +111,19 @@ public class AuthService {
             userOpt = userAccountRepository.findByEmail(identifier);
         }
 
-        if (userOpt.isEmpty()) {
-            auditLogService.recordLoginFailed(identifier, "Usuario o correo no registrado.");
-            throw new BadCredentialsException("El usuario o correo no está registrado.");
+        UserAccount user = userOpt.orElse(null);
+        if (user != null) sessions.lock(user);
+        // Missing and disabled accounts execute the same pair of password algorithms.
+        boolean matches = passwordEncoder.matches(request.password(), user == null ? null : user.getPassword());
+        boolean identity = user != null && (identifier.equals(user.getUsername()) || identifier.equals(user.getEmail()));
+        boolean active = user != null && Boolean.TRUE.equals(user.getActive());
+        if (!matches || !identity || !active) {
+            String reason = user == null ? "ACCOUNT_NOT_FOUND" : !active ? "ACCOUNT_DISABLED" : !identity ? "IDENTITY_CHANGED" : "PASSWORD_MISMATCH";
+            auditLogService.recordLoginFailed(identifier, reason);
+            throw new LoginRejectedException();
         }
-
-        UserAccount user = userOpt.get();
-        sessions.lock(user);
-        if (!identifier.equals(user.getUsername()) && !identifier.equals(user.getEmail())) {
-            throw new BadCredentialsException("Credenciales inválidas.");
-        }
-
-        if (Boolean.FALSE.equals(user.getActive())) {
-            auditLogService.recordLoginFailed(identifier, "La cuenta se encuentra inactiva.");
-            throw new DisabledException("La cuenta se encuentra inactiva. Contacte al administrador.");
-        }
-
-        if (!passwordEncoder.matches(request.password(), user.getPassword())) {
-            auditLogService.recordLoginFailed(identifier, "Contraseña incorrecta.");
-            throw new BadCredentialsException("La contraseña es incorrecta.");
+        if (passwordEncoder instanceof CompatiblePasswordEncoder compatible && compatible.upgradeEncoding(user.getPassword())) {
+            user.upgradePasswordHash(user.getPassword(), compatible.upgradeVerified(request.password()));
         }
 
         String token = sessions.issue(user);

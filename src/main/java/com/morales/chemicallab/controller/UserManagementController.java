@@ -16,6 +16,7 @@ import java.util.List;
 public class UserManagementController {
 
     private final UserManagementService userManagementService;
+    private final com.morales.chemicallab.security.AuthenticationLimits limits;
 
     // =========================================================================
     // DOCENTES
@@ -41,6 +42,7 @@ public class UserManagementController {
     public PasswordChangeResponse restablecerContrasenaDocente(
             @PathVariable Long teacherUserId,
             @Valid @RequestBody ResetPasswordRequest request) {
+        limits.resetUser(teacherUserId);
         return userManagementService.resetTeacherPassword(teacherUserId, request);
     }
 
@@ -81,6 +83,7 @@ public class UserManagementController {
             @PathVariable Long teacherUserId,
             @PathVariable Long studentId,
             @Valid @RequestBody ResetPasswordRequest request) {
+        limits.resetStudent(studentId);
         return userManagementService.resetStudentPassword(teacherUserId, studentId, request);
     }
 

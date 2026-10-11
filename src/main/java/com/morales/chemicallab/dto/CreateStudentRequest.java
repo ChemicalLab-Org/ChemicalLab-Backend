@@ -22,8 +22,7 @@ public record CreateStudentRequest(
                 message = "El código de estudiante solo puede contener letras y números")
         String studentCode,
 
-        @NotBlank(message = "La contraseña temporal es obligatoria")
-        @Size(min = 6, max = 100, message = "La contraseña debe tener entre 6 y 100 caracteres")
+        @com.morales.chemicallab.validation.NewPassword
         String temporaryPassword,
 
         @NotBlank(message = "El grado es obligatorio")

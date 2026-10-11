@@ -22,9 +22,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
+    private final com.morales.chemicallab.security.AuthenticationLimits limits;
 
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request) {
+        limits.login(request);
         return authService.login(request);
     }
 
@@ -36,6 +38,7 @@ public class AuthController {
     @PatchMapping("/change-temporary-password")
     public ResponseEntity<PasswordChangeResponse> changeTemporaryPassword(
             @Valid @RequestBody ChangePasswordRequest request) {
+        limits.change();
         return ResponseEntity.ok(authService.changeTemporaryPassword(request));
     }
     @PostMapping("/logout")

@@ -48,7 +48,7 @@ de configuración. El guard funciona también con `spring.config.additional-loca
 | `TEACHER_INITIAL_PASSWORD`, `STUDENT_INITIAL_PASSWORD` | Opcionales solo para demos; fallbacks públicos exclusivos del entorno no productivo |
 | `APP_BOOTSTRAP_ADMIN_ENABLED` | `true` habilita el bootstrap; predeterminado `false` |
 | `APP_BOOTSTRAP_ADMIN_USERNAME` | Obligatorio al habilitarlo; 4–50 letras/números sin espacios |
-| `APP_BOOTSTRAP_ADMIN_PASSWORD` | Obligatoria al habilitarlo; mínimo 12 caracteres, máximo 72 bytes UTF-8 por BCrypt |
+| `APP_BOOTSTRAP_ADMIN_PASSWORD` | Obligatoria al habilitarlo; política T04: 15–128 puntos de código Unicode, máximo 512 bytes UTF-8, sin contraseñas comunes; Argon2id |
 | `APP_BOOTSTRAP_ADMIN_EMAIL` | Opcional; si se define debe ser un correo válido |
 | `SPRING_JPA_HIBERNATE_DDL_AUTO` | Se conserva `update`. Nunca usar `create`/`create-drop` contra datos que deban conservarse |
 | `SPRING_JPA_SHOW_SQL` | Predeterminado `false` |

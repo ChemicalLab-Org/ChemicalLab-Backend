@@ -33,10 +33,10 @@ public class DemoAccountSeeder implements ApplicationRunner {
 
     private static final String TEACHER_USERNAME = "docente";
     private static final String TEACHER_EMAIL = "docente@chemicallab.local";
-    private static final String TEACHER_DEV_FALLBACK_PASSWORD = "Docente123*";
+    private static final String TEACHER_DEV_FALLBACK_PASSWORD = "Demo-docente-local-2026!";
 
     private static final String STUDENT_USERNAME = "EST0001";
-    private static final String STUDENT_DEV_FALLBACK_PASSWORD = "Estudiante123*";
+    private static final String STUDENT_DEV_FALLBACK_PASSWORD = "Demo-estudiante-local-2026!";
 
     private final UserAccountRepository userAccountRepository;
     private final TeacherProfileRepository teacherProfileRepository;

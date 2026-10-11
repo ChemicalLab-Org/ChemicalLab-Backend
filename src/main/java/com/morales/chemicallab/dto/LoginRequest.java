@@ -10,7 +10,7 @@ public record LoginRequest(
         String usernameOrEmail,
 
         @NotBlank(message = "La contraseña es obligatoria")
-        @Size(min = 1, max = 100, message = "La contraseña no puede superar 100 caracteres")
+        @Size(min = 1, max = 1024, message = "La contraseña supera el tamaño permitido")
         String password
 
 ) {}

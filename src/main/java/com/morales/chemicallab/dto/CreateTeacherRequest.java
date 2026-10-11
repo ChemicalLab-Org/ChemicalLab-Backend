@@ -27,8 +27,7 @@ public record CreateTeacherRequest(
         @Size(max = 100, message = "El correo no puede superar 100 caracteres")
         String email,
 
-        @NotBlank(message = "La contraseña temporal es obligatoria")
-        @Size(min = 6, max = 100, message = "La contraseña debe tener entre 6 y 100 caracteres")
+        @com.morales.chemicallab.validation.NewPassword
         String temporaryPassword
 
 ) {}

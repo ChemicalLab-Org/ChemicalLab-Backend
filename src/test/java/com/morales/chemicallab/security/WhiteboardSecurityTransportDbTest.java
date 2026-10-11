@@ -127,15 +127,16 @@ class WhiteboardSecurityTransportDbTest {
     }
 
     @Test void destinationAndCommandAllowlistRequiresConnect() throws Exception {
+        String protocolToken = login(student); // One platform login; many independent STOMP connections.
         for (String destination : List.of("/queue/whiteboard-errors", "/user/other/queue/whiteboard-errors",
                 "/queue/whiteboard-errors-usersomeone", "/topic/whiteboards/*", "/topic/**", "/unknown",
                 "/topic/whiteboards/01", "/app/whiteboards/" + board + "/draw")) {
-            Peer peer = connect(student); peer.subscribe("invalid", destination);
+            Peer peer = connect(protocolToken); peer.subscribe("invalid", destination);
             assertThat(peer.closed.await(6, TimeUnit.SECONDS)).as(destination).isTrue();
         }
         for (String destination : List.of("/queue/x", "/user/queue/whiteboard-errors", "/topic/whiteboards/" + board,
                 "/app/whiteboards/" + board + "/unknown")) {
-            Peer peer = connect(student); peer.send(destination, "{}");
+            Peer peer = connect(protocolToken); peer.send(destination, "{}");
             assertThat(peer.closed.await(6, TimeUnit.SECONDS)).as(destination).isTrue();
         }
         for (String frame : List.of("SUBSCRIBE\nid:noauth\ndestination:/topic/whiteboards/" + board,
@@ -143,7 +144,7 @@ class WhiteboardSecurityTransportDbTest {
             Peer peer = rawPeer(); peer.frame(frame + "\n\n\0");
             assertThat(peer.closed.await(6, TimeUnit.SECONDS)).isTrue();
         }
-        Peer peer = connect(student); peer.frame("BEGIN\ntransaction:unsupported\n\n\0");
+        Peer peer = connect(protocolToken); peer.frame("BEGIN\ntransaction:unsupported\n\n\0");
         assertThat(peer.closed.await(6, TimeUnit.SECONDS)).isTrue();
     }
 

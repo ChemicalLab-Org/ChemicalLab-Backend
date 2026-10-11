@@ -26,6 +26,14 @@ class SecureStartupTest {
     @BeforeEach
     void reset() { INITIALIZED.set(0); }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"native", "framework"})
+    void forwardedHeadersCannotRewriteThePeerBeforeTrustedProxyValidation(String strategy) {
+        assertThatThrownBy(() -> start("--server.forward-headers-strategy=" + strategy))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("trusted-proxies");
+        assertThat(INITIALIZED).hasValue(0);
+    }
+
     static String randomKey() {
         byte[] bytes = new byte[32];
         new SecureRandom().nextBytes(bytes);
