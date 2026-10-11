@@ -384,12 +384,14 @@ class AccountSessionsDbTest {
 
     @Test void loginCommittingBeforeResetStillProducesOnlyARevokedOldSession() throws Exception {
         UserAccount user = account(Role.DOCENTE, false);
+        var loginRequest = new LoginRequest(user.getUsername(), PASSWORD);
+        var loginBudget = app.getBean(AuthenticationLimits.class).login(loginRequest);
         var pool = Executors.newFixedThreadPool(2);
         var issued = new CountDownLatch(1);
         var release = new CountDownLatch(1);
         try {
             var login = pool.submit(() -> tx().execute(status -> {
-                String token = app.getBean(AuthService.class).login(new LoginRequest(user.getUsername(), PASSWORD)).token();
+                String token = app.getBean(AuthService.class).login(loginRequest, loginBudget).token();
                 issued.countDown();
                 try { if (!release.await(15, TimeUnit.SECONDS)) throw new IllegalStateException("test timeout"); }
                 catch (InterruptedException e) { throw new RuntimeException(e); }

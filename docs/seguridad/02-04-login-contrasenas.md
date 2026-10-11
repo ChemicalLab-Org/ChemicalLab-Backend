@@ -7,6 +7,9 @@ backend `0cc132f1b80603a8d883f9056095d472f7e7575e`, frontend
 `49cd664884953a1829b45ab3b7be75bea91c10cf`. Rama en ambos repositorios:
 `security/t04-login-contrasenas`, en checkouts aislados.
 
+PRs coordinadas: [backend #58](https://github.com/ChemicalLab-Org/ChemicalLab-Backend/pull/58)
+y [frontend #80](https://github.com/ChemicalLab-Org/ChemicalLab-Frontend/pull/80).
+
 La auditoría original se leyó sin modificarla (SHA-256
 `1eff5d59f7a114dfee91cb557a0405c2f7247e43cd2926d2542172c0255e499b`). Se preservan
 la rama frontend `feature/validaciones-datos-institucionales`, sus archivos previos
@@ -32,12 +35,16 @@ No se incluyen rol, estado, existencia, motivo interno ni marcas temporales. La
 auditoría administrativa restringida conserva códigos internos de motivo y el
 identificador intentado, nunca contraseña, hash ni token. No se añaden sleeps.
 
-Cada comprobación ejecuta una verificación Argon2id y otra BCrypt: una utiliza el
-hash real y la otra uno ficticio generado al iniciar. En cuentas inexistentes se
-usan ambos ficticios; cuentas inactivas también comprueban su hash. El coste BCrypt
+Cada comprobación ejecuta una verificación Argon2id y otra BCrypt: con presupuesto
+interno disponible una utiliza el hash real y la otra uno ficticio generado al
+iniciar. En cuentas inexistentes o sin presupuesto interno se usan ambos ficticios;
+cuentas inactivas con presupuesto también comprueban su hash. El coste BCrypt
 ficticio es 10, el usado por el encoder anterior. Otros costes heredados, consultas,
-bloqueos de fila, JIT/GC y auditoría todavía pueden variar; no se promete tiempo
-constante absoluto. El éxito puede incluir migración y emisión de sesión.
+JIT/GC y auditoría todavía pueden variar; no se promete tiempo constante absoluto.
+Los rechazos no toman bloqueos de fila de cuentas. Solo después de verificar un
+secreto admisible se adquiere el bloqueo T02 y se refrescan identidad, estado y
+hash; si el hash cambió se verifica otra vez para respetar un reset o una migración
+concurrente. El éxito puede incluir migración y emisión de sesión.
 
 Los accesos por usuario/correo conservan comparación exacta y la precedencia
 usuario→correo existente. Se recortan espacios del **identificador**, nunca de la
@@ -73,8 +80,8 @@ y resultado de 32 bytes, mediante Spring Security y Bouncy Castle 1.86. La colum
 existente `password varchar(255)` tiene capacidad suficiente; no hay cambio de tipo.
 
 BCrypt sin prefijo `{id}` sigue leyéndose (`$2a$`, `$2b$`, `$2y$`). Tras login
-correcto se recalcula Argon2id bajo el mismo bloqueo de fila T02, sobre el hash
-recién refrescado. `upgradePasswordHash` comprueba el valor esperado y cambia solo
+correcto se recalcula Argon2id bajo el bloqueo de fila T02, sobre el hash recién
+refrescado y verificado. `upgradePasswordHash` comprueba el valor esperado y cambia solo
 la representación: conserva `credentialsVersion` y todas las sesiones previas.
 La migración no impone la nueva política a un secreto heredado. El reset/cambio
 real conserva su invalidación; si confirma antes de un login en espera, este lee
@@ -108,12 +115,12 @@ expires_at bigint)` con índice de caducidad. El esquema es aditivo vía Hiberna
 | Global, todas las rutas cubiertas | 300 | 60 segundos |
 | Origen efectivo compartido | 300 | 15 minutos |
 | Identificador de login, incluso inexistente | 10 | 15 minutos |
-| ID de cuenta resuelto, compartido por usuario y correo | 10 | 15 minutos |
+| ID de cuenta resuelto, compartido por usuario y correo (interno, sin 429) | 10 | 15 minutos |
 | Cambio propio, ID de cuenta | 5 | 15 minutos |
 | Reset, ID de cuenta destino entre rutas admin/docente | 5 | 15 minutos |
 | Actor autenticado, suma de rutas cubiertas | 60 | 15 minutos |
 
-Se cuentan **todos los intentos**, incluidos éxitos; el éxito no borra contadores.
+Se cuentan **todos los intentos admitidos**, incluidos éxitos; el éxito no borra contadores.
 Es una decisión conservadora que evita borrar intentos concurrentes o reiniciar
 presupuestos alternando credenciales válidas. Ventanas desde el primer intento
 admitido; un rechazo no extiende la caducidad del contador saturado. La recuperación
@@ -121,6 +128,39 @@ es automática al vencer; no se desactiva la cuenta y no hay bloqueo permanente.
 Un ataque sostenido sí puede consumir ventanas sucesivas: el límite de cuenta no
 elimina ese riesgo de denegación. Los umbrales son constantes versionadas comunes
 a todas las instancias; revisar capacidad/NAT y cambiar coordinadamente si procede.
+
+### Coordinación pública/interna (corrección de revisión)
+
+El presupuesto de cuenta **no es una respuesta pública de throttling**. El
+controlador reserva primero el identificador y luego el presupuesto interno,
+antes de abrir la transacción de autenticación; así no retiene una conexión de
+cuenta mientras solicita otra para contadores. La decisión interna queda ligada
+al identificador e ID resueltos; si cambió su asociación, no autoriza otra cuenta.
+
+Agotado el presupuesto de cuenta, se ejecutan Argon2id y BCrypt con hashes ficticios
+y se devuelve exactamente `401 LOGIN_INVALID`, sin `Retry-After`, sin contador ni
+ventana en cuerpo/cabeceras. No se contrasta el hash real, no se migra, no se emite
+ni revoca sesión. Sigue siendo imposible obtener una sesión alternando aliases
+para eludir diez verificaciones reales. Una contraseña correcta también recibe
+rechazo genérico mientras el presupuesto interno esté agotado; es la contrapartida
+de no publicar existencia o asociación. El diagnóstico interno usa
+`ACCOUNT_RATE_LIMITED`, restringido como el resto de auditoría.
+
+Identidades ausentes reservan un contador interno sintético por identificador.
+Todos los presupuestos internos ejecutan las mismas consultas y UPSERT, incluidos
+los saturados. El valor se mantiene como máximo en diez y no se extiende expiración.
+La capacidad llena rechaza uniformemente las reservas internas, sin distinguir
+claves existentes/nuevas. Los rechazos no se serializan sobre filas de cuentas;
+solo los candidatos admisibles con secreto correcto llegan al bloqueo T02.
+
+El 429 de login depende únicamente de **identificador literal, origen o global**
+(y actor si se suministra una sesión), nunca de la cuenta resuelta. Al alternar
+dos identificadores con contraseña errónea: veinte 401, luego 429 al superar diez
+por identificador, sean aliases activos, inactivos o identidades ausentes. La
+ventana pública se calcula solo con el contador público saturado. Expirar ese
+contador no reabre el presupuesto interno, ni expirar el interno borra el público.
+Global/origen acotan el coste de hashes ficticios y claves; no se elimina ninguna
+protección compartida. Este ajuste no requiere otro cambio de esquema.
 
 Cobertura: login, cambio propio normal/temporal, tres rutas de reset existentes y
 altas con trabajo criptográfico. El interceptor MVC consume global/origen/actor
@@ -146,7 +186,7 @@ ejecuciones normales. Si la limpieza falla, no crece más allá de la cota; repa
 almacenamiento/limpieza, sin borrar cuentas ni sesiones. No esperar a la limpieza
 para aplicar expiración.
 
-Al exceder: **429 AUTH_RATE_LIMITED**, mensaje genérico, `Retry-After` entero en
+Al exceder un límite público: **429 AUTH_RATE_LIMITED**, mensaje genérico, `Retry-After` entero en
 segundos y `retryAfterSeconds` en cuerpo. Indica la ventana del primer control
 saturado; al reintentar otro ámbito aún puede limitar. No expone cuál se saturó.
 Ante indisponibilidad, timeout o capacidad agotada: **503 AUTH_LIMITS_UNAVAILABLE**,
@@ -182,9 +222,13 @@ de sockets por revocación; migrar solo el formato de hash no provoca cierres.
 
 Angular valida puntos de código/bytes, muestra la política y los mensajes de
 rechazo del servidor. El servidor es la autoridad para la lista de contraseñas
-comunes. Login y cambio muestran cuenta atrás; altas/resets comunican la espera.
-El interceptor limita reintentos de esas rutas durante la espera, reconoce segundos
-y fechas HTTP y conserva token/estado. No bloquea logout ni consultas de sesión.
+comunes. Login, cambio y resets manuales muestran cuenta atrás; altas comunican la
+espera. Angular solo limita la misma operación e identificador/destino de la sesión
+actual. Otro alumno, otro identificador de login u otra operación llegan al servidor;
+un 429 genérico no permite deducir un bloqueo global. Reconoce segundos/fechas HTTP,
+conserva token/estado y no bloquea logout ni consultas de sesión. Logout/login nuevo
+limpian esperas y respuestas tardías de otro contexto no las reinstalan. No guarda
+contraseñas ni cuerpos de solicitud en esta caché local.
 `Retry-After` queda expuesto por CORS; 429 y 503 de límites no causan logout.
 
 Antes de producción (pendiente, sin autorización de ejecución en esta tarea):
@@ -225,7 +269,8 @@ familias; la suite T01 comprueba bootstrap/demos y T02/T03 cambio/reset/revocaci
 HTTP y cierre de clientes STOMP pasivos. Los tests de formularios Angular usan
 DOM de componentes reales y HTTP controlado; no equivalen a un navegador completo.
 
-Resultados del 11 de octubre de 2026:
+Resultados iniciales del 11 de octubre de 2026, antes de los hallazgos de revisión
+(la verificación de la corrección se documenta más abajo):
 
 - Backend: `clean package`, **476 pruebas, 0 fallos, 0 errores, 0 omitidas**;
   JAR ejecutable generado. Incluye las regresiones T01/T02/T03. Se adaptaron dos
@@ -238,7 +283,8 @@ Resultados del 11 de octubre de 2026:
   real de pizarra. `npm run build` aprobó producción; permanecen avisos de tamaño
   de bundles/SCSS y del entorno de pruebas (`vi.hoisted`/`vi.mock`, polyfills).
 - Concurrencia HTTP: diez rechazos genéricos 401 y dos 429 entre doce logins
-  simultáneos alternando usuario/correo entre dos listeners. El test atómico
+  simultáneos alternando usuario/correo entre dos listeners. Este contrato inicial
+  revelaba asociación y fue sustituido por la corrección. El test atómico
   admite exactamente diez de cuarenta competidores con dos pools.
 - Navegador real sobre localhost y la fixture desechable: login correcto hasta
   panel de estudiante, política visible en cambio, logout y 429 real en login
@@ -282,3 +328,53 @@ Crear el archivo señal termina la fixture y elimina su esquema; también termin
 automáticamente a los 30 minutos. Los JSON, logs, tokens, directorio de PostgreSQL
 y configuraciones locales no forman parte de los commits. No se hicieron pruebas
 sobre datos reales, carga sostenida, producción, despliegues o rotaciones.
+
+## Correcciones previas a integración: reproducción y aceptación
+
+Sobre backend `49be37760c0632bd92ffa70798ba367b0905a946`, una prueba HTTP con dos
+instancias/contextos y PostgreSQL desechable reprodujo, **sin vaciar contadores
+durante cada secuencia**, diez 401 y un 429 para once intentos alternados sobre
+aliases activos e inactivos; dos identificadores inexistentes devolvieron once 401.
+Falló la igualdad esperada. Log local `t04-review-backend-before.log`.
+
+Sobre frontend `6c3fafffbade5bc14a8f518d50c51213e4516316`, después del 429 del reset
+de A, el reset de B no llegó al HttpTestingController. La prueba falló con
+«Expected one matching request … found none». Log local
+`t04-review-frontend-before.log`. Ambos fallos se ejecutaron antes de cambiar código
+productivo; los logs contienen solo fixtures y no se publican.
+
+La comparación corregida usa 22 intentos por categoría: primeros veinte 401 con
+idéntico cuerpo y cabeceras (se excluye solo `Date`, reloj HTTP), sin Retry-After;
+los siguientes dos son 429 con segundos derivados exclusivamente de cada contador
+de identificador. La respuesta y su ventana no dependen del presupuesto de cuenta.
+Incluye doce peticiones concurrentes entre dos listeners (doce 401, diez admisiones
+internas), cuarenta reservas internas concurrentes (diez admitidas), reloj controlado
+para expiración, expiración persistida separada de ventanas públicas/internas,
+sesiones y hash intactos durante los rechazos y recuperación BCrypt→Argon2id.
+Una transacción externa mantiene bloqueadas filas de cuentas mientras sus rechazos
+HTTP siguen completándose; también se comprueba trabajo ficticio y ausencia de
+emisión/migración aun si el comparador ficticio devuelve true.
+
+Verificación final del 11 de octubre de 2026:
+
+- Backend `clean package`: **481 pruebas, 0 fallos, 0 errores, 0 omitidas** y JAR
+  generado. Incluye T02 (sesiones, carreras login/cambio/reset y migración), T03
+  (autorización y revocación STOMP) y T04 completo. Log local
+  `t04-review-backend-verified.log`.
+- Frontend: **121 pruebas aprobadas, 0 omitidas**, con fixture STOMP real sobre
+  PostgreSQL desechable; `npm run build` aprobado con los presupuestos originales.
+  Permanecen avisos de tamaño y del entorno de tests ya documentados. Logs locales
+  `t04-review-frontend-final.log` y `t04-review-frontend-build.log`.
+- Diez muestras antes y diez después de agotar el presupuesto interno, medianas superiores
+  en ms: activa **137,3 / 129,1**; inactiva **132,7 / 128,3**; ausente
+  **121,2 / 130,8**. La muestra no acredita tiempo constante ni capacidad productiva.
+- Las dos instancias son contextos Spring, listeners y pools independientes en una
+  JVM, con almacenamiento compartido real. La expiración se verifica con reloj
+  controlado y ventanas persistidas, sin esperar quince minutos. Los formularios
+  se comprueban con DOM real y HTTP controlado; el smoke de navegador anterior no
+  se repitió en esta revisión.
+
+Quedan pendientes únicamente las comprobaciones operativas del despliegue futuro
+ya descritas: proxy real, capacidad/NAT y coste en hardware representativo. La
+auditoría, el trabajo institucional previo y `e2e-selenium/` permanecen intactos.
+No se hizo merge, despliegue manual, acceso a la base escolar, rotación ni T05.

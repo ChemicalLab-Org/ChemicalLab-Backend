@@ -26,8 +26,8 @@ public class AuthController {
 
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request) {
-        limits.login(request);
-        return authService.login(request);
+        var budget = limits.login(request);
+        return authService.login(request, budget);
     }
 
     @GetMapping("/me")

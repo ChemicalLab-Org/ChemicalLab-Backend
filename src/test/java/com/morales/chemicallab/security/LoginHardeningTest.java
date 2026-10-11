@@ -19,9 +19,14 @@ class LoginHardeningTest {
     @Test void publicFailuresAreIdenticalAndAlwaysCheckPassword() throws Exception {
         var users = mock(UserAccountRepository.class);
         var encoder = mock(PasswordEncoder.class);
+        var limits = mock(AuthenticationLimits.class);
+        when(limits.login(any())).thenAnswer(call -> {
+            String identifier = ((LoginRequest)call.getArgument(0)).usernameOrEmail();
+            return new AuthenticationLimits.LoginBudget(identifier, identifier.startsWith("absent") ? null : 1L, true);
+        });
         var service = new AuthService(users, mock(TeacherProfileRepository.class), mock(StudentProfileRepository.class),
                 encoder, mock(AccountSessionService.class), mock(AuditLogService.class));
-        var mvc = MockMvcBuilders.standaloneSetup(new com.morales.chemicallab.controller.AuthController(service, mock(AuthenticationLimits.class)))
+        var mvc = MockMvcBuilders.standaloneSetup(new com.morales.chemicallab.controller.AuthController(service, limits))
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
         String expected = null;
         for (String identifier : new String[]{"absent", "absent@example.test", "active", "active@example.test", "inactive", "inactive@example.test"}) {
@@ -41,6 +46,31 @@ class LoginHardeningTest {
             assertThat(body).isEqualTo(expected);
         }
         verify(encoder, times(6)).matches(eq("wrong-password"), any());
+    }
+
+    @Test void concealedBudgetAlwaysChecksDummyAndNeverIssuesOrMigrates() {
+        var users = mock(UserAccountRepository.class);
+        var encoder = mock(CompatiblePasswordEncoder.class);
+        var sessions = mock(AccountSessionService.class);
+        var service = new AuthService(users, mock(TeacherProfileRepository.class), mock(StudentProfileRepository.class),
+                encoder, sessions, mock(AuditLogService.class));
+        var user = UserAccount.builder().id(1L).username("active").password("real-hash").active(true).build();
+        when(users.findByUsername("active")).thenReturn(Optional.of(user));
+        when(encoder.matches("correct-secret", null)).thenReturn(true); // cannot bypass the decision
+        for (String identifier : new String[]{"active", "absent"}) {
+            assertThatThrownBy(() -> service.login(new LoginRequest(identifier,"correct-secret"),
+                    new AuthenticationLimits.LoginBudget(identifier, identifier.equals("active") ? 1L : null, false)))
+                    .isInstanceOf(com.morales.chemicallab.exception.LoginRejectedException.class);
+        }
+        assertThatThrownBy(() -> service.login(new LoginRequest("active","correct-secret"),
+                new AuthenticationLimits.LoginBudget("active",999L,true)))
+                .isInstanceOf(com.morales.chemicallab.exception.LoginRejectedException.class);
+        verify(encoder, times(3)).matches("correct-secret", null);
+        verify(encoder, never()).matches(any(), eq("real-hash"));
+        verify(encoder, never()).upgradeVerified(any());
+        verify(sessions, never()).issue(any());
+        verify(sessions, never()).lock(any());
+        assertThat(user.getPassword()).isEqualTo("real-hash");
     }
 
     @Test void newPolicyRejectsSixCharacters() {

@@ -112,6 +112,76 @@ class LoginProtectionDbTest {
         }
     }
 
+    @Test void aliasBudgetDoesNotRevealExistenceOrAssociation() throws Exception {
+        var active = account(Role.ESTUDIANTE, false, false);
+        var disabled = account(Role.DOCENTE, false, false);
+        jdbc().update("UPDATE user_accounts SET active=false WHERE id=?", disabled.getId());
+        List<List<Integer>> observations = new ArrayList<>();
+        String expectedBody = null;
+        Map<String, List<String>> expectedHeaders = null;
+        for (var identifiers : List.of(new String[]{active.getUsername(), active.getEmail()},
+                new String[]{disabled.getUsername(), disabled.getEmail()},
+                new String[]{"reviewmissing", "reviewmissing@example.test"})) {
+            var codes = new ArrayList<Integer>();
+            List<Double> admittedTimes = new ArrayList<>(), concealedTimes = new ArrayList<>();
+            for (int i = 0; i < 22; i++) {
+                long before = System.nanoTime();
+                var response = login(i % 2 == 0 ? first : second, identifiers[i % 2], "incorrect");
+                double millis = (System.nanoTime() - before) / 1_000_000.0;
+                codes.add(response.statusCode());
+                if (i < 20) {
+                    (i < 10 ? admittedTimes : concealedTimes).add(millis);
+                    assertThat(response.statusCode()).isEqualTo(401);
+                    if (expectedBody == null) expectedBody = response.body();
+                    assertThat(response.body()).isEqualTo(expectedBody);
+                    var headers = new TreeMap<>(response.headers().map());
+                    headers.remove("date"); // Transport wall clock, not an authentication field.
+                    if (expectedHeaders == null) expectedHeaders = headers;
+                    assertThat(headers).isEqualTo(expectedHeaders);
+                    assertThat(response.headers().firstValue("Retry-After")).isEmpty();
+                } else {
+                    assertThat(response.statusCode()).isEqualTo(429);
+                    long retry = Long.parseLong(response.headers().firstValue("Retry-After").orElseThrow());
+                    assertThat(body(response).get("retryAfterSeconds").asLong()).isEqualTo(retry);
+                    assertThat(body(response).get("code").asText()).isEqualTo("AUTH_RATE_LIMITED");
+                    long expiry = jdbc().queryForObject("SELECT expires_at FROM authentication_limits WHERE bucket=?", Long.class,
+                            AuthenticationLimits.bucket("identifier", identifiers[i % 2], 10, 900).key());
+                    long now = jdbc().queryForObject("SELECT floor(extract(epoch from clock_timestamp()) * 1000)::bigint", Long.class);
+                    assertThat(retry).isBetween(Math.max(1, (expiry-now+999)/1000), Math.max(1, (expiry-now+999)/1000)+1);
+                }
+            }
+            observations.add(codes);
+            Collections.sort(admittedTimes); Collections.sort(concealedTimes);
+            System.out.printf(Locale.ROOT, "T04 review timing category=%d n=10+10 median before=%.1f after=%.1f ms%n",
+                    observations.size(), admittedTimes.get(5), concealedTimes.get(5));
+        }
+        System.out.println("T04 review active / disabled / absent: " + observations);
+        assertThat(observations.get(0)).isEqualTo(observations.get(2));
+        assertThat(observations.get(1)).isEqualTo(observations.get(2));
+        assertThat(users().findById(active.getId()).orElseThrow().getPassword()).isEqualTo(active.getPassword());
+        assertThat(users().findById(disabled.getId()).orElseThrow().getCredentialsVersion()).isEqualTo(disabled.getCredentialsVersion());
+        assertThat(jdbc().queryForObject("SELECT count(*) FROM account_sessions WHERE user_id IN (?,?)", Long.class,active.getId(),disabled.getId())).isZero();
+    }
+
+    @Test void rejectedLoginsDoNotWaitOnAnAccountRowLock() throws Exception {
+        var active = account(Role.ESTUDIANTE,false,false);
+        var disabled = account(Role.DOCENTE,false,false);
+        jdbc().update("UPDATE user_accounts SET active=false WHERE id=?",disabled.getId());
+        var pool = Executors.newSingleThreadExecutor();
+        try (var connection=DriverManager.getConnection(setting("spring.datasource.url"),setting("spring.datasource.username"),setting("spring.datasource.password"))) {
+            connection.setAutoCommit(false);
+            try (var lock=connection.prepareStatement("SELECT id FROM "+schema+".user_accounts WHERE id IN (?,?) FOR UPDATE")) {
+                lock.setLong(1,active.getId()); lock.setLong(2,disabled.getId()); lock.executeQuery();
+            }
+            for (String identifier : List.of(active.getUsername(),active.getEmail(),disabled.getUsername(),disabled.getEmail(),"rowlockmissing")) {
+                var response=pool.submit(() -> login(second,identifier,"wrong")).get(5,TimeUnit.SECONDS);
+                assertThat(response.statusCode()).isEqualTo(401);
+                assertThat(response.headers().firstValue("Retry-After")).isEmpty();
+            }
+            connection.rollback();
+        } finally { pool.shutdownNow(); }
+    }
+
     @Test void aliasesAndTwoInstancesShareAtomicBudget() throws Exception {
         var user = account(Role.ESTUDIANTE, false, false);
         var pool = Executors.newFixedThreadPool(12);
@@ -126,13 +196,46 @@ class LoginProtectionDbTest {
             gate.countDown();
             var codes = new ArrayList<Integer>();
             for (var attempt : attempts) codes.add(attempt.get(20, TimeUnit.SECONDS));
-            assertThat(codes.stream().filter(n -> n == 401).count()).isEqualTo(10);
-            assertThat(codes.stream().filter(n -> n == 429).count()).isEqualTo(2);
+            assertThat(codes).containsOnly(401);
+            assertThat(jdbc().queryForObject("SELECT attempts FROM authentication_limits WHERE bucket=?", Integer.class,
+                    AuthenticationLimits.bucket("login-account",user.getId().toString(),10,900).key())).isEqualTo(10);
             var blocked = login(first,user.getUsername(),PASSWORD);
-            assertThat(blocked.statusCode()).isEqualTo(429);
-            assertThat(Long.parseLong(blocked.headers().firstValue("Retry-After").orElseThrow())).isBetween(1L,900L);
+            assertThat(blocked.statusCode()).isEqualTo(401);
+            assertThat(blocked.headers().firstValue("Retry-After")).isEmpty();
             assertThat(jdbc().queryForObject("SELECT count(*) FROM account_sessions WHERE user_id=?", Long.class, user.getId())).isZero();
         } finally { pool.shutdownNow(); }
+    }
+
+    @Test void concealedBudgetSurvivesPublicExpiryAndRecoversWithoutMutations() throws Exception {
+        var user = account(Role.ESTUDIANTE, false, true);
+        var transaction = new TransactionTemplate(first.getBean(PlatformTransactionManager.class));
+        String token = transaction.execute(status -> {
+            var managed = users().findById(user.getId()).orElseThrow();
+            first.getBean(AccountSessionService.class).lock(managed);
+            return first.getBean(AccountSessionService.class).issue(managed);
+        });
+        for (int i=0; i<20; i++) {
+            var response = login(i%2==0 ? first : second, i%2==0 ? user.getUsername() : user.getEmail(), "wrong");
+            assertThat(response.statusCode()).isEqualTo(401);
+        }
+        String internal = AuthenticationLimits.bucket("login-account",user.getId().toString(),10,900).key();
+        long expiry = jdbc().queryForObject("SELECT expires_at FROM authentication_limits WHERE bucket=?", Long.class, internal);
+        for (String identifier : List.of(user.getUsername(),user.getEmail())) {
+            assertThat(login(second,identifier,"short").statusCode()).isEqualTo(429);
+            jdbc().update("UPDATE authentication_limits SET expires_at=0 WHERE bucket=?",
+                    AuthenticationLimits.bucket("identifier",identifier,10,900).key());
+            // Expiring public budgets cannot reopen the account's secret-verification budget.
+            assertThat(login(first,identifier,"short").statusCode()).isEqualTo(401);
+        }
+        assertThat(jdbc().queryForObject("SELECT expires_at FROM authentication_limits WHERE bucket=?",Long.class,internal)).isEqualTo(expiry);
+        assertThat(users().findById(user.getId()).orElseThrow().getPassword()).isEqualTo(user.getPassword());
+        assertThat(users().findById(user.getId()).orElseThrow().getCredentialsVersion()).isEqualTo(user.getCredentialsVersion());
+        assertThat(jdbc().queryForObject("SELECT count(*) FROM account_sessions WHERE user_id=?",Long.class,user.getId())).isEqualTo(1);
+        assertThat(request(second,"GET","/api/auth/me",token,null).statusCode()).isEqualTo(200);
+        jdbc().update("UPDATE authentication_limits SET expires_at=0 WHERE bucket=?",internal);
+        assertThat(login(second,user.getEmail(),"short").statusCode()).isEqualTo(200);
+        assertThat(users().findById(user.getId()).orElseThrow().getPassword()).startsWith("$argon2id$");
+        assertThat(request(first,"GET","/api/auth/me",token,null).statusCode()).isEqualTo(200);
     }
 
     @Test void counterConcurrencyControlledExpiryRecoveryAndSuccessDoesNotClear() throws Exception {
@@ -165,6 +268,29 @@ class LoginProtectionDbTest {
         assertThat(login(second,user.getEmail(),PASSWORD).statusCode()).isEqualTo(200);
         assertThat(jdbc().queryForObject("SELECT attempts FROM authentication_limits WHERE bucket=?", Integer.class,
                 AuthenticationLimits.bucket("login-account",user.getId().toString(),10,900).key())).isEqualTo(2);
+    }
+
+    @Test void concealedReservationsAreAtomicAndExpireWithControlledClock() throws Exception {
+        var pool = Executors.newFixedThreadPool(12);
+        var bucket = new Bucket("test-concealed",10,900);
+        try {
+            List<Future<Boolean>> attempts = new ArrayList<>();
+            for (int i=0;i<40;i++) {
+                var instance = i%2==0 ? first : second;
+                attempts.add(pool.submit(() -> instance.getBean(AuthenticationLimitStore.class).allowLogin(bucket)));
+            }
+            int admitted=0;
+            for (var attempt : attempts) if (attempt.get(15,TimeUnit.SECONDS)) admitted++;
+            assertThat(admitted).isEqualTo(10);
+        } finally { pool.shutdownNow(); }
+        var transaction = new TransactionTemplate(first.getBean(PlatformTransactionManager.class));
+        var store = first.getBean(AuthenticationLimitStore.class);
+        var buckets = List.of(new Bucket("concealed-clock",1,60));
+        long now = System.currentTimeMillis();
+        assertThat((long)transaction.execute(status -> store.acquireAt(buckets,now,true))).isZero();
+        assertThat((long)transaction.execute(status -> store.acquireAt(buckets,now+1000,true))).isEqualTo(59);
+        assertThat((long)transaction.execute(status -> store.acquireAt(buckets,now+59999,true))).isEqualTo(1);
+        assertThat((long)transaction.execute(status -> store.acquireAt(buckets,now+60000,true))).isZero();
     }
 
     @Test void manyStudentsAtOneIpAndForgedHeadersStayInSameOriginBucket() throws Exception {

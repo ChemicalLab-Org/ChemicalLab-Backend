@@ -14,6 +14,7 @@ import static com.morales.chemicallab.security.AuthenticationLimitStore.Bucket;
 @Component
 @RequiredArgsConstructor
 public class AuthenticationLimits {
+    public record LoginBudget(String identifier, Long accountId, boolean allowed) { }
     private final AuthenticationLimitStore store;
     private final ClientOriginResolver origins;
     private final UserAccountRepository users;
@@ -29,12 +30,24 @@ public class AuthenticationLimits {
         store.acquire(buckets);
     }
 
-    public void login(LoginRequest request) {
+    public LoginBudget login(LoginRequest request) {
         String identifier = request.usernameOrEmail().trim();
         store.acquire(List.of(bucket("identifier", identifier, 10, 900)));
         var account = users.findByUsername(identifier);
-        if (account.isEmpty() && identifier.contains("@")) account = users.findByEmail(identifier);
-        account.ifPresent(user -> store.acquire(List.of(bucket("login-account", user.getId().toString(), 10, 900))));
+        if (identifier.contains("@")) {
+            var email = users.findByEmail(identifier);
+            if (account.isEmpty()) account = email;
+        }
+        Long id = account.map(user -> user.getId()).orElse(null);
+        return new LoginBudget(identifier, id, allowLogin(identifier, id));
+    }
+
+    private boolean allowLogin(String identifier, Long accountId) {
+        // A synthetic bucket keeps absent identities on the same storage path.
+        // Only the identifier/origin/global limits above may produce a public 429.
+        return store.allowLogin(accountId == null
+                ? bucket("login-missing", identifier, 10, 900)
+                : bucket("login-account", accountId.toString(), 10, 900));
     }
 
     public void change() {
