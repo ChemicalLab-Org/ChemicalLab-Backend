@@ -47,6 +47,7 @@ class WhiteboardSessionServiceTest {
     @Mock private AuditLogService auditLogService;
     @Mock private UsageMetricService usageMetricService;
     @Mock private WhiteboardBroadcastService broadcastService;
+    @Mock private jakarta.persistence.EntityManager entityManager;
 
     @InjectMocks private WhiteboardSessionService service;
 
@@ -374,19 +375,16 @@ class WhiteboardSessionServiceTest {
     // ---------------------------------------------------------------- estado del lienzo
 
     @Test
-    void docenteGuardaEstadoDelLienzo() {
+    void snapshotDelClienteNoReemplazaEstadoVerificado() {
         TeacherProfile docente = teacher(1L, "docente1");
         stubTeacher(docente);
         WhiteboardSession s = session(10L, docente, WhiteboardSessionStatus.ACTIVE, "3", "A");
         when(sessionRepository.findById(10L)).thenReturn(Optional.of(s));
-        when(sessionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-        WhiteboardBoardStateResponse response = service.saveBoardState("docente1", 10L,
-                new WhiteboardBoardStateRequest("{\"strokes\":[],\"texts\":[]}"));
-
-        assertThat(response.stateJson()).contains("strokes");
-        assertThat(s.getCurrentStateJson()).contains("texts");
-        assertThat(s.getStateUpdatedAt()).isNotNull();
+        assertThatThrownBy(() -> service.saveBoardState("docente1", 10L,
+                new WhiteboardBoardStateRequest("{\"strokes\":[],\"texts\":[]}")))
+                .hasMessageContaining("eventos verificados");
+        assertThat(s.getCurrentStateJson()).isNull();
+        verify(sessionRepository, never()).save(any());
     }
 
     @Test

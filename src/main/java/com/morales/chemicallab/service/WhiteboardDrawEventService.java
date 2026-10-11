@@ -19,6 +19,8 @@ import com.morales.chemicallab.repository.UserAccountRepository;
 import com.morales.chemicallab.repository.WhiteboardParticipantRepository;
 import com.morales.chemicallab.repository.WhiteboardSessionRepository;
 import jakarta.persistence.EntityNotFoundException;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -83,12 +85,15 @@ public class WhiteboardDrawEventService {
     private final TeacherProfileRepository teacherProfileRepository;
     private final StudentProfileRepository studentProfileRepository;
     private final WhiteboardBroadcastService broadcastService;
+    private final WhiteboardObjectState objectState;
+    private final EntityManager entityManager;
 
     /**
      * Valida un evento de dibujo y, si es válido, lo difunde a los suscriptores de la sesión.
      * Devuelve el evento difundido (útil para pruebas). El {@code username} proviene del
      * principal autenticado del canal STOMP, no del cuerpo del mensaje.
      */
+    @Transactional
     public WhiteboardDrawEventResponse processDrawEvent(String username, Long sessionId,
                                                         WhiteboardDrawEventRequest request) {
         if (request == null) {
@@ -97,6 +102,8 @@ public class WhiteboardDrawEventService {
 
         WhiteboardSession session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new EntityNotFoundException("La sesión de pizarra no existe."));
+        // Serializes identity creation, state updates and control changes across instances.
+        entityManager.refresh(session, LockModeType.PESSIMISTIC_WRITE);
 
         // Solo se dibuja en sesiones activas; pausadas y cerradas rechazan el evento.
         if (session.getStatus() != WhiteboardSessionStatus.ACTIVE) {
@@ -124,6 +131,9 @@ public class WhiteboardDrawEventService {
             case ESTUDIANTE -> {
                 StudentProfile student = studentProfileRepository.findByStudentCode(user.getUsername())
                         .orElseThrow(() -> new EntityNotFoundException("El estudiante no existe."));
+                if (!session.getGrade().equals(student.getGrade()) || !session.getSection().equals(student.getSection())) {
+                    throw new IllegalArgumentException("La pizarra no está disponible para tu grado o sección.");
+                }
                 WhiteboardParticipant participant = participantRepository
                         .findBySessionAndStudent(session, student)
                         .orElseThrow(() -> new IllegalArgumentException(
@@ -134,7 +144,7 @@ public class WhiteboardDrawEventService {
                 if (!canInteract) {
                     throw new IllegalArgumentException("No tienes permiso de interacción en esta sesión.");
                 }
-                // Limpiar toda la pizarra y el manejo de texto quedan reservados al docente.
+                // Limpiar toda la pizarra queda reservado al docente.
                 if (TEACHER_ONLY_EVENTS.contains(eventType)) {
                     throw new IllegalArgumentException(
                             "Esta acción de la pizarra está reservada al docente.");
@@ -159,6 +169,7 @@ public class WhiteboardDrawEventService {
             response = buildDrawResponse(session, eventType, tool, request, actorRole, actorDisplayName);
         }
 
+        response = objectState.apply(session, user, response);
         broadcastService.broadcastDraw(response);
         return response;
     }

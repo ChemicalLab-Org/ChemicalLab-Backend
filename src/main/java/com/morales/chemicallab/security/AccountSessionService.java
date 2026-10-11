@@ -69,6 +69,17 @@ public class AccountSessionService {
         }
     }
 
+    /** Same persistent policy as HTTP/CONNECT, with no stale managed entities. */
+    @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW, timeout = 2)
+    public void revalidate(SessionPrincipal principal) {
+        AccountSession session = sessions.findWithUserById(principal.sessionId())
+                .orElseThrow(AccountSessionService::invalid);
+        UserAccount user = session.getUser();
+        validate(session, user, principal.credentialsVersion());
+        if (!user.getId().equals(principal.userId()) || !user.getUsername().equals(principal.username())
+                || user.getRole() != principal.role() || Boolean.TRUE.equals(user.getTemporaryPassword())) throw invalid();
+    }
+
     @Transactional(propagation = Propagation.MANDATORY)
     public UserAccount currentLocked() {
         var authentication = SecurityContextHolder.getContext().getAuthentication();

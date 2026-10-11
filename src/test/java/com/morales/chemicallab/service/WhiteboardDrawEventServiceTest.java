@@ -43,6 +43,13 @@ class WhiteboardDrawEventServiceTest {
     @Mock private TeacherProfileRepository teacherProfileRepository;
     @Mock private StudentProfileRepository studentProfileRepository;
     @Mock private WhiteboardBroadcastService broadcastService;
+    @Mock private jakarta.persistence.EntityManager entityManager;
+    @Mock private WhiteboardObjectState objectState;
+
+    @org.junit.jupiter.api.BeforeEach void passthroughValidatedState() {
+        // These existing tests cover payload/interaction policy. Persistent authorship has real DB/transport tests.
+        org.mockito.Mockito.lenient().when(objectState.apply(any(), any(), any())).thenAnswer(inv -> inv.getArgument(2));
+    }
 
     @InjectMocks private WhiteboardDrawEventService service;
 

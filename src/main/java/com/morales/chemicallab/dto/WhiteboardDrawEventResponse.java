@@ -9,8 +9,8 @@ import java.util.List;
  * Evento de dibujo difundido a los suscriptores del canal {@code /topic/whiteboards/{id}}.
  *
  * <p>Se construye en el servidor a partir del evento validado y del actor autenticado.
- * Solo expone un nombre seguro del actor y su rol; nunca correo, token ni otros datos
- * sensibles.</p>
+ * Incluye nombre/rol del actor, ID de autor verificado y revisión del estado;
+ * nunca correo ni token.</p>
  *
  * @param strokeId    identificador estable del trazo (DRAW/ERASE/STROKE_DELETE), si el cliente
  *                    lo envió. Permite deshacer/rehacer por identidad en todos los clientes.
@@ -33,8 +33,18 @@ public record WhiteboardDrawEventResponse(
         List<WhiteboardTextRun> runs,
         String shapeId,
         String strokeId,
-        Integer strokeIndex
+        Integer strokeIndex,
+        Long ownerUserId,
+        Long revision
 ) {
+    public WhiteboardDrawEventResponse(Long sessionId, WhiteboardDrawEventType eventType, WhiteboardDrawTool tool,
+                                      String color, Double strokeWidth, Double eraserSize, List<WhiteboardPoint> points,
+                                      Role actorRole, String actorDisplayName, String clientEventId, LocalDateTime occurredAt,
+                                      String textId, Double fontSize, List<WhiteboardTextRun> runs, String shapeId,
+                                      String strokeId, Integer strokeIndex) {
+        this(sessionId, eventType, tool, color, strokeWidth, eraserSize, points, actorRole, actorDisplayName,
+                clientEventId, occurredAt, textId, fontSize, runs, shapeId, strokeId, strokeIndex, null, null);
+    }
     public WhiteboardDrawEventResponse(Long sessionId,
                                        WhiteboardDrawEventType eventType,
                                        WhiteboardDrawTool tool,
