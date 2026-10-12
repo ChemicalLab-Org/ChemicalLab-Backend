@@ -151,13 +151,13 @@ class AccountSessionsDbTest {
                 .createdByTeacher(tp).status(ConceptStatus.PUBLISHED).build());
         app.getBean(ConceptAssignmentRepository.class).saveAndFlush(ConceptAssignment.builder()
                 .conceptContent(concept).teacher(tp).grade("3").section("A").build());
-        byte[] bytes = new byte[]{1, 2, 3};
+        byte[] bytes = com.morales.chemicallab.security.files.FileFixtures.png();
         var material = app.getBean(ConceptMaterialRepository.class).saveAndFlush(ConceptMaterial.builder()
-                .conceptContent(concept).type(MaterialType.FILE).fileData(bytes).fileSize(3L)
+                .conceptContent(concept).type(MaterialType.FILE).fileData(bytes).fileSize((long)bytes.length)
                 .contentType("image/png").originalFileName("fictitious.png").build());
         var board = app.getBean(WhiteboardSessionRepository.class).saveAndFlush(WhiteboardSession.builder()
                 .name("Fictitious board").teacher(tp).grade("3").section("A")
-                .status(WhiteboardSessionStatus.CLOSED).finalSnapshotData(bytes).finalSnapshotSize(3L)
+                .status(WhiteboardSessionStatus.CLOSED).finalSnapshotData(bytes).finalSnapshotSize((long)bytes.length)
                 .finalSnapshotContentType("image/png").finalSnapshotFileName("fictitious.png").build());
         var sp = app.getBean(StudentProfileRepository.class).findByUser_Id(student.getId()).orElseThrow();
         app.getBean(WhiteboardParticipantRepository.class).saveAndFlush(WhiteboardParticipant.builder().session(board).student(sp).build());

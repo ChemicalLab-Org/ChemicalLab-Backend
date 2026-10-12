@@ -141,6 +141,14 @@ public class GlobalExceptionHandler {
         ));
     }
 
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    public ResponseEntity<ErrorResponse> handleStatus(org.springframework.web.server.ResponseStatusException ex,
+                                                     HttpServletRequest request) {
+        return ResponseEntity.status(ex.getStatusCode()).body(new ErrorResponse(
+                LocalDateTime.now(), ex.getStatusCode().value(), "Solicitud no disponible",
+                ex.getReason(), request.getRequestURI(), null));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneral(Exception ex, HttpServletRequest request) {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ErrorResponse(

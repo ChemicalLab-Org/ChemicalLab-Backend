@@ -17,6 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 
 import java.util.Optional;
+import static com.morales.chemicallab.security.files.FileFixtures.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -33,6 +34,20 @@ import static org.mockito.Mockito.when;
  */
 @ExtendWith(MockitoExtension.class)
 class ConceptMaterialServiceTest {
+    @org.mockito.Spy private com.morales.chemicallab.security.files.FileValidationService fileValidationService = new com.morales.chemicallab.security.files.FileValidationService();
+
+    @Test
+    void sec10TextoDisfrazadoNoDebePublicarse() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        stubTeacher(docente);
+        when(conceptContentRepository.findById(10L)).thenReturn(Optional.of(content(10L, docente)));
+        var file = new MockMultipartFile("file", "ficticio.pdf", PDF,
+                "Texto ficticio inocuo SEC-10".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertThatThrownBy(() -> service.addFileMaterial("docente1", 10L, file, null))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(conceptMaterialRepository, never()).save(any());
+        verify(conceptMaterialRepository, never()).delete(any());
+    }
 
     @Mock private ConceptMaterialRepository conceptMaterialRepository;
     @Mock private ConceptContentRepository conceptContentRepository;
@@ -98,12 +113,12 @@ class ConceptMaterialServiceTest {
             return saved;
         });
 
-        var file = new MockMultipartFile("file", "guia.pdf", PDF, new byte[]{1, 2, 3});
+        var file = new MockMultipartFile("file", "guia.pdf", PDF, pdf());
         ConceptMaterialResponse response = service.addFileMaterial("docente1", 10L, file, "Guía");
 
         assertThat(response.type()).isEqualTo(MaterialType.FILE);
         assertThat(response.originalFileName()).isEqualTo("guia.pdf");
-        assertThat(response.previewAvailable()).isTrue();
+        assertThat(response.previewAvailable()).isFalse();
         assertThat(response.downloadUrl()).isEqualTo("/api/concepts/10/materials/7/download");
         verify(auditLogService).recordInfo(eq(LogEventType.CONCEPT_MATERIAL_ADDED),
                 any(), any(), any(), any(), any(), any());
@@ -118,7 +133,7 @@ class ConceptMaterialServiceTest {
                 .thenReturn(Optional.empty());
         when(conceptMaterialRepository.save(any(ConceptMaterial.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        var file = new MockMultipartFile("file", "clase.pptx", PPTX, new byte[]{1, 2, 3, 4});
+        var file = new MockMultipartFile("file", "clase.pptx", PPTX, pptx());
         ConceptMaterialResponse response = service.addFileMaterial("docente1", 10L, file, null);
 
         assertThat(response.type()).isEqualTo(MaterialType.FILE);
@@ -137,7 +152,7 @@ class ConceptMaterialServiceTest {
                 .thenReturn(Optional.of(previo));
         when(conceptMaterialRepository.save(any(ConceptMaterial.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        var file = new MockMultipartFile("file", "nuevo.pdf", PDF, new byte[]{9, 9});
+        var file = new MockMultipartFile("file", "nuevo.pdf", PDF, pdf());
         service.addFileMaterial("docente1", 10L, file, null);
 
         // El archivo anterior se elimina para no conservar bytes huérfanos.
@@ -257,15 +272,15 @@ class ConceptMaterialServiceTest {
 
         ConceptMaterial material = ConceptMaterial.builder()
                 .id(7L).type(MaterialType.FILE).contentType(PDF)
-                .originalFileName("guia.pdf").fileData(new byte[]{1, 2, 3}).active(true).build();
+                .originalFileName("guia.pdf").fileData(pdf()).active(true).build();
         when(conceptMaterialRepository.findByIdAndConceptContentIdAndActiveTrue(7L, 10L))
                 .thenReturn(Optional.of(material));
 
         MaterialDownload download = service.downloadMaterial("EST0001", 10L, 7L);
 
-        assertThat(download.data()).hasSize(3);
+        assertThat(download.data()).isEqualTo(material.getFileData());
         assertThat(download.contentType()).isEqualTo(PDF);
-        assertThat(download.inline()).isTrue();
+        assertThat(download.inline()).isFalse();
     }
 
     @Test

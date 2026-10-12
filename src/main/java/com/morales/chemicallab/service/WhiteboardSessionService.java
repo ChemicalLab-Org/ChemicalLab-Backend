@@ -18,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import com.morales.chemicallab.security.files.FileValidationService;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -52,8 +53,8 @@ public class WhiteboardSessionService {
     private static final String TARGET = "WhiteboardSession";
 
     // Captura final: solo imágenes PNG/JPG, máximo 5 MB y nunca vacía.
-    private static final long MAX_SNAPSHOT_BYTES = 5L * 1024 * 1024;
-    private static final Set<String> ALLOWED_SNAPSHOT_TYPES = Set.of("image/png", "image/jpeg");
+
+
 
     // Estado actual del lienzo en vivo (JSON con trazos + textos): tope de tamaño para evitar
     // payloads enormes. ~2 MB de texto cubre con holgura una pizarra de clase.
@@ -69,6 +70,7 @@ public class WhiteboardSessionService {
     private final TeacherProfileRepository teacherProfileRepository;
     private final StudentProfileRepository studentProfileRepository;
     private final AuditLogService auditLogService;
+    private final FileValidationService fileValidationService;
     private final UsageMetricService usageMetricService;
     private final WhiteboardBroadcastService broadcastService;
     private final EntityManager entityManager;
@@ -484,52 +486,17 @@ public class WhiteboardSessionService {
     // =========================================================================
 
     private SnapshotData validateSnapshot(MultipartFile snapshot) {
-        if (snapshot == null || snapshot.isEmpty()) {
-            throw new IllegalArgumentException("Debes adjuntar la captura final de la pizarra (PNG o JPG).");
-        }
-        if (snapshot.getSize() > MAX_SNAPSHOT_BYTES) {
-            throw new IllegalArgumentException("La captura final supera el tamaño máximo permitido (5 MB).");
-        }
-        String contentType = snapshot.getContentType() == null
-                ? "" : snapshot.getContentType().trim().toLowerCase(Locale.ROOT);
-        if (!ALLOWED_SNAPSHOT_TYPES.contains(contentType)) {
-            throw new IllegalArgumentException("La captura final debe ser una imagen PNG o JPG.");
-        }
-        byte[] bytes;
-        try {
-            bytes = snapshot.getBytes();
-        } catch (Exception ex) {
-            throw new IllegalArgumentException("No se pudo leer la captura final adjunta.");
-        }
-        if (bytes.length == 0) {
-            throw new IllegalArgumentException("La captura final no puede estar vacía.");
-        }
-        String fileName = sanitizeFileName(snapshot.getOriginalFilename(),
-                contentType.equals("image/png") ? "captura.png" : "captura.jpg");
-        return new SnapshotData(bytes, contentType, fileName);
+        var validated = fileValidationService.snapshot(snapshot);
+        return new SnapshotData(validated.data(), validated.contentType(), validated.fileName());
     }
 
     private WhiteboardSnapshotDownload requireSnapshot(WhiteboardSession session) {
         if (!session.hasSnapshot()) {
             throw new EntityNotFoundException("La sesión no tiene una captura final disponible.");
         }
-        return new WhiteboardSnapshotDownload(
-                session.getFinalSnapshotData(),
-                session.getFinalSnapshotContentType(),
-                session.getFinalSnapshotFileName());
-    }
-
-    private String sanitizeFileName(String rawName, String fallback) {
-        if (rawName == null || rawName.isBlank()) {
-            return fallback;
-        }
-        String name = rawName.replace('\\', '/');
-        name = name.substring(name.lastIndexOf('/') + 1);
-        name = name.replace("..", "").replaceAll("[\\r\\n\"]", "").trim();
-        if (name.isEmpty()) {
-            return fallback;
-        }
-        return name.length() > 255 ? name.substring(name.length() - 255) : name;
+        var validated = fileValidationService.historical(session.getFinalSnapshotData(),
+                session.getFinalSnapshotContentType(), session.getFinalSnapshotFileName(), true);
+        return new WhiteboardSnapshotDownload(validated.data(), validated.contentType(), validated.fileName());
     }
 
     private record SnapshotData(byte[] bytes, String contentType, String fileName) {

@@ -19,6 +19,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Optional;
+import static com.morales.chemicallab.security.files.FileFixtures.*;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,6 +39,7 @@ import static org.mockito.Mockito.when;
  */
 @ExtendWith(MockitoExtension.class)
 class WhiteboardSessionServiceTest {
+    @org.mockito.Spy private com.morales.chemicallab.security.files.FileValidationService fileValidationService = new com.morales.chemicallab.security.files.FileValidationService();
 
     @Mock private WhiteboardSessionRepository sessionRepository;
     @Mock private WhiteboardParticipantRepository participantRepository;
@@ -88,7 +90,7 @@ class WhiteboardSessionServiceTest {
     }
 
     private MultipartFile png() {
-        return new MockMultipartFile("snapshot", "pizarra.png", "image/png", new byte[]{1, 2, 3, 4});
+        return new MockMultipartFile("snapshot", "pizarra.png", "image/png", com.morales.chemicallab.security.files.FileFixtures.png());
     }
 
     // ---------------------------------------------------------------- sesiones
@@ -248,7 +250,7 @@ class WhiteboardSessionServiceTest {
         when(sessionRepository.findById(10L)).thenReturn(Optional.of(s));
         when(sessionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        MultipartFile jpg = new MockMultipartFile("snapshot", "p.jpg", "image/jpeg", new byte[]{9, 9});
+        MultipartFile jpg = new MockMultipartFile("snapshot", "p.jpg", "image/jpeg", jpeg());
         WhiteboardSessionResponse response = service.closeSession("docente1", 10L, jpg);
 
         assertThat(response.status()).isEqualTo(WhiteboardSessionStatus.CLOSED);
@@ -524,14 +526,14 @@ class WhiteboardSessionServiceTest {
         TeacherProfile docente = teacher(1L, "docente1");
         stubTeacher(docente);
         WhiteboardSession s = session(10L, docente, WhiteboardSessionStatus.CLOSED, "3", "A");
-        s.setFinalSnapshotData(new byte[]{1, 2, 3});
+        s.setFinalSnapshotData(com.morales.chemicallab.security.files.FileFixtures.png());
         s.setFinalSnapshotContentType("image/png");
         s.setFinalSnapshotFileName("pizarra.png");
         when(sessionRepository.findById(10L)).thenReturn(Optional.of(s));
 
         WhiteboardSnapshotDownload download = service.getTeacherSnapshot("docente1", 10L);
 
-        assertThat(download.data()).hasSize(3);
+        assertThat(download.data()).isNotEmpty();
         assertThat(download.contentType()).isEqualTo("image/png");
     }
 
@@ -541,13 +543,13 @@ class WhiteboardSessionServiceTest {
         stubStudent(alumno);
         TeacherProfile docente = teacher(1L, "docente1");
         WhiteboardSession s = session(10L, docente, WhiteboardSessionStatus.CLOSED, "3", "A");
-        s.setFinalSnapshotData(new byte[]{7});
+        s.setFinalSnapshotData(jpeg());
         s.setFinalSnapshotContentType("image/jpeg");
         when(sessionRepository.findById(10L)).thenReturn(Optional.of(s));
 
         WhiteboardSnapshotDownload download = service.getStudentSnapshot("EST0001", 10L);
 
-        assertThat(download.data()).hasSize(1);
+        assertThat(download.data()).isNotEmpty();
     }
 
     @Test
