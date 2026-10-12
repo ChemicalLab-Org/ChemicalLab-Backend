@@ -1,0 +1,22 @@
+{
+  "algorithm": "SHA-256",
+  "implementation_sha": "cdee3c5caa5b2fa15ec6892055e19d2e7f8d992b",
+  "scope": "actual local files; dist/package hashes do not imply deployment identity",
+  "files": [
+    {
+      "path": "pom.xml",
+      "sha256": "956485905d7fac4e1b3bb99086de65fb0fa7bb97540aef8b09b33bd1993fc174",
+      "bytes": 9031
+    },
+    {
+      "path": "Dockerfile",
+      "sha256": "0fa1196d9905e4afd9617f3385416b015f01ea49218ce0715e0bee08b15c1a71",
+      "bytes": 311
+    },
+    {
+      "path": "target/chemical-lab-backend-0.0.1-SNAPSHOT.jar",
+      "sha256": "f20d128ff606ed52aeebf68120958336f7f214c398ee56d1bf4ed3f77b480729",
+      "bytes": 101672560
+    }
+  ]
+}

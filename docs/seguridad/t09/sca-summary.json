@@ -1,0 +1,43 @@
+{
+  "maven": {
+    "before": {
+      "packages_scanned": 173,
+      "unique_advisories": 57,
+      "component_advisory_pairs": 75,
+      "severity_pairs": {
+        "HIGH": 28,
+        "MODERATE": 34,
+        "LOW": 5,
+        "CRITICAL": 8
+      }
+    },
+    "after": {
+      "packages_scanned": 173,
+      "unique_advisories": 0,
+      "component_advisory_pairs": 0,
+      "severity_pairs": {}
+    }
+  },
+  "plugins": {
+    "before": {
+      "packages_scanned": 204,
+      "unique_advisories": 61,
+      "component_advisory_pairs": 69,
+      "severity_pairs": {
+        "HIGH": 31,
+        "MODERATE": 29,
+        "CRITICAL": 2,
+        "LOW": 7
+      }
+    },
+    "after": {
+      "packages_scanned": 152,
+      "unique_advisories": 4,
+      "component_advisory_pairs": 4,
+      "severity_pairs": {
+        "HIGH": 2,
+        "MODERATE": 2
+      }
+    }
+  }
+}

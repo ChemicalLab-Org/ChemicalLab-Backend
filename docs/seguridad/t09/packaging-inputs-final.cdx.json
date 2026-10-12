@@ -1,0 +1,38 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "metadata": {
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "name": "T09 Maven publication identity verification",
+          "version": "1"
+        }
+      ]
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "group": "org.springframework.boot",
+      "name": "spring-boot-jarmode-tools",
+      "version": "4.0.8",
+      "bom-ref": "pkg:maven/org.springframework.boot/spring-boot-jarmode-tools@4.0.8",
+      "purl": "pkg:maven/org.springframework.boot/spring-boot-jarmode-tools@4.0.8",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "7b14818a48bb13e252d0267728eacf3a458b9aab3c63687ee4e292f305c5e026"
+        }
+      ],
+      "properties": [
+        {
+          "name": "t09:origin",
+          "value": "injected by Boot repackage; SHA-256 matches Maven Central publication"
+        }
+      ]
+    }
+  ]
+}

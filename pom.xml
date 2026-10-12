@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>4.0.6</version>
+		<version>4.0.8</version>
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>com.morales</groupId>
@@ -28,6 +28,18 @@
 	</scm>
 	<properties>
 		<java.version>17</java.version>
+		<!-- T09: Boot 4.0.8 still manages affected Tomcat/Jackson patches.
+		     Keep their existing minor lines; rationale and review in docs/seguridad/02-09-dependencias.md. -->
+		<tomcat.version>11.0.26</tomcat.version>
+		<jackson-bom.version>3.1.7</jackson-bom.version>
+		<jackson-2-bom.version>2.21.7</jackson-2-bom.version>
+		<postgresql.version>42.7.14</postgresql.version>
+		<!-- T09: plugin realms are independent of the application's dependency BOM. -->
+		<maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
+		<maven-jar-plugin.version>3.5.1</maven-jar-plugin.version>
+		<maven-resources-plugin.version>3.5.0</maven-resources-plugin.version>
+		<maven-install-plugin.version>3.2.0</maven-install-plugin.version>
+		<maven-deploy-plugin.version>3.2.0</maven-deploy-plugin.version>
 	</properties>
 	<dependencies>
         <!-- T06: maintained structural parsers, invoked in a bounded child JVM. -->
@@ -144,8 +156,61 @@
 	<build>
 		<plugins>
 			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-resources-plugin</artifactId>
+				<dependencies>
+					<dependency><groupId>org.codehaus.plexus</groupId><artifactId>plexus-utils</artifactId><version>3.6.1</version></dependency>
+				</dependencies>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-site-plugin</artifactId>
+				<version>3.22.0</version>
+				<dependencies>
+					<dependency><groupId>commons-beanutils</groupId><artifactId>commons-beanutils</artifactId><version>1.11.0</version></dependency>
+					<dependency><groupId>org.jsoup</groupId><artifactId>jsoup</artifactId><version>1.23.2</version></dependency>
+					<dependency><groupId>org.codehaus.plexus</groupId><artifactId>plexus-utils</artifactId><version>3.6.1</version></dependency>
+				</dependencies>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-clean-plugin</artifactId>
+				<dependencies>
+					<dependency><groupId>org.codehaus.plexus</groupId><artifactId>plexus-utils</artifactId><version>4.0.3</version></dependency>
+				</dependencies>
+			</plugin>
+			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+				<dependencies>
+					<dependency><groupId>org.codehaus.plexus</groupId><artifactId>plexus-utils</artifactId><version>3.6.1</version></dependency>
+					<dependency><groupId>org.apache.commons</groupId><artifactId>commons-lang3</artifactId><version>3.18.0</version></dependency>
+					<dependency>
+						<groupId>tools.jackson.core</groupId>
+						<artifactId>jackson-core</artifactId>
+						<version>${jackson-bom.version}</version>
+					</dependency>
+					<dependency>
+						<groupId>tools.jackson.core</groupId>
+						<artifactId>jackson-databind</artifactId>
+						<version>${jackson-bom.version}</version>
+					</dependency>
+					<dependency>
+						<groupId>org.apache.httpcomponents.client5</groupId>
+						<artifactId>httpclient5</artifactId>
+						<version>5.6.3</version>
+					</dependency>
+					<dependency>
+						<groupId>org.apache.httpcomponents.core5</groupId>
+						<artifactId>httpcore5</artifactId>
+						<version>5.4.3</version>
+					</dependency>
+					<dependency>
+						<groupId>org.apache.httpcomponents.core5</groupId>
+						<artifactId>httpcore5-h2</artifactId>
+						<version>5.4.3</version>
+					</dependency>
+				</dependencies>
 				<configuration>
 					<excludes>
 						<exclude>
