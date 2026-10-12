@@ -1,7 +1,7 @@
 """T09 inventory adapters. No network, installation, database or application execution.
 
 Usage: python inventory.py plugins resolved-plugins.txt plugins.cdx.json
-       python inventory.py jar application.jar packaged.cdx.json resolved.cdx.json
+       python inventory.py jar application.jar packaged.cdx.json resolved.cdx.json [packaging-inputs.cdx.json]
        python inventory.py npm-lock package-lock.json locked.cdx.json
        python inventory.py bundle dist/project/stats.json bundled.cdx.json
 """
@@ -63,7 +63,11 @@ def jar(path, resolved=None):
                 reconciled = [c for c in (resolved or {}).get("components", []) if Path(name).name == f"{c['name']}-{c.get('version')}.jar"]
                 if len(own) != 1 and len(reconciled) == 1:
                     c = reconciled[0]
-                    item = component(c["group"], c["name"], c["version"], hashlib.sha256(data).hexdigest())
+                    digest = hashlib.sha256(data).hexdigest()
+                    expected = [h["content"] for h in c.get("hashes", []) if h["alg"] == "SHA-256"]
+                    if expected and digest not in expected:
+                        raise ValueError("Packaged bytes differ from supplied resolved artifact: " + Path(name).name)
+                    item = component(c["group"], c["name"], c["version"], digest)
                     items[item["bom-ref"]] = item
                 elif len(own) != 1:
                     # Spring/Jackson publications may omit Maven metadata. Explicit fallback
@@ -139,7 +143,8 @@ def bundle(path):
 def main():
     mode, source, destination, *extra = sys.argv[1:]
     if mode == "jar":
-        resolved = json.loads(Path(extra[0]).read_text(encoding="utf-8-sig")) if extra else None
+        resolved = {"components": [c for source in extra
+                    for c in json.loads(Path(source).read_text(encoding="utf-8-sig"))["components"]]} if extra else None
         items, edges = jar(Path(source), resolved)
     else:
         items, edges = {"plugins": plugins, "npm-lock": npm_lock, "bundle": bundle}[mode](Path(source))

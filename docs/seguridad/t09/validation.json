@@ -1,0 +1,97 @@
+{
+  "tested_implementation_sha": "cdee3c5caa5b2fa15ec6892055e19d2e7f8d992b",
+  "base_sha": "b31b637dd25bc48abe964ee5e1d92f3144463b69",
+  "source_tree": "f1463db176b0f0fca9d1f9fd27397908e617380d",
+  "pom_git_blob": "366d0ed91548e48d7a4f45609ea94b7397ac1508",
+  "full_suite": {
+    "command": "mvn clean package -Dspring.profiles.active=test -Dspring.datasource.url=jdbc:postgresql://127.0.0.1:<DISPOSABLE_PORT>/chemicallab_t01_test -Dspring.datasource.username=<FAKE_USER> -Dspring.datasource.password=<FAKE_PASSWORD>",
+    "tests": 576,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "local_evidence_file": "backend-full-final.log",
+    "sha256": "2ad5037a696cef07907e842f7356b145b1d447aa58de7d1c85e63b7e6c8dcf25"
+  },
+  "packaged_formats": {
+    "implementation_sha": "cdee3c5caa5b2fa15ec6892055e19d2e7f8d992b",
+    "checks": 10,
+    "formats": [
+      "PDF",
+      "PPT",
+      "PPTX",
+      "PNG",
+      "JPEG"
+    ],
+    "valid_and_truncated_each": true,
+    "worker_command_verified": "java -jar outer.jar --file-validation-worker",
+    "probe_source": "src/test/java/com/morales/chemicallab/security/files/PackagedFormatsProbe.java",
+    "local_evidence_file": "packaged-formats-final.log",
+    "sha256": "4aec1c9a0b3211d69df88f9d84def00a3a16b5cd5d8cfdc93bb48391f590649e"
+  },
+  "jdbc_negative_controls": [
+    {
+      "tested_driver": "42.7.10",
+      "expected_failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "purpose": "Demonstrate meaningful buffer-reuse padding regression and requireAuth fail-closed behavior; negative control is not a passing suite",
+      "local_evidence_file": "jdbc-negative-old-driver.log",
+      "sha256": "7835ca1811afd7e48278a07ff08e1f1e561690dcee1ce036b604041bed000ee9"
+    },
+    {
+      "tested_driver": "42.7.13",
+      "expected_failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "purpose": "Demonstrate meaningful buffer-reuse padding regression and requireAuth fail-closed behavior; negative control is not a passing suite",
+      "local_evidence_file": "jdbc-negative-managed-driver.log",
+      "sha256": "d53451a1b807c86c46d0840fa3096a1152c9fbbdf67dd81725b8cfaa4855665c"
+    }
+  ],
+  "static_site_generation": {
+    "implementation_sha": "39266dfa8a0e7b9d45a7c5f3d9c39ba11319b315",
+    "pom_and_production_sources_identical_to_final": true,
+    "command": "mvn site -DgenerateReports=false",
+    "site_run": false,
+    "deployment": false,
+    "local_evidence_file": "site-generation-final.log",
+    "sha256": "05c2f136cfb0e438ce5bb0ee5c091ec70e3ff34726da440a4bb3767cafe20693"
+  },
+  "sca": {
+    "application_final": {
+      "local_evidence_file": "osv-maven-final.json",
+      "sha256": "4c118d8c3fd9cdade1eb90ff29c2272616ffca29388f00ce24e2cf0d40e57375",
+      "packages_scanned": 173,
+      "unique_advisories": 0,
+      "component_advisory_pairs": 0
+    },
+    "plugins_final": {
+      "local_evidence_file": "osv-plugins-definitive.json",
+      "sha256": "49e209565cda4d0d72d13384b2b41469720076847524731724f96ee35596bb0f",
+      "packages_scanned": 152,
+      "unique_advisories": 4,
+      "component_advisory_pairs": 4
+    },
+    "packaged_final": {
+      "local_evidence_file": "osv-packaged-final.json",
+      "sha256": "1e0b330aa65dbc79fbef724c18d218e6c04dbf68ccc754cb1c2a2308b1ba5b15",
+      "packages_scanned": 120,
+      "unique_advisories": 0,
+      "component_advisory_pairs": 0
+    }
+  },
+  "excluded_from_passing_counts": [
+    "first flaky AuditReliability execution",
+    "incorrect datasource property execution",
+    "partial/intermediate suites",
+    "expected JDBC negative-control failures"
+  ],
+  "disposable_postgresql": {
+    "remaining_non_system_schemas_after_tests": [
+      "public"
+    ],
+    "t09_cluster_stopped_after_validation": true,
+    "real_database_access": false
+  },
+  "status": "VER-01 partially corrected; Jetty Site and essential runtime/image coverage pending; no risk acceptance"
+}
