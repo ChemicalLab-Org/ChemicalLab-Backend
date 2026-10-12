@@ -3,6 +3,7 @@ package com.morales.chemicallab.security;
 import org.junit.jupiter.api.Test;
 import org.postgresql.util.ByteStreamWriter;
 import java.sql.DriverManager;
+import java.util.Arrays;
 import static org.assertj.core.api.Assertions.*;
 
 /** Driver-specific regressions, using only a connection-local temporary table. */
@@ -19,18 +20,25 @@ class JdbcDriverRegressionDbTest {
         try (var db = connection(); var sql = db.createStatement()) {
             sql.execute("CREATE TEMP TABLE t09_driver_payload (payload bytea)");
             sql.execute("SELECT 'FICTITIOUS_PREVIOUS_TRAFFIC_MARKER'");
+            // A tiny value can pass on an affected driver: force buffer reuse before padding.
+            byte[] supplied = new byte[200_000];
+            Arrays.fill(supplied, (byte) 0x41);
             try (var insert = db.prepareStatement("INSERT INTO t09_driver_payload VALUES (?)")) {
                 insert.setObject(1, new ByteStreamWriter() {
-                    public int getLength() { return 8; }
+                    public int getLength() { return 300_000; }
                     public void writeTo(ByteStreamTarget target) throws java.io.IOException {
-                        target.getOutputStream().write(new byte[] {1, 2});
+                        target.getOutputStream().write(supplied);
                     }
                 });
                 insert.executeUpdate();
             }
             try (var result = sql.executeQuery("SELECT payload FROM t09_driver_payload")) {
                 assertThat(result.next()).isTrue();
-                assertThat(result.getBytes(1)).containsExactly(1, 2, 0, 0, 0, 0, 0, 0);
+                byte[] stored = result.getBytes(1);
+                assertThat(stored).hasSize(300_000);
+                assertThat(Arrays.equals(Arrays.copyOfRange(stored, 0, supplied.length), supplied)).isTrue();
+                assertThat(Arrays.equals(Arrays.copyOfRange(stored, supplied.length, stored.length),
+                        new byte[100_000])).as("Padding must not contain earlier buffer traffic").isTrue();
             }
         }
     }
