@@ -94,9 +94,13 @@ class AuditReliabilityDbTest {
     }
     SystemLog rejected(){return SystemLog.builder().eventType(LogEventType.REST_DENIED).category(LogCategory.AUTH).severity(LogSeverity.WARNING).action("REST_DENIED").outcome("REJECTED").correlationId(UUID.randomUUID()).createdAt(LocalDateTime.now(ZoneOffset.UTC)).build();}
     @Test void sharedRejectionLimitCoordinatesConcurrentWritersAndSurvivesRestart() throws Exception {
-        f.sql().update("update audit_rejection_budget set used=110 where id=1");
         var second=f.startApp();ExecutorService pool=Executors.newFixedThreadPool(4);
         try {
+            // Load the budget after both slow application startups. Give concurrent writers
+            // a full clock window; crossing a minute correctly resets the production budget.
+            double secondOfMinute=f.sql().queryForObject("select extract(second from statement_timestamp())",Double.class);
+            if(secondOfMinute>=45)Thread.sleep((long)((60-secondOfMinute)*1000)+100);
+            f.sql().update("update audit_rejection_budget set used=110,window_start=date_trunc('minute',statement_timestamp()) where id=1");
             var a=f.app.getBean(AuditLogWriter.class);var b=second.getBean(AuditLogWriter.class);
             List<Callable<Boolean>> work=new ArrayList<>();for(int i=0;i<20;i++){var writer=i%2==0?a:b;work.add(()->writer.persistRejection(rejected()));}
             long accepted=0;for(var future:pool.invokeAll(work))if(future.get())accepted++;
