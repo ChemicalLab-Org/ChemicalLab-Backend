@@ -230,10 +230,21 @@ esa instancia ficticia:
 mvn -o clean package -Dspring.profiles.active=test -Dspring.datasource.url=jdbc:postgresql://127.0.0.1:<PUERTO>/chemicallab_t01_test -Dspring.datasource.username=<USUARIO_FICTICIO> -Dspring.datasource.password=<CLAVE_FICTICIA>
 ```
 
-Los logs/arneses locales t08-baseline-confirmed.log, t08-focused-final.log y
-t08-full-first.log no se publican; los tests reproducibles sí se versionan.
-Suite global/build final se ejecutan sobre el commit de implementación y se
-documentan separadamente en el cierre de resultados. No se suman ejecuciones parciales.
+La ejecución global final de `clean package` sobre el commit de implementación
+`e32450bbc8a1f38f8199bcd2ae38d17d29293e31` terminó con **565 pruebas, cero
+fallos, errores u omisiones**, BUILD SUCCESS y JAR Spring Boot generado. Duró
+6 min 9 s y terminó el 12 de octubre de 2026 a las 04:15:10 America/Lima.
+Incluye las pruebas T08 y las regresiones existentes T01–T07-B, REST/STOMP,
+indicadores, aprovisionamiento, consultas, cuotas y validación de archivos.
+Los errores de arranque deliberados de las pruebas de guardas son esperados;
+no son errores del resultado final de Surefire.
+
+Este cierre se añade mediante un commit exclusivamente documental posterior.
+No se atribuye una suite global a ese HEAD posterior: su código, tests, recursos
+y pom.xml son idénticos al SHA probado, verificados con git diff. No se suman
+ejecuciones parciales. Los logs/arneses locales t08-baseline-confirmed.log,
+t08-focused-final.log, t08-full-first.log y t08-full-final.log no se publican;
+los tests reproducibles sí se versionan.
 
 Conservación: 22 archivos del inventario local (seis Documentos/Seguridad y los
 16 e2e), cero diferencias SHA256. Backend original limpio en la base indicada.
