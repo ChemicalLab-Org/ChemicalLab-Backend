@@ -160,18 +160,19 @@ frontend completa ni navegador E2E nuevo. No se crea una segunda PR artificial.
 
 ## Comandos y verificación
 
-La implementación realmente probada es
-`c21b15eee974aad640c2ff9a9c7e7e78869eebd9`. La entrega añade después únicamente
-esta nota y evidencia JSON: no altera src/main, src/test, POM ni recursos respecto
-a ese SHA. El HEAD publicado se entrega con la PR; no se atribuye una nueva
-ejecución al commit documental.
+La verificación original de 593 pruebas corresponde a
+`c21b15eee974aad640c2ff9a9c7e7e78869eebd9`. El HEAD revisado inicialmente,
+`4e560f07aa656edf117b5a8e75013245a4fc9571`, añadió únicamente esta nota y
+evidencia JSON respecto a ese SHA. La posterior corrección de portabilidad y sus
+ejecuciones parciales se identifican por separado más adelante; no se atribuye
+otra ejecución completa de 593 pruebas al nuevo HEAD.
 
 | Ejecución | Alcance y resultado | Identidad / fecha local |
 | --- | --- | --- |
 | Reproducción principal | Selección parcial de 9 casos; 9/0/0/0 (tests/fallos/errores/omisiones), comportamientos defectuosos afirmados | src/main/POM de `67833d1`; 08:41:12 |
 | Reproducción adicional | 1 caso de rollback diferido; 1/0/0/0, consumo huérfano demostrado | Escritor de métrica original, primera corrección de locks; 08:47:06; no es el SHA final |
 | Corrección intermedia | Selección parcial de concurrencia y unitarias: 62/0/0/0 | Antes del arreglo de métrica y de ampliar a 17 casos; 08:44:45; no se cuenta como suite final |
-| Backend final | `clean package` completo: 593/0/0/0, BUILD SUCCESS; incluye los 17 casos de dos procesos y todas las regresiones existentes | `c21b15e`; 08:57:42, duración 08:55 min |
+| Backend original | `clean package` completo: 593/0/0/0, BUILD SUCCESS; incluye los 17 casos de dos procesos y todas las regresiones existentes | `c21b15e`; 08:57:42, duración 08:55 min |
 | Artefacto final | 10 controles empaquetados: PDF/PPT/PPTX/PNG/JPEG válidos y truncados, comando hijo con outer JAR y límites comprobados | Mismo JAR de package; 09:01–09:02 |
 | Frontend | Selección parcial de dos archivos existentes: 11 aprobadas, cero omitidas; no se repitió suite completa ni build de producción | `ed068f7`; 08:38:42, duración 24.66 s |
 
@@ -226,12 +227,85 @@ Frontend aislado, dependencias T09 locales reutilizadas mediante junction:
 npm test -- --watch=false --include=src/app/core/services/query-pagination.spec.ts --include=src/app/features/concepts/material-delivery.spec.ts
 ```
 
-Los resultados completos finales, SHA probado, hashes y preservación se registran
+Los resultados completos originales, SHA probado, hashes y preservación se registran
 en `t10/validation.json`. Los snapshots de respuestas/filas ficticias se guardan
 en `t10/baseline-results.json`, `t10/join-rollback-before-results.json` y
 `t10/final-results.json`; no contienen JWT,
 credenciales reales, contenido escolar ni logs completos. Los logs locales están
 en `.codex-work/t10-evidence/`.
+
+## Revisión de portabilidad del arnés — PR 65
+
+Hallazgo sobre el HEAD `4e560f07aa656edf117b5a8e75013245a4fc9571`:
+ConcurrencyDbTest seleccionaba siempre java.home/bin/java.exe. En Linux el
+ejecutable es bin/java y ese comando impedía arrancar los procesos hijos. La
+corrección del SHA `e9581c913e3780ed3510c0614755c94c801bb552` selecciona
+java.exe cuando os.name empieza por Windows y java en los demás sistemas,
+siguiendo exactamente el patrón de FileValidationService.workerCommand().
+No se cambia producción, POM, dependencias, recursos ni cantidad de casos.
+No se añaden omisiones condicionales. Se conservan los dos ProcessBuilder,
+barreras SQL, rondas, límites de arranque/HTTP/locks/futures y limpieza existentes.
+
+Se ejecutaron selecciones existentes sobre ese SHA, no una suite completa nueva:
+
+| Entorno | Resultado tests/fallos/errores/omisiones | Procesos backend independientes | Fin local / duración Maven |
+| --- | --- | --- | --- |
+| Windows, Java 17.0.12, java.home/bin/java.exe | 8/0/0/0, BUILD SUCCESS | PID 6368 y 19448, ambos listos | 13:02:45, 01:58 min |
+| WSL2 Ubuntu 24.04.5, OpenJDK 25.0.2 existente, java.home/bin/java | 4/0/0/0, BUILD SUCCESS | PID 849 y 990, ambos listos | 13:10:57, 05:29 min |
+
+Windows cubre inicio/último intento, guardado-submit/reenvío, join repetido y
+alumnos distintos, creación concurrente de archivo, eliminación/reemplazo y doble
+delete, presencia/permisos, cuota entre contenidos y rollback de métrica. Linux
+cubre inicio/último intento, join repetido y alumnos distintos, creación de archivo
+y eliminación/reemplazo/doble delete. Se observaron dos conexiones PostgreSQL
+esperando locks antes de liberar las barreras; las aserciones de persistencia,
+cuotas y auditoría de esos casos pasaron. Los XML Surefire corroboran los conteos,
+nombres de casos, os.name y java.home; no se suman las selecciones como casos nuevos.
+
+WSL tenía Java pero carecía de PostgreSQL local, y Docker no tenía daemon activo.
+Para esta ejecución se usó el mismo PostgreSQL Windows desechable en loopback
+55440 mediante un puente temporal: listener WSL 127.0.0.1 → pipes stdio de
+Python Windows existente → PostgreSQL Windows 127.0.0.1. Cada conexión JDBC
+conserva una conexión DB independiente. El puente no modifica código del arnés,
+guardas de URL, red/configuración global ni permisos de bases existentes; tiene
+stop file y máximo de diez minutos. Script y logs locales quedan identificados
+por hash en la evidencia. No es una ejecución de PostgreSQL nativo Linux ni
+una certificación de Java 17/Linux o de distribución productiva.
+
+El primer intento offline Linux no resolvió el parent 4.0.8 desde su caché propia;
+no llegó a ejecutar tests y no se cuenta como éxito. Se repitió offline usando
+la caché Maven Windows ya existente, sin descargas ni instalaciones globales.
+Maven compiló producción y tests con release 17. El warning de Lombok sobre
+sun.misc.Unsafe en Java 25 permanece; no se alteraron dependencias para ocultarlo.
+
+Comandos de las selecciones (mismos parámetros ficticios de DB y perfil test):
+
+```text
+mvn -o test -Dtest=ConcurrencyDbTest#simultaneousStartAndLastAttemptAcrossProcesses+saveSubmitAndRepeatedSubmitHaveOnePersistedLifecycle+duplicateJoinHasOneParticipantAndControlledSuccess+simultaneousFileCreationKeepsOnlyOneActiveFile+deleteThenReplaceAndDuplicateDeleteAreControlled+presenceCannotOverwriteTeacherPermission+competingMaterialsOnDifferentContentsShareAtomicQuota+joinRollbackDoesNotPublishMetric
+mvn -o -Dmaven.repo.local=/mnt/c/Users/carlo/.m2/repository test -Dtest=ConcurrencyDbTest#simultaneousStartAndLastAttemptAcrossProcesses+duplicateJoinHasOneParticipantAndControlledSuccess+simultaneousFileCreationKeepsOnlyOneActiveFile+deleteThenReplaceAndDuplicateDeleteAreControlled
+```
+
+El segundo se ejecutó en un checkout aislado de e9581c9 bajo WSL, con JAVA_HOME
+apuntando al JDK Linux existente y Maven 3.9.15 cacheado. En un entorno Linux
+normal debe prepararse su propio PostgreSQL desechable local y caché de Maven;
+el puente describe esta comprobación local concreta, no un requisito del proyecto.
+
+[t10/portability-validation.json](t10/portability-validation.json) registra la
+identidad nueva, selecciones y hashes; los snapshots están en
+[portability-windows-results.json](t10/portability-windows-results.json) y
+[portability-linux-results.json](t10/portability-linux-results.json). validation.json
+y la evidencia de las 593 pruebas permanecen como verificación anterior de
+c21b15e; también se reutilizan los 10 controles del JAR y las 11 pruebas frontend
+anteriores, sin atribuirles otra ejecución. El commit documental posterior al
+SHA nuevo no cambia código. La PR entrega el nuevo HEAD publicado.
+
+Limpieza comprobada: los cuatro PID backend terminaron, el puente salió con 0
+y cerró sus 46 auxiliares, cero esquemas de prueba y cero conexiones restantes;
+pg_ctl detuvo sólo t10-postgres. Los 8 documentos locales y los 16 archivos E2E
+conservan hashes; frontend institucional y checkout backend original intactos.
+Queda pendiente una suite Linux completa y validación con JDK 17/Linux y
+PostgreSQL nativo Linux, sin atribuir aquí esas ejecuciones. Los límites SEC-13,
+operación y VER-01 de abajo siguen vigentes. Sin merge, despliegue ni T11.
 
 ## Balance T01–T10 y límites que permanecen
 
