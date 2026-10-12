@@ -1,0 +1,911 @@
+[ {
+  "baseline" : false,
+  "pid" : 24516,
+  "backendProcess" : 1
+}, {
+  "baseline" : false,
+  "pid" : 29496,
+  "backendProcess" : 2
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ {
+      "id" : 1,
+      "student_id" : 1,
+      "attempt_number" : 1,
+      "status" : "IN_PROGRESS",
+      "score" : null,
+      "grade_closed" : false
+    } ],
+    "answers" : [ ],
+    "lifecycle" : [ {
+      "event_type" : "ATTEMPT_STARTED",
+      "rows" : 1
+    } ],
+    "materials" : [ ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 1,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    }, {
+      "student_id" : 2,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "start:evaluations",
+  "statuses" : [ 201, 400 ]
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ {
+      "id" : 1,
+      "student_id" : 1,
+      "attempt_number" : 1,
+      "status" : "GRADED",
+      "score" : 0,
+      "grade_closed" : true
+    }, {
+      "id" : 2,
+      "student_id" : 1,
+      "attempt_number" : 2,
+      "status" : "IN_PROGRESS",
+      "score" : null,
+      "grade_closed" : false
+    } ],
+    "answers" : [ ],
+    "lifecycle" : [ {
+      "event_type" : "ATTEMPT_STARTED",
+      "rows" : 2
+    }, {
+      "event_type" : "ATTEMPT_SUBMITTED",
+      "rows" : 1
+    } ],
+    "materials" : [ ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 1,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    }, {
+      "student_id" : 2,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "last-attempt:evaluations",
+  "statuses" : [ 201, 400 ]
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ {
+      "id" : 3,
+      "student_id" : 1,
+      "attempt_number" : 1,
+      "status" : "IN_PROGRESS",
+      "score" : null,
+      "grade_closed" : false
+    } ],
+    "answers" : [ ],
+    "lifecycle" : [ {
+      "event_type" : "ATTEMPT_STARTED",
+      "rows" : 1
+    } ],
+    "materials" : [ ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 1,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    }, {
+      "student_id" : 2,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "start:evaluations",
+  "statuses" : [ 400, 201 ]
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ {
+      "id" : 3,
+      "student_id" : 1,
+      "attempt_number" : 1,
+      "status" : "GRADED",
+      "score" : 0,
+      "grade_closed" : true
+    }, {
+      "id" : 4,
+      "student_id" : 1,
+      "attempt_number" : 2,
+      "status" : "IN_PROGRESS",
+      "score" : null,
+      "grade_closed" : false
+    } ],
+    "answers" : [ ],
+    "lifecycle" : [ {
+      "event_type" : "ATTEMPT_STARTED",
+      "rows" : 2
+    }, {
+      "event_type" : "ATTEMPT_SUBMITTED",
+      "rows" : 1
+    } ],
+    "materials" : [ ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 1,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    }, {
+      "student_id" : 2,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "last-attempt:evaluations",
+  "statuses" : [ 201, 400 ]
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ {
+      "id" : 5,
+      "student_id" : 1,
+      "attempt_number" : 1,
+      "status" : "IN_PROGRESS",
+      "score" : null,
+      "grade_closed" : false
+    } ],
+    "answers" : [ ],
+    "lifecycle" : [ {
+      "event_type" : "ATTEMPT_STARTED",
+      "rows" : 1
+    } ],
+    "materials" : [ ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 1,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    }, {
+      "student_id" : 2,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "start:evaluations",
+  "statuses" : [ 201, 400 ]
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ {
+      "id" : 5,
+      "student_id" : 1,
+      "attempt_number" : 1,
+      "status" : "GRADED",
+      "score" : 0,
+      "grade_closed" : true
+    }, {
+      "id" : 6,
+      "student_id" : 1,
+      "attempt_number" : 2,
+      "status" : "IN_PROGRESS",
+      "score" : null,
+      "grade_closed" : false
+    } ],
+    "answers" : [ ],
+    "lifecycle" : [ {
+      "event_type" : "ATTEMPT_STARTED",
+      "rows" : 2
+    }, {
+      "event_type" : "ATTEMPT_SUBMITTED",
+      "rows" : 1
+    } ],
+    "materials" : [ ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 1,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    }, {
+      "student_id" : 2,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "last-attempt:evaluations",
+  "statuses" : [ 201, 400 ]
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ ],
+    "answers" : [ ],
+    "lifecycle" : [ ],
+    "materials" : [ ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 4,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "insert:whiteboard_sessions",
+  "statuses" : [ 200, 200 ]
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ ],
+    "answers" : [ ],
+    "lifecycle" : [ ],
+    "materials" : [ ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 4,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "insert:whiteboard_sessions",
+  "statuses" : [ 200, 200 ]
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ ],
+    "answers" : [ ],
+    "lifecycle" : [ ],
+    "materials" : [ ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 4,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "insert:whiteboard_sessions",
+  "statuses" : [ 200, 200 ]
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ ],
+    "answers" : [ ],
+    "lifecycle" : [ ],
+    "materials" : [ ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 4,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    }, {
+      "student_id" : 5,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "join-different-users:whiteboard_sessions",
+  "statuses" : [ 200, 200 ]
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ ],
+    "answers" : [ ],
+    "lifecycle" : [ ],
+    "materials" : [ {
+      "id" : 3,
+      "concept_content_id" : 4,
+      "type" : "FILE",
+      "active" : true,
+      "content_type" : "image/png",
+      "file_size" : 93,
+      "actual_bytes" : 93,
+      "content_fingerprint" : "407d987a913dc99947dc4d789f4bf10b"
+    } ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    }, {
+      "resource" : "MATERIAL_BYTES",
+      "used" : 93
+    }, {
+      "resource" : "MATERIAL_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 10,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    }, {
+      "student_id" : 11,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "replace-replace:concept_contents",
+  "statuses" : [ 201, 201 ]
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ ],
+    "answers" : [ ],
+    "lifecycle" : [ ],
+    "materials" : [ {
+      "id" : 3,
+      "concept_content_id" : 4,
+      "type" : "FILE",
+      "active" : true,
+      "content_type" : "image/png",
+      "file_size" : 93,
+      "actual_bytes" : 93,
+      "content_fingerprint" : "407d987a913dc99947dc4d789f4bf10b"
+    } ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    }, {
+      "resource" : "MATERIAL_BYTES",
+      "used" : 93
+    }, {
+      "resource" : "MATERIAL_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 10,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    }, {
+      "student_id" : 11,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "replace-replace:concept_contents",
+  "statuses" : [ 201, 201 ]
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ ],
+    "answers" : [ ],
+    "lifecycle" : [ ],
+    "materials" : [ {
+      "id" : 3,
+      "concept_content_id" : 4,
+      "type" : "FILE",
+      "active" : true,
+      "content_type" : "image/png",
+      "file_size" : 76,
+      "actual_bytes" : 76,
+      "content_fingerprint" : "cd357399a69cecdd5e5ec0eb9b24d88b"
+    } ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    }, {
+      "resource" : "MATERIAL_BYTES",
+      "used" : 76
+    }, {
+      "resource" : "MATERIAL_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 10,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    }, {
+      "student_id" : 11,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "replace-replace:concept_contents",
+  "statuses" : [ 201, 201 ]
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ {
+      "id" : 8,
+      "student_id" : 13,
+      "attempt_number" : 1,
+      "status" : "IN_PROGRESS",
+      "score" : null,
+      "grade_closed" : false
+    } ],
+    "answers" : [ {
+      "attempt_id" : 8,
+      "question_id" : 5,
+      "selected_option_id" : 9,
+      "correct" : null,
+      "points_awarded" : null
+    } ],
+    "lifecycle" : [ {
+      "event_type" : "ATTEMPT_STARTED",
+      "rows" : 1
+    } ],
+    "materials" : [ ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 13,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    }, {
+      "student_id" : 14,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "sequential-replay:evaluations",
+  "statuses" : [ 200, 400 ]
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ ],
+    "answers" : [ ],
+    "lifecycle" : [ ],
+    "materials" : [ {
+      "id" : 4,
+      "concept_content_id" : 6,
+      "type" : "FILE",
+      "active" : true,
+      "content_type" : "image/png",
+      "file_size" : 93,
+      "actual_bytes" : 93,
+      "content_fingerprint" : "407d987a913dc99947dc4d789f4bf10b"
+    } ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    }, {
+      "resource" : "MATERIAL_BYTES",
+      "used" : 93
+    }, {
+      "resource" : "MATERIAL_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 16,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    }, {
+      "student_id" : 17,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "insert:concept_contents",
+  "statuses" : [ 201, 201 ]
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ ],
+    "answers" : [ ],
+    "lifecycle" : [ ],
+    "materials" : [ {
+      "id" : 5,
+      "concept_content_id" : 6,
+      "type" : "FILE",
+      "active" : true,
+      "content_type" : "image/png",
+      "file_size" : 93,
+      "actual_bytes" : 93,
+      "content_fingerprint" : "407d987a913dc99947dc4d789f4bf10b"
+    } ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    }, {
+      "resource" : "MATERIAL_BYTES",
+      "used" : 93
+    }, {
+      "resource" : "MATERIAL_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 16,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    }, {
+      "student_id" : 17,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "insert:concept_contents",
+  "statuses" : [ 201, 201 ]
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ ],
+    "answers" : [ ],
+    "lifecycle" : [ ],
+    "materials" : [ {
+      "id" : 6,
+      "concept_content_id" : 6,
+      "type" : "FILE",
+      "active" : true,
+      "content_type" : "image/png",
+      "file_size" : 93,
+      "actual_bytes" : 93,
+      "content_fingerprint" : "407d987a913dc99947dc4d789f4bf10b"
+    } ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    }, {
+      "resource" : "MATERIAL_BYTES",
+      "used" : 93
+    }, {
+      "resource" : "MATERIAL_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 16,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    }, {
+      "student_id" : 17,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "insert:concept_contents",
+  "statuses" : [ 201, 201 ]
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ {
+      "id" : 9,
+      "student_id" : 22,
+      "attempt_number" : 1,
+      "status" : "GRADED",
+      "score" : 4,
+      "grade_closed" : true
+    } ],
+    "answers" : [ {
+      "attempt_id" : 9,
+      "question_id" : 8,
+      "selected_option_id" : 15,
+      "correct" : true,
+      "points_awarded" : 4
+    } ],
+    "lifecycle" : [ {
+      "event_type" : "ATTEMPT_STARTED",
+      "rows" : 1
+    }, {
+      "event_type" : "ATTEMPT_SUBMITTED",
+      "rows" : 1
+    } ],
+    "materials" : [ ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 22,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    }, {
+      "student_id" : 23,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "save-submit:evaluations",
+  "statuses" : [ 200, 200 ]
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ {
+      "id" : 10,
+      "student_id" : 22,
+      "attempt_number" : 1,
+      "status" : "GRADED",
+      "score" : 4,
+      "grade_closed" : true
+    } ],
+    "answers" : [ {
+      "attempt_id" : 10,
+      "question_id" : 8,
+      "selected_option_id" : 15,
+      "correct" : true,
+      "points_awarded" : 4
+    } ],
+    "lifecycle" : [ {
+      "event_type" : "ATTEMPT_STARTED",
+      "rows" : 1
+    }, {
+      "event_type" : "ATTEMPT_SUBMITTED",
+      "rows" : 1
+    } ],
+    "materials" : [ ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 22,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    }, {
+      "student_id" : 23,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "save-submit:evaluations",
+  "statuses" : [ 200, 200 ]
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ {
+      "id" : 11,
+      "student_id" : 22,
+      "attempt_number" : 1,
+      "status" : "GRADED",
+      "score" : 4,
+      "grade_closed" : true
+    } ],
+    "answers" : [ {
+      "attempt_id" : 11,
+      "question_id" : 8,
+      "selected_option_id" : 15,
+      "correct" : true,
+      "points_awarded" : 4
+    } ],
+    "lifecycle" : [ {
+      "event_type" : "ATTEMPT_STARTED",
+      "rows" : 1
+    }, {
+      "event_type" : "ATTEMPT_SUBMITTED",
+      "rows" : 1
+    } ],
+    "materials" : [ ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 22,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    }, {
+      "student_id" : 23,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "save-submit:evaluations",
+  "statuses" : [ 200, 200 ]
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ {
+      "id" : 12,
+      "student_id" : 22,
+      "attempt_number" : 1,
+      "status" : "GRADED",
+      "score" : 0,
+      "grade_closed" : true
+    } ],
+    "answers" : [ ],
+    "lifecycle" : [ {
+      "event_type" : "ATTEMPT_STARTED",
+      "rows" : 1
+    }, {
+      "event_type" : "ATTEMPT_SUBMITTED",
+      "rows" : 1
+    } ],
+    "materials" : [ ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 22,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    }, {
+      "student_id" : 23,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "submit-submit:evaluations",
+  "statuses" : [ 200, 400 ]
+}, {
+  "baseline" : false,
+  "scenario" : "join-after-close",
+  "statuses" : [ 200, 400 ],
+  "participants" : 0
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ {
+      "id" : 13,
+      "student_id" : 28,
+      "attempt_number" : 1,
+      "status" : "IN_PROGRESS",
+      "score" : null,
+      "grade_closed" : false
+    }, {
+      "id" : 14,
+      "student_id" : 29,
+      "attempt_number" : 1,
+      "status" : "IN_PROGRESS",
+      "score" : null,
+      "grade_closed" : false
+    } ],
+    "answers" : [ ],
+    "lifecycle" : [ {
+      "event_type" : "ATTEMPT_STARTED",
+      "rows" : 2
+    } ],
+    "materials" : [ ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 28,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    }, {
+      "student_id" : 29,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "different-users:evaluations",
+  "statuses" : [ 201, 201 ]
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ {
+      "id" : 15,
+      "student_id" : 31,
+      "attempt_number" : 1,
+      "status" : "GRADED",
+      "score" : 4,
+      "grade_closed" : true
+    } ],
+    "answers" : [ {
+      "attempt_id" : 15,
+      "question_id" : 11,
+      "selected_option_id" : 21,
+      "correct" : true,
+      "points_awarded" : 4
+    } ],
+    "lifecycle" : [ {
+      "event_type" : "ATTEMPT_STARTED",
+      "rows" : 1
+    }, {
+      "event_type" : "ATTEMPT_SUBMITTED",
+      "rows" : 1
+    } ],
+    "materials" : [ ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 31,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    }, {
+      "student_id" : 32,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "submit-exit:evaluations",
+  "statuses" : [ 200, 400 ]
+}, {
+  "statuses" : [ 204, 201 ],
+  "baseline" : false,
+  "scenario" : "delete-then-replace"
+}, {
+  "baseline" : false,
+  "persistence" : {
+    "attempts" : [ ],
+    "answers" : [ ],
+    "lifecycle" : [ ],
+    "materials" : [ ],
+    "quotas" : [ {
+      "resource" : "BOARD_COUNT",
+      "used" : 1
+    }, {
+      "resource" : "MATERIAL_BYTES",
+      "used" : 0
+    }, {
+      "resource" : "MATERIAL_COUNT",
+      "used" : 0
+    } ],
+    "board" : [ {
+      "status" : "ACTIVE"
+    } ],
+    "participants" : [ {
+      "student_id" : 34,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    }, {
+      "student_id" : 35,
+      "interaction_override" : "FOLLOW_GLOBAL"
+    } ]
+  },
+  "scenario" : "delete-delete:concept_contents",
+  "statuses" : [ 204, 404 ]
+}, {
+  "scenario" : "join-rollback-metric",
+  "participants" : 0,
+  "status" : 500,
+  "baseline" : false,
+  "metricDelta" : 0
+}, {
+  "baseline" : false,
+  "scenario" : "permission-rejoin",
+  "persistedOverride" : "BLOCKED"
+}, {
+  "statuses" : [ 409, 201 ],
+  "scenario" : "shared-material-quota",
+  "persistedCount" : 1
+}, {
+  "baseline" : false,
+  "scenario" : "permission-presence",
+  "persistedOverride" : "BLOCKED"
+} ]

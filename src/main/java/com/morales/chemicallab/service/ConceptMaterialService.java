@@ -10,6 +10,8 @@ import com.morales.chemicallab.repository.StudentProfileRepository;
 import com.morales.chemicallab.repository.TeacherProfileRepository;
 import com.morales.chemicallab.repository.UserAccountRepository;
 import jakarta.persistence.EntityNotFoundException;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,6 +50,7 @@ public class ConceptMaterialService {
     private final AuditLogService auditLogService;
     private final FileValidationService fileValidationService;
     private final com.morales.chemicallab.security.storage.QueryLimits queryLimits;
+    private final EntityManager entityManager;
 
     private static final String TARGET_CONCEPT = "ConceptContent";
 
@@ -72,6 +75,13 @@ public class ConceptMaterialService {
         String contentType = validated.contentType();
         String fileName = validated.fileName();
         byte[] data = validated.data();
+
+        // Validate expensive bytes first; serialize the read/replace decision across API processes.
+        lockOwnedConcept(content, teacher);
+        if (conceptMaterialRepository.countByConceptContentIdAndTypeAndActiveTrue(conceptId, MaterialType.FILE) > 1) {
+            throw new com.morales.chemicallab.security.limits.InputRejectedException(409,
+                    "MATERIAL_STATE_CONFLICT", "El contenido tiene varios archivos activos. Solicita una revisión antes de reemplazarlos.");
+        }
 
         // Reemplazo: se elimina el archivo previo (si lo hay) para mantener un solo adjunto.
         var existing = conceptMaterialRepository
@@ -104,6 +114,7 @@ public class ConceptMaterialService {
 
         String url = validateUrl(request.url());
         String title = cleanTitle(request.title());
+        lockOwnedConcept(content, teacher);
 
         ConceptMaterial material = ConceptMaterial.builder()
                 .conceptContent(content)
@@ -127,6 +138,8 @@ public class ConceptMaterialService {
     public void removeMaterial(String username, Long conceptId, Long materialId) {
         TeacherProfile teacher = requireTeacher(username);
         ConceptContent content = requireOwnedConcept(conceptId, teacher);
+
+        lockOwnedConcept(content, teacher);
 
         ConceptMaterial material = conceptMaterialRepository
                 .findByIdAndConceptContentIdAndActiveTrue(materialId, conceptId)
@@ -261,6 +274,13 @@ public class ConceptMaterialService {
     private ConceptContent requireExistingConcept(Long conceptId) {
         return conceptContentRepository.findById(conceptId)
                 .orElseThrow(() -> new EntityNotFoundException("El contenido conceptual no existe."));
+    }
+
+    private void lockOwnedConcept(ConceptContent content, TeacherProfile teacher) {
+        entityManager.refresh(content, LockModeType.PESSIMISTIC_WRITE);
+        if (!content.getCreatedByTeacher().getId().equals(teacher.getId())) {
+            throw new IllegalArgumentException("No tienes permiso para modificar este contenido.");
+        }
     }
 
     /** Verifica que el contenido esté publicado y asignado al grado/sección del estudiante. */

@@ -1,0 +1,183 @@
+{
+  "date": "2026-10-12",
+  "timezone": "America/Lima",
+  "reviewed_pr": "https://github.com/ChemicalLab-Org/ChemicalLab-Backend/pull/65",
+  "reviewed_head": "4e560f07aa656edf117b5a8e75013245a4fc9571",
+  "branch": "security/t10-concurrencia",
+  "tested_code_and_tests_sha": "e9581c913e3780ed3510c0614755c94c801bb552",
+  "change": {
+    "file": "src/test/java/com/morales/chemicallab/security/ConcurrencyDbTest.java",
+    "windows_executable": "java.home/bin/java.exe",
+    "other_compatible_systems_executable": "java.home/bin/java",
+    "pattern": "FileValidationService.workerCommand()",
+    "production_changed": false,
+    "dependencies_changed": false,
+    "resources_changed": false,
+    "os_conditional_test_skip_added": false,
+    "two_independent_processes_sql_barriers_timeouts_and_cleanup_unchanged": true
+  },
+  "windows": {
+    "sha": "e9581c913e3780ed3510c0614755c94c801bb552",
+    "scope": "partial selection of existing ConcurrencyDbTest methods",
+    "tests": 8,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "result": "BUILD SUCCESS",
+    "finished_at": "2026-10-12T13:02:45-05:00",
+    "elapsed": "01:58 min",
+    "runtime": {
+      "os.name": "Windows 11",
+      "java.home": "C:\\Program Files\\Java\\jdk-17",
+      "java.version": "17.0.12"
+    },
+    "child_process_pids": [
+      6368,
+      19448
+    ],
+    "both_children_ready": true,
+    "independent_postgresql_lock_waiters_observed": true,
+    "cases": [
+      {
+        "name": "simultaneousStartAndLastAttemptAcrossProcesses",
+        "seconds": 7.532
+      },
+      {
+        "name": "duplicateJoinHasOneParticipantAndControlledSuccess",
+        "seconds": 1.765
+      },
+      {
+        "name": "simultaneousFileCreationKeepsOnlyOneActiveFile",
+        "seconds": 3.906
+      },
+      {
+        "name": "saveSubmitAndRepeatedSubmitHaveOnePersistedLifecycle",
+        "seconds": 2.015
+      },
+      {
+        "name": "deleteThenReplaceAndDuplicateDeleteAreControlled",
+        "seconds": 2.321
+      },
+      {
+        "name": "joinRollbackDoesNotPublishMetric",
+        "seconds": 1.072
+      },
+      {
+        "name": "competingMaterialsOnDifferentContentsShareAtomicQuota",
+        "seconds": 1.595
+      },
+      {
+        "name": "presenceCannotOverwriteTeacherPermission",
+        "seconds": 1.067
+      }
+    ]
+  },
+  "linux": {
+    "sha": "e9581c913e3780ed3510c0614755c94c801bb552",
+    "scope": "partial selection of existing ConcurrencyDbTest methods",
+    "tests": 4,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "result": "BUILD SUCCESS",
+    "finished_at": "2026-10-12T13:10:57-05:00",
+    "elapsed": "05:29 min",
+    "runtime": {
+      "os.name": "Linux",
+      "java.home": "/home/carlos/.local/share/mise/installs/java/25.0.2",
+      "java.version": "25.0.2"
+    },
+    "child_process_pids": [
+      849,
+      990
+    ],
+    "both_children_ready": true,
+    "independent_postgresql_lock_waiters_observed": true,
+    "cases": [
+      {
+        "name": "simultaneousStartAndLastAttemptAcrossProcesses",
+        "seconds": 15.629
+      },
+      {
+        "name": "duplicateJoinHasOneParticipantAndControlledSuccess",
+        "seconds": 3.035
+      },
+      {
+        "name": "simultaneousFileCreationKeepsOnlyOneActiveFile",
+        "seconds": 6.791
+      },
+      {
+        "name": "deleteThenReplaceAndDuplicateDeleteAreControlled",
+        "seconds": 4.185
+      }
+    ]
+  },
+  "linux_topology": {
+    "distribution": "WSL2 Ubuntu 24.04.5",
+    "java_preexisting": true,
+    "maven": "3.9.15 existing wrapper cache",
+    "offline_windows_dependency_cache_reused": true,
+    "database": "Existing disposable Windows PostgreSQL 18 at 127.0.0.1:55440/chemicallab_t01_test",
+    "transport": "WSL 127.0.0.1 TCP listener -> one Windows Python stdio child per connection -> Windows 127.0.0.1 PostgreSQL; no global network configuration",
+    "listener_limit_seconds": 600,
+    "native_linux_postgresql": false,
+    "global_software_installation": false,
+    "bootstrap_attempt": "Initial offline Linux cache lacked parent 4.0.8; no tests ran, not a pass. Retried offline with existing Windows cache.",
+    "existing_warning": "Lombok sun.misc.Unsafe::objectFieldOffset deprecated on Java 25; not suppressed or changed"
+  },
+  "prior_evidence_reused": {
+    "full_backend_sha": "c21b15eee974aad640c2ff9a9c7e7e78869eebd9",
+    "full_backend_tests": 593,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "full_backend_new_rerun": false,
+    "prior_report": "validation.json",
+    "prior_report_unchanged": true,
+    "packaged_format_checks": 10,
+    "packaged_format_checks_new_rerun": false,
+    "frontend_tests": 11,
+    "frontend_test_sha": "ed068f7bc268d0b2cfa3904b1b2a152414a8883c",
+    "frontend_new_rerun": false
+  },
+  "cleanup": {
+    "all_four_backend_processes_stopped": true,
+    "relay_exit_code": 0,
+    "relay_native_children_closed": 46,
+    "temporary_schemas": 0,
+    "other_database_connections": 0,
+    "disposable_cluster_stopped": true,
+    "production_access": false
+  },
+  "preservation": {
+    "security_documents": 8,
+    "security_document_hashes_unchanged": true,
+    "e2e_files": 16,
+    "e2e_file_hashes_unchanged": true,
+    "original_backend_clean": true,
+    "original_frontend_branch": "feature/validaciones-datos-institucionales",
+    "original_frontend_untracked_e2e_preserved": true,
+    "earlier_notes_and_prior_t10_json_unchanged": true
+  },
+  "evidence_sha256": {
+    "windows_log": "55bfe929f21c68c166d09c60fbd5c5ccd7d4321dd4428ec0280bb2eaa2eddfad",
+    "linux_log": "d2930ceaf2040826e1c490d82c80b7b38648456eeafb2af549e0091da0c7d3c7",
+    "linux_bootstrap_failed_log": "4c3a444940b73c13fb20ae914623b5f0ba17aeb52e0dcfa80bef8ab6eb32bef5",
+    "linux_environment_log": "c6a7ac942ce358e39ef4cfae2f883245ba7a69b8143654c02a531e9794129558",
+    "local_loopback_relay_script": "d5d6e5bc862106eba298db57c3d4c99fa8009d86efb5b76b741399338f85ef40",
+    "relay_log": "7717556fbd0d13fb64b38e4f99e5adcae36472ee0f1fbdddd492cef082f977a6",
+    "windows_results": "523443903a0a0f52008601a333c6f4605649da51542322466de8f3252d301fde",
+    "linux_results": "2c2817e65483fa5ce9553e1c0285d7d0453bb7c35772d1ecc1ecb9d119e78dd7"
+  },
+  "publication_note": "The later delivery commit updates the T10 note and adds portability JSON evidence only. Its published HEAD is supplied in the PR delivery; no rerun is claimed for that documentary commit.",
+  "remaining_coverage": [
+    "Full Linux suite not run",
+    "JDK 17 on Linux and native Linux PostgreSQL not run",
+    "macOS and other compatible OS not executed",
+    "SEC-13 sustained measurements and operational checks remain pending",
+    "VER-01 Jetty Site, maintained JDK/Node, actual image and production DB/TLS remain pending"
+  ],
+  "merge_performed": false,
+  "deploy_performed": false,
+  "t11_started": false
+}

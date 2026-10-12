@@ -55,6 +55,7 @@ class ConceptMaterialServiceTest {
     @Mock private TeacherProfileRepository teacherProfileRepository;
     @Mock private StudentProfileRepository studentProfileRepository;
     @Mock private AuditLogService auditLogService;
+    @Mock private jakarta.persistence.EntityManager entityManager;
 
     @InjectMocks
     private ConceptMaterialService service;
