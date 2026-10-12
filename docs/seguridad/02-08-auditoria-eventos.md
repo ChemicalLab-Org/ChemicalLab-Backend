@@ -280,7 +280,7 @@ esa instancia ficticia:
 mvn -o clean package -Dspring.profiles.active=test -Dspring.datasource.url=jdbc:postgresql://127.0.0.1:<PUERTO>/chemicallab_t01_test -Dspring.datasource.username=<USUARIO_FICTICIO> -Dspring.datasource.password=<CLAVE_FICTICIA>
 ```
 
-La ejecución global final de `clean package` sobre el commit de implementación
+La ejecución global de la entrega inicial de `clean package` sobre el commit de implementación
 `e32450bbc8a1f38f8199bcd2ae38d17d29293e31` terminó con **565 pruebas, cero
 fallos, errores u omisiones**, BUILD SUCCESS y JAR Spring Boot generado. Duró
 6 min 9 s y terminó el 12 de octubre de 2026 a las 04:15:10 America/Lima.
@@ -295,6 +295,37 @@ y pom.xml son idénticos al SHA probado, verificados con git diff. No se suman
 ejecuciones parciales. Los logs/arneses locales t08-baseline-confirmed.log,
 t08-focused-final.log, t08-full-first.log y t08-full-final.log no se publican;
 los tests reproducibles sí se versionan.
+
+### Verificación final de las correcciones de revisión
+
+`clean package` se ejecutó sobre el commit
+`cca0fe595d8a4b0dfcd2b5f71fd4e6802796b731`: **574 pruebas, cero fallos,
+errores u omisiones**, BUILD SUCCESS y JAR Spring Boot generado. Duración 6 min
+29 s; fin el 12 de octubre de 2026 a las 04:48:09 America/Lima. No es la suma de
+ejecuciones parciales ni una extrapolación de la suite de 565 casos anterior.
+
+Incluye 6 RetentionAuditDbTest: borrado confirmado con administrador/cutoff/
+cantidades/correlación e históricos conservados; destino de auditoría averiado con
+rollback de filas, estado y cuotas, seguido de recuperación; simulación sin mutación;
+ausencia de candidatos; coordinación ocupada; retención deshabilitada y acceso de
+estudiante rechazado. Las pruebas HTTP usan datos ficticios y un lote máximo de dos.
+Incluye 2 StompAuditClassificationTest: P7501 esperado frente a una avería SQLSTATE
+08006, con actor/correlación, respuesta privada, clientEventId, resync y ausencia de
+texto SQL/excepción/cuerpo. StorageQueriesDbTest (15 casos) comprueba además una cuota
+STOMP real contra PostgreSQL, evento REJECTED y misma correlación que el error privado,
+estado del lienzo intacto y reconciliación/restauración previa. AuditSafetyTest (6)
+valida también fechas reales, límites de cantidades y descarte de listas/control;
+AuditReliabilityDbTest (12) conserva los controles generales T08. Todos están incluidos
+en los 574; no son casos adicionales a ese total.
+
+El commit posterior de cierre solo cambia este documento. No se declara ejecución
+global de su HEAD: src y pom.xml permanecen idénticos al commit probado, comprobados
+con git diff. Los logs baseline-retention-correction.log, correction-focused.log y
+correction-global.log y el resumen correction-results.json quedan locales en
+.codex-work/t08-review, fuera de la PR. Se conservan también los arneses de revisión.
+No se requiere un DDL adicional por estas dos correcciones; no se alteró la fuente
+SQL T08 ni el procedimiento/guardas operativos pendientes. PostgreSQL utilizado fue
+exclusivamente el clúster ficticio ya indicado; no se midieron límites productivos.
 
 Conservación: 22 archivos del inventario local (seis Documentos/Seguridad y los
 16 e2e), cero diferencias SHA256. Backend original limpio en la base indicada.
