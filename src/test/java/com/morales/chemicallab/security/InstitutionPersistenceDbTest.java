@@ -216,6 +216,21 @@ class InstitutionPersistenceDbTest {
             assertThat(sql().queryForObject("select count(*) from pg_class where relnamespace=?::regnamespace and relname='t11b1_schema_version'",Long.class,legacy)).isZero();
         } finally {sql().execute("drop schema "+legacy+" cascade");}
     }
+    @Test void catalogSignatureSurvivesConstraintRoundTripUsedByPgDumpRestore() {
+        var constraints=sql().queryForList("""
+            select r.relname,c.conname,pg_get_constraintdef(c.oid) as definition
+            from pg_constraint c join pg_class r on r.oid=c.conrelid
+            where r.relnamespace=current_schema()::regnamespace and c.contype='c'
+            and r.relname in ('institutions','institution_memberships','membership_events','membership_role_grants')
+            """);
+        tx().executeWithoutResult(s->{
+            for(var constraint:constraints) {
+                sql().execute("alter table "+constraint.get("relname")+" drop constraint "+constraint.get("conname"));
+                sql().execute("alter table "+constraint.get("relname")+" add constraint "+constraint.get("conname")+" "+constraint.get("definition"));
+            }
+            sql().execute(expansion);
+        });
+    }
     @Test void independentPostgresProcessesCannotDuplicateMembership() throws Exception {
         race("insert into institution_memberships(institution_id,account_id,valid_from,state_since,change_reason) values("+b+","+f.student.getId()+",'2026-01-01','2026-01-01','CREATED')");
         assertThat(sql().queryForObject("select count(*) from institution_memberships where institution_id=? and account_id=?",Long.class,b,f.student.getId())).isEqualTo(1);

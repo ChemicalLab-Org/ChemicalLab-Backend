@@ -36,7 +36,7 @@ BEGIN
             platform_code varchar(64) NOT NULL UNIQUE CHECK (platform_code ~ '^[A-Z0-9][A-Z0-9_-]{0,63}$'),
             name varchar(200) NOT NULL CHECK (length(btrim(name)) BETWEEN 1 AND 200),
             timezone varchar(100) NOT NULL DEFAULT 'America/Lima',
-            status varchar(16) NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT','ACTIVE','SUSPENDED','ARCHIVED')),
+            status varchar(16) NOT NULL DEFAULT 'DRAFT' CHECK (status::text IN ('DRAFT','ACTIVE','SUSPENDED','ARCHIVED')),
             access_version bigint NOT NULL DEFAULT 0 CHECK (access_version>=0),
             created_at timestamptz NOT NULL DEFAULT statement_timestamp(),
             updated_at timestamptz NOT NULL DEFAULT statement_timestamp()
@@ -45,13 +45,13 @@ BEGIN
             id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
             institution_id bigint NOT NULL REFERENCES institutions(id),
             account_id bigint NOT NULL REFERENCES user_accounts(id),
-            status varchar(16) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','ACTIVE','SUSPENDED','ENDED')),
+            status varchar(16) NOT NULL DEFAULT 'PENDING' CHECK (status::text IN ('PENDING','ACTIVE','SUSPENDED','ENDED')),
             valid_from timestamptz NOT NULL,
             valid_until timestamptz,
             state_since timestamptz NOT NULL,
             access_version bigint NOT NULL DEFAULT 0 CHECK (access_version>=0),
             changed_by bigint REFERENCES user_accounts(id),
-            change_reason varchar(32) NOT NULL CHECK (change_reason IN ('CREATED','ACTIVATED','SUSPENDED','REACTIVATED','ENDED','READMITTED','ROLE_CHANGED')),
+            change_reason varchar(32) NOT NULL CHECK (change_reason::text IN ('CREATED','ACTIVATED','SUSPENDED','REACTIVATED','ENDED','READMITTED','ROLE_CHANGED')),
             created_at timestamptz NOT NULL DEFAULT statement_timestamp(),
             updated_at timestamptz NOT NULL DEFAULT statement_timestamp(),
             UNIQUE (institution_id,account_id), UNIQUE (id,institution_id),
@@ -73,8 +73,8 @@ BEGIN
         CREATE TABLE membership_role_grants (
             id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
             membership_id bigint NOT NULL, institution_id bigint NOT NULL,
-            role varchar(32) NOT NULL CHECK (role IN ('ADMIN_INSTITUCION','DOCENTE','ESTUDIANTE')),
-            status varchar(16) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','REVOKED')),
+            role varchar(32) NOT NULL CHECK (role::text IN ('ADMIN_INSTITUCION','DOCENTE','ESTUDIANTE')),
+            status varchar(16) NOT NULL DEFAULT 'ACTIVE' CHECK (status::text IN ('ACTIVE','REVOKED')),
             valid_from timestamptz NOT NULL, valid_until timestamptz,
             granted_by bigint REFERENCES user_accounts(id), revoked_by bigint REFERENCES user_accounts(id),
             revoked_at timestamptz, revocation_reason varchar(32),
@@ -83,7 +83,7 @@ BEGIN
             CHECK (isfinite(valid_from) AND (valid_until IS NULL OR (isfinite(valid_until) AND valid_from<valid_until))),
             CHECK ((status='ACTIVE' AND revoked_at IS NULL AND revoked_by IS NULL AND revocation_reason IS NULL)
                 OR (status='REVOKED' AND revoked_at IS NOT NULL AND isfinite(revoked_at)
-                    AND revocation_reason IS NOT NULL AND revocation_reason IN ('REMOVED','MEMBERSHIP_ENDED'))),
+                    AND revocation_reason IS NOT NULL AND revocation_reason::text IN ('REMOVED','MEMBERSHIP_ENDED'))),
             -- A revoked grant retains its effective history; revocation before start is an empty range.
             EXCLUDE USING gist (membership_id WITH =, role WITH =,
                 (tstzrange(valid_from, CASE WHEN revoked_at IS NULL THEN valid_until
