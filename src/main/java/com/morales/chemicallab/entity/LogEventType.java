@@ -29,6 +29,14 @@ public enum LogEventType {
     USER_REACTIVATED(LogCategory.USER_MANAGEMENT),
     PASSWORD_RESET(LogCategory.USER_MANAGEMENT),
 
+    // T11-B1 internal maintenance; no institutional REST/STOMP authorities yet.
+    INSTITUTION_CREATED(LogCategory.ADMIN),
+    INSTITUTION_STATE_CHANGED(LogCategory.ADMIN),
+    MEMBERSHIP_CREATED(LogCategory.USER_MANAGEMENT),
+    MEMBERSHIP_STATE_CHANGED(LogCategory.USER_MANAGEMENT),
+    MEMBERSHIP_ROLE_GRANTED(LogCategory.USER_MANAGEMENT),
+    MEMBERSHIP_ROLE_REVOKED(LogCategory.USER_MANAGEMENT),
+
     // Contenidos conceptuales
     CONCEPT_CREATED(LogCategory.CONCEPT_CONTENT),
     CONCEPT_UPDATED(LogCategory.CONCEPT_CONTENT),

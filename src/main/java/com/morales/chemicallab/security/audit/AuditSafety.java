@@ -6,7 +6,7 @@ import java.util.*;
 
 /** Closed metadata vocabulary. Values of content, questions, feedback and secrets are discarded. */
 public final class AuditSafety {
-    private static final Set<String> IDS=Set.of("attemptId","answerId","questionId","adjustmentId","participantUserId","credentialsVersion","size");
+    private static final Set<String> IDS=Set.of("attemptId","answerId","questionId","adjustmentId","participantUserId","credentialsVersion","size","institutionId");
     private static final Set<String> FLAGS=Set.of("outOfTime","exited","interactionEnabled","revokedAll");
     private static final Set<String> ENUMS=Set.of("ADMINISTRADOR","DOCENTE","ESTUDIANTE","FILE","LINK","BONUS","PENALTY","FOLLOW_GLOBAL","ALLOWED","BLOCKED");
     private static final Set<String> REASONS=Set.of("ACCOUNT_RATE_LIMITED","ACCOUNT_NOT_FOUND","ACCOUNT_DISABLED","IDENTITY_CHANGED","PASSWORD_MISMATCH","ACCOUNT_CHANGED","HTTP_401","HTTP_403","HTTP_429","HTTP_400","HTTP_409","HTTP_413","HTTP_5XX","STOMP_AUTH","STOMP_PERMISSION","STOMP_INPUT","STOMP_FAILURE","STORAGE_QUOTA_EXCEEDED");
@@ -15,7 +15,7 @@ public final class AuditSafety {
         return value.codePoints().filter(c->!Character.isISOControl(c) && Character.getType(c)!=Character.FORMAT && c!=0x2028 && c!=0x2029)
             .limit(max).collect(StringBuilder::new,StringBuilder::appendCodePoint,StringBuilder::append).toString();
     }
-    public static String target(String value){return Set.of("UserAccount","Evaluation","ConceptContent","WhiteboardSession","TechnicalRetention","REST","STOMP").contains(value==null?"":value)?value:null;}
+    public static String target(String value){return Set.of("UserAccount","Evaluation","ConceptContent","WhiteboardSession","TechnicalRetention","REST","STOMP","Institution","InstitutionMembership","MembershipRoleGrant").contains(value==null?"":value)?value:null;}
     public static Long requestedId(String path){
         if(path==null || path.length()>512)return null;
         var match=java.util.regex.Pattern.compile("/(?:whiteboards|users|concepts|evaluations|attempts)/(?:teacher/|student/|admin/)?([1-9][0-9]{0,17})(?:/|$)").matcher(path);
