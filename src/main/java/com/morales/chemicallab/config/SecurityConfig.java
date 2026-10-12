@@ -91,7 +91,7 @@ public class SecurityConfig {
 
                         // Gestión de estudiantes — solo DOCENTE
                         .requestMatchers(HttpMethod.POST, "/api/users/teachers/*/students").hasRole(DOCENTE)
-                        .requestMatchers(HttpMethod.GET, "/api/users/teachers/*/students").hasRole(DOCENTE)
+                        .requestMatchers(HttpMethod.GET, "/api/users/teachers/*/students", "/api/users/teachers/*/students/summary").hasRole(DOCENTE)
                         .requestMatchers(HttpMethod.PUT, "/api/users/teachers/*/students/*").hasRole(DOCENTE)
                         .requestMatchers(HttpMethod.PATCH, "/api/users/teachers/*/students/*/deactivate").hasRole(DOCENTE)
 

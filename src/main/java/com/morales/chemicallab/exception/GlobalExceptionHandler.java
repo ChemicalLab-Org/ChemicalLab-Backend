@@ -163,8 +163,19 @@ public class GlobalExceptionHandler {
                 ex.getReason(), request.getRequestURI(), null));
     }
 
+    @ExceptionHandler({org.springframework.dao.DataAccessException.class,org.springframework.transaction.TransactionSystemException.class,org.springframework.transaction.TransactionTimedOutException.class})
+    public ResponseEntity<Map<String,Object>> handleStorage(RuntimeException ex) {
+        if(ex instanceof org.springframework.dao.QueryTimeoutException || ex instanceof org.springframework.transaction.TransactionTimedOutException)
+            return ResponseEntity.status(503).body(Map.of("status",503,"code","QUERY_TIMEOUT","message","La consulta excedió el tiempo disponible. Reduce el intervalo o los filtros e inténtalo de nuevo."));
+        if(com.morales.chemicallab.security.storage.StorageErrors.quota(ex))
+            return ResponseEntity.status(409).body(Map.of("status",409,"code","STORAGE_QUOTA_EXCEEDED","message",com.morales.chemicallab.security.storage.StorageErrors.message()));
+        return ResponseEntity.status(500).body(Map.of("status",500,"message","No se pudo guardar la operación."));
+    }
+
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse> handleGeneral(Exception ex, HttpServletRequest request) {
+    public ResponseEntity<?> handleGeneral(Exception ex, HttpServletRequest request) {
+        if(com.morales.chemicallab.security.storage.StorageErrors.quota(ex))
+            return ResponseEntity.status(409).body(Map.of("status",409,"code","STORAGE_QUOTA_EXCEEDED","message",com.morales.chemicallab.security.storage.StorageErrors.message()));
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ErrorResponse(
                 LocalDateTime.now(),
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),

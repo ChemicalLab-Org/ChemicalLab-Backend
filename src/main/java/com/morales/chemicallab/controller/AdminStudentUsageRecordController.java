@@ -40,14 +40,15 @@ public class AdminStudentUsageRecordController {
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to,
             @RequestParam(required = false) String module,
-            @RequestParam(required = false) String onlyStudentsWithActivity) {
+            @RequestParam(required = false) String onlyStudentsWithActivity,
+            @RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="25") int size) {
         return studentUsageRecordService.getRecords(
-                role, search, grade, section, from, to, module, onlyStudentsWithActivity);
+                role, search, grade, section, from, to, module, onlyStudentsWithActivity,page,size);
     }
 
     /** Detalle de un usuario: indicadores, eventos recientes, evaluaciones e incidencias. */
     @GetMapping("/{userId}")
-    public StudentUsageRecordDetailResponse detalle(@PathVariable Long userId) {
-        return studentUsageRecordService.getDetail(userId);
+    public StudentUsageRecordDetailResponse detalle(@PathVariable Long userId,@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="20") int size) {
+        return studentUsageRecordService.getDetail(userId,page,size);
     }
 }

@@ -67,6 +67,7 @@ public class WhiteboardSessionService {
             Set.of(WhiteboardSessionStatus.ACTIVE, WhiteboardSessionStatus.PAUSED);
 
     private final WhiteboardSessionRepository sessionRepository;
+    private final com.morales.chemicallab.repository.WhiteboardQueryRepository queries;
     private final WhiteboardParticipantRepository participantRepository;
     private final UserAccountRepository userAccountRepository;
     private final TeacherProfileRepository teacherProfileRepository;
@@ -110,12 +111,9 @@ public class WhiteboardSessionService {
     }
 
     @Transactional(readOnly = true)
-    public List<WhiteboardSessionResponse> listTeacherSessions(String username) {
-        TeacherProfile teacher = requireTeacher(username);
-        return sessionRepository.findByTeacherOrderByCreatedAtDesc(teacher).stream()
-                .map(this::toTeacherResponse)
-                .toList();
-    }
+    public List<WhiteboardSessionResponse> listTeacherSessions(String username) { return listTeacherSessions(username,0,25).content(); }
+    @Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ,timeout=15)
+    public QueryPage<WhiteboardSessionResponse> listTeacherSessions(String username,int page,int size) { return queries.teacher(requireTeacher(username).getId(),page,size); }
 
     @Transactional(readOnly = true)
     public WhiteboardSessionDetailResponse getTeacherSessionDetail(String username, Long sessionId) {
@@ -292,13 +290,9 @@ public class WhiteboardSessionService {
     // =========================================================================
 
     @Transactional(readOnly = true)
-    public List<WhiteboardStudentSessionResponse> listActiveForStudent(String username) {
-        StudentProfile student = requireStudent(username);
-        return sessionRepository.findByGradeAndSectionAndStatusInOrderByCreatedAtDesc(
-                        student.getGrade(), student.getSection(), LIVE_STATUSES).stream()
-                .map(session -> toStudentResponse(session, student))
-                .toList();
-    }
+    public List<WhiteboardStudentSessionResponse> listActiveForStudent(String username) { return listActiveForStudent(username,0,25).content(); }
+    @Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ,timeout=15)
+    public QueryPage<WhiteboardStudentSessionResponse> listActiveForStudent(String username,int page,int size) { return queries.active(requireStudent(username),page,size); }
 
     @Transactional(readOnly = true)
     public WhiteboardStudentSessionResponse getStudentSessionDetail(String username, Long sessionId) {
@@ -366,13 +360,9 @@ public class WhiteboardSessionService {
     }
 
     @Transactional(readOnly = true)
-    public List<WhiteboardHistoryItemResponse> getStudentHistory(String username) {
-        StudentProfile student = requireStudent(username);
-        return sessionRepository.findByGradeAndSectionAndStatusOrderByClosedAtDesc(
-                        student.getGrade(), student.getSection(), WhiteboardSessionStatus.CLOSED).stream()
-                .map(this::toHistoryItem)
-                .toList();
-    }
+    public List<WhiteboardHistoryItemResponse> getStudentHistory(String username) { return getStudentHistory(username,0,25).content(); }
+    @Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ,timeout=15)
+    public QueryPage<WhiteboardHistoryItemResponse> getStudentHistory(String username,int page,int size) { return queries.history(requireStudent(username),page,size); }
 
     /**
      * Estado actual del lienzo en vivo para un estudiante de la sesión (su grado/sección). Permite
@@ -413,20 +403,15 @@ public class WhiteboardSessionService {
         long closed = sessionRepository.countByStatus(WhiteboardSessionStatus.CLOSED);
         long participants = participantRepository.count();
 
-        List<WhiteboardAdminSessionResponse> recent = sessionRepository.findAllByOrderByCreatedAtDesc().stream()
-                .limit(10)
-                .map(this::toAdminResponse)
-                .toList();
+        List<WhiteboardAdminSessionResponse> recent = queries.admin(0,10).content();
 
         return new WhiteboardSummaryResponse(total, active, paused, closed, participants, recent);
     }
 
     @Transactional(readOnly = true)
-    public List<WhiteboardAdminSessionResponse> listAdminSessions() {
-        return sessionRepository.findAllByOrderByCreatedAtDesc().stream()
-                .map(this::toAdminResponse)
-                .toList();
-    }
+    public List<WhiteboardAdminSessionResponse> listAdminSessions() { return listAdminSessions(0,25).content(); }
+    @Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ,timeout=15)
+    public QueryPage<WhiteboardAdminSessionResponse> listAdminSessions(int page,int size) { return queries.admin(page,size); }
 
     // =========================================================================
     // RESOLUCIÓN DE USUARIOS Y SESIONES

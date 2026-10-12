@@ -26,8 +26,8 @@ public class WhiteboardTeacherController {
     private final WhiteboardSessionService whiteboardSessionService;
 
     @GetMapping
-    public List<WhiteboardSessionResponse> listarMisSesiones(Authentication authentication) {
-        return whiteboardSessionService.listTeacherSessions(authentication.getName());
+    public com.morales.chemicallab.dto.QueryPage<WhiteboardSessionResponse> listarMisSesiones(Authentication authentication, @org.springframework.web.bind.annotation.RequestParam(defaultValue="0") int page,@org.springframework.web.bind.annotation.RequestParam(defaultValue="25") int size) {
+        return whiteboardSessionService.listTeacherSessions(authentication.getName(),page,size);
     }
 
     @PostMapping

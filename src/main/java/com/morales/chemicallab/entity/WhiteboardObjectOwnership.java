@@ -10,9 +10,9 @@ import lombok.*;
 @Getter @Setter @Builder @NoArgsConstructor @AllArgsConstructor
 public class WhiteboardObjectOwnership {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
-    @ManyToOne(optional = false) @JoinColumn(name = "board_id", nullable = false) private WhiteboardSession board;
+    @ManyToOne(optional = false,fetch=FetchType.LAZY) @JoinColumn(name = "board_id", nullable = false) private WhiteboardSession board;
     @Column(name = "object_kind", nullable = false, length = 10) private String kind;
     @Column(name = "object_id", nullable = false, length = 100) private String objectId;
-    @ManyToOne @JoinColumn(name = "owner_user_id") private UserAccount owner;
+    @ManyToOne(fetch=FetchType.LAZY) @JoinColumn(name = "owner_user_id") private UserAccount owner;
     @Column(nullable = false) private boolean deleted;
 }

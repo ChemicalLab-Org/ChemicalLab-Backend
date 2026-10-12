@@ -11,7 +11,7 @@ import java.util.List;
  */
 public record StudentUsageRecordsResponse(
         Summary summary,
-        List<StudentUsageRecordResponse> records) {
+        List<StudentUsageRecordResponse> records, QueryPage<StudentUsageRecordResponse> page) {
 
     public record Summary(
             long totalUsers,

@@ -66,10 +66,11 @@ public class WhiteboardWebSocketController {
     @MessageExceptionHandler
     @SendToUser(destinations = "/queue/whiteboard-errors", broadcast = false)
     public Map<String, Object> handleError(Exception ex, org.springframework.messaging.Message<?> message) {
-        String error = ex instanceof IllegalArgumentException ? ex.getMessage() : "No se pudo aplicar la acción. Resincroniza la pizarra.";
+        boolean quota=com.morales.chemicallab.security.storage.StorageErrors.quota(ex);
+        String error = quota ? com.morales.chemicallab.security.storage.StorageErrors.message() : ex instanceof IllegalArgumentException ? ex.getMessage() : "No se pudo aplicar la acción. Resincroniza la pizarra.";
         String id = org.springframework.messaging.simp.stomp.StompHeaderAccessor.wrap(message).getFirstNativeHeader("client-event-id");
         if (id == null || id.length() > 100) id = "";
-        String code = ex instanceof InputRejectedException rejection ? rejection.code() : "DRAW_REJECTED";
+        String code = quota ? "STORAGE_QUOTA_EXCEEDED" : ex instanceof InputRejectedException rejection ? rejection.code() : "DRAW_REJECTED";
         return Map.of("code", code, "resync", true, "accepted", false, "clientEventId", id, "error", error);
     }
 

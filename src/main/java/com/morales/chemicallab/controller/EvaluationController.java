@@ -22,6 +22,7 @@ import java.util.List;
 public class EvaluationController {
 
     private final EvaluationService evaluationService;
+    private final com.morales.chemicallab.service.AcademicSupervisionService supervision;
 
     // =========================================================================
     // DOCENTE
@@ -147,8 +148,10 @@ public class EvaluationController {
     @GetMapping("/teacher/attempts/{attemptId}/traceability")
     public AttemptTraceabilityResponse verTrazabilidadIntento(
             Authentication authentication,
-            @PathVariable Long attemptId) {
-        return evaluationService.getAttemptTraceability(authentication.getName(), attemptId);
+            @PathVariable Long attemptId,
+            @RequestParam(defaultValue="0") int page,
+            @RequestParam(defaultValue="25") int size) {
+        return evaluationService.getAttemptTraceability(authentication.getName(), attemptId,page,size);
     }
 
     // =========================================================================
@@ -318,8 +321,8 @@ public class EvaluationController {
     // =========================================================================
 
     @GetMapping("/admin")
-    public List<EvaluationResponse> listarTodas() {
-        return evaluationService.listAllEvaluations();
+    public com.morales.chemicallab.dto.QueryPage<com.morales.chemicallab.dto.SupervisionEvaluationResponse> listarTodas(@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="25") int size) {
+        return supervision.listEvaluations(page,size,null,null,null,false);
     }
 
     @GetMapping("/admin/{evaluationId}")

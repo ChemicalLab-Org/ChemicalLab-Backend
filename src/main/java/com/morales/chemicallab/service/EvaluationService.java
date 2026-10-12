@@ -54,6 +54,7 @@ public class EvaluationService {
     private final EvaluationAssignmentRepository assignmentRepository;
     private final EvaluationAttemptRepository attemptRepository;
     private final EvaluationAttemptEventRepository attemptEventRepository;
+    private final AttemptTraceQueryRepository traceQueries;
     private final EvaluationAnswerRepository answerRepository;
     private final EvaluationAttemptAdjustmentRepository adjustmentRepository;
     private final UserAccountRepository userAccountRepository;
@@ -792,6 +793,11 @@ public class EvaluationService {
      * evaluación creada por el docente autenticado. Nunca expone respuestas ni claves.
      */
     public AttemptTraceabilityResponse getAttemptTraceability(String username, Long attemptId) {
+        return getAttemptTraceability(username,attemptId,0,25);
+    }
+
+    @Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ,timeout=15)
+    public AttemptTraceabilityResponse getAttemptTraceability(String username,Long attemptId,int page,int size) {
         TeacherProfile teacher = requireTeacher(username);
         EvaluationAttempt attempt = attemptRepository.findById(attemptId)
                 .orElseThrow(() -> new EntityNotFoundException("El intento no existe."));
@@ -801,32 +807,7 @@ public class EvaluationService {
             throw new IllegalArgumentException("No tienes permiso para ver este intento.");
         }
 
-        List<EvaluationAttemptEvent> events =
-                attemptEventRepository.findByAttemptOrderByOccurredAtAsc(attempt);
-
-        long tabExit = 0;
-        long tabReturn = 0;
-        long exitAttempts = 0;
-        LinkedHashSet<String> tools = new LinkedHashSet<>();
-        List<AttemptEventResponse> timeline = new ArrayList<>(events.size());
-
-        for (EvaluationAttemptEvent e : events) {
-            AttemptEventType t = e.getEventType();
-            if (EXIT_EVENT_TYPES.contains(t)) {
-                tabExit++;
-            } else if (RETURN_EVENT_TYPES.contains(t)) {
-                tabReturn++;
-            } else if (t == AttemptEventType.EXIT_ATTEMPTED) {
-                exitAttempts++;
-            } else if (t == AttemptEventType.TOOL_OPENED) {
-                String tool = toolFromMetadata(e.getMetadata());
-                if (tool != null) {
-                    tools.add(tool);
-                }
-            }
-            timeline.add(new AttemptEventResponse(
-                    e.getId(), t, e.getDescription(), e.getMetadata(), e.getOccurredAt()));
-        }
+        var trace=traceQueries.trace(attemptId,page,size);
 
         StudentProfile s = attempt.getStudent();
         return new AttemptTraceabilityResponse(
@@ -834,20 +815,15 @@ public class EvaluationService {
                 s.getId(), s.getStudentCode(), fullName(s),
                 attempt.getStatus(), attempt.getStartedAt(), attempt.getSubmittedAt(),
                 timeUsedSecondsOf(attempt), Boolean.TRUE.equals(evaluation.getTrackTabExit()),
-                events.size(), tabExit, tabReturn, exitAttempts,
-                new ArrayList<>(tools), timeline);
+                trace.total(),trace.exits(),trace.returns(),trace.exitAttempts(),
+                trace.tools(),trace.page().content(),trace.page());
     }
 
     // =========================================================================
     // ADMINISTRADOR
     // =========================================================================
 
-    public List<EvaluationResponse> listAllEvaluations() {
-        return evaluationRepository.findAll()
-                .stream()
-                .map(this::toEvaluationResponse)
-                .toList();
-    }
+
 
     /**
      * Detalle de una evaluación para la supervisión institucional del administrador.

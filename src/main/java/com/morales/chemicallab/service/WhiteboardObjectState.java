@@ -49,7 +49,15 @@ public class WhiteboardObjectState {
     public WhiteboardDrawEventResponse apply(WhiteboardSession board, UserAccount actor, WhiteboardDrawEventResponse event) {
         ObjectNode state = readVerified(board);
         Map<String, WhiteboardObjectOwnership> identities = new HashMap<>();
-        ownership.findByBoard_Id(board.getId()).forEach(row -> identities.put(key(row.getKind(), row.getObjectId()), row));
+        // Fetch only visible identities and the addressed tombstone. At most T07-A's visible-object bound + one.
+        for (String kind : List.of("TEXT","SHAPE","STROKE")) {
+            Set<String> ids=new HashSet<>();
+            for(JsonNode item:array(state,kind)) if(!item.path("id").asText().isBlank())ids.add(item.path("id").asText());
+            String target=switch(kind){case "TEXT"->event.textId();case "SHAPE"->event.shapeId();default->event.strokeId();};
+            if(target!=null)ids.add(target);
+            if(!ids.isEmpty())ownership.findByBoard_IdAndKindAndObjectIdIn(board.getId(),kind,ids)
+                .forEach(row->identities.put(key(row.getKind(),row.getObjectId()),row));
+        }
         // Import the existing snapshot conservatively: visible names/prefixes never establish authorship.
         for (String kind : List.of("TEXT", "SHAPE", "STROKE")) {
             ArrayNode items = array(state, kind);

@@ -143,7 +143,7 @@ public class UsageMetricService {
                                                     UsageEventType eventType, Role role) {
         int safeLimit = Math.min(Math.max(limit, 1), MAX_RECENT);
         Specification<UsageEvent> spec = buildSpecification(module, eventType, role, null, null);
-        PageRequest pageable = PageRequest.of(0, safeLimit, Sort.by(Sort.Direction.DESC, "occurredAt"));
+        PageRequest pageable = PageRequest.of(0, safeLimit, Sort.by(Sort.Direction.DESC, "occurredAt", "id"));
         return usageEventRepository.findAll(spec, pageable).map(this::toResponse).getContent();
     }
 

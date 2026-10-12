@@ -145,6 +145,7 @@ class StartupPersistenceDbTest {
                 "--spring.jpa.properties.hibernate.default_schema=" + schema,
                 "--spring.jpa.hibernate.ddl-auto=update", "--app.jwt.secret=" + SecureStartupTest.randomKey(),
                 "--spring.main.banner-mode=off", "--logging.level.root=ERROR", "--spring.config.location=classpath:/"));
+        if(!profile.equals("prod"))args.add("--app.storage.install-schema=true");
         args.addAll(List.of(extra));
         return application.run(args.toArray(String[]::new));
     }
@@ -160,6 +161,8 @@ class StartupPersistenceDbTest {
              var statement = connection.createStatement()) {
             statement.execute("CREATE SCHEMA " + schema);
             try {
+                // Install T07B only on the guarded disposable DB before testing prod startup.
+                try(var prepared=start(schema,"test","--app.demo.enabled=false","--app.bootstrap.admin.enabled=false")) {}
                 scenario.run(schema);
             } finally {
                 statement.execute("DROP SCHEMA " + schema + " CASCADE");

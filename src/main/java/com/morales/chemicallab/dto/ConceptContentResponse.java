@@ -27,5 +27,6 @@ public record ConceptContentResponse(
         List<ConceptAssignmentResponse> assignments,
         List<ConceptMaterialResponse> materials,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        QueryPage<ConceptMaterialResponse> materialsPage
 ) {}

@@ -125,7 +125,7 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void errorRealSigueDando500() {
-        ResponseEntity<ErrorResponse> response =
+        ResponseEntity<?> response =
                 handler.handleGeneral(new RuntimeException("boom"), request("/api/x"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);

@@ -19,7 +19,7 @@ public record StudentUsageRecordDetailResponse(
         StudentUsageRecordResponse summary,
         List<UsageEventItem> recentEvents,
         List<EvaluationUsageItem> evaluations,
-        List<IncidentItem> incidents) {
+        List<IncidentItem> incidents, QueryPage<EvaluationUsageItem> evaluationsPage) {
 
     /** Evento de uso reciente del usuario (sin metadata ni payloads). */
     public record UsageEventItem(

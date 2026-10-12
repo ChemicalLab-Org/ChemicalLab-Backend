@@ -55,6 +55,7 @@ class WhiteboardSessionServiceTest {
     @Mock private WhiteboardBroadcastService broadcastService;
     @Mock private jakarta.persistence.EntityManager entityManager;
 
+    @Mock private com.morales.chemicallab.repository.WhiteboardQueryRepository queries;
     @InjectMocks private WhiteboardSessionService service;
 
     // ---------------------------------------------------------------- helpers
@@ -165,8 +166,7 @@ class WhiteboardSessionServiceTest {
     void docenteListaSoloSusSesiones() {
         TeacherProfile docente = teacher(1L, "docente1");
         stubTeacher(docente);
-        when(sessionRepository.findByTeacherOrderByCreatedAtDesc(docente))
-                .thenReturn(List.of(session(10L, docente, WhiteboardSessionStatus.ACTIVE, "3", "A")));
+        when(queries.teacher(1L,0,25)).thenReturn(QueryPage.of(List.of(new WhiteboardSessionResponse(10L,"Test",null,1L,"Docente","3","A",WhiteboardSessionStatus.ACTIVE,true,0,false,null,null,null,null,null,null)),0,25,1));
 
         List<WhiteboardSessionResponse> result = service.listTeacherSessions("docente1");
 
@@ -178,10 +178,7 @@ class WhiteboardSessionServiceTest {
     void estudianteListaSesionesDeSuSeccion() {
         StudentProfile alumno = student(5L, "EST0001", "3", "A");
         stubStudent(alumno);
-        TeacherProfile docente = teacher(1L, "docente1");
-        when(sessionRepository.findByGradeAndSectionAndStatusInOrderByCreatedAtDesc(
-                eq("3"), eq("A"), anyCollection()))
-                .thenReturn(List.of(session(10L, docente, WhiteboardSessionStatus.ACTIVE, "3", "A")));
+        when(queries.active(alumno,0,25)).thenReturn(QueryPage.of(List.of(new WhiteboardStudentSessionResponse(10L,"Test",null,"Docente","3","A",WhiteboardSessionStatus.ACTIVE,true,false,false,false,null,null,null)),0,25,1));
 
         List<WhiteboardStudentSessionResponse> result = service.listActiveForStudent("EST0001");
 
@@ -590,7 +587,7 @@ class WhiteboardSessionServiceTest {
         when(sessionRepository.countByStatus(WhiteboardSessionStatus.PAUSED)).thenReturn(1L);
         when(sessionRepository.countByStatus(WhiteboardSessionStatus.CLOSED)).thenReturn(2L);
         when(participantRepository.count()).thenReturn(8L);
-        when(sessionRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of());
+        when(queries.admin(0,10)).thenReturn(QueryPage.of(List.of(),0,10,0));
 
         WhiteboardSummaryResponse summary = service.getAdminSummary();
 

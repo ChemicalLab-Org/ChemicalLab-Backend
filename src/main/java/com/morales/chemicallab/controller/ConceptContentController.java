@@ -22,6 +22,7 @@ import java.util.List;
 public class ConceptContentController {
 
     private final ConceptContentService conceptContentService;
+    private final com.morales.chemicallab.service.AcademicSupervisionService supervision;
 
     // =========================================================================
     // DOCENTE
@@ -113,8 +114,8 @@ public class ConceptContentController {
     // =========================================================================
 
     @GetMapping("/admin")
-    public List<ConceptContentResponse> listarTodos() {
-        return conceptContentService.listAllConcepts();
+    public com.morales.chemicallab.dto.QueryPage<com.morales.chemicallab.dto.SupervisionConceptResponse> listarTodos(@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="25") int size) {
+        return supervision.listConcepts(page,size,null,null,null,null);
     }
 
     @GetMapping("/admin/{conceptId}")

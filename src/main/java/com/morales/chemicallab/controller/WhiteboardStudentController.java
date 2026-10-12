@@ -25,8 +25,8 @@ public class WhiteboardStudentController {
     private final WhiteboardSessionService whiteboardSessionService;
 
     @GetMapping("/active")
-    public List<WhiteboardStudentSessionResponse> listarSesionesDisponibles(Authentication authentication) {
-        return whiteboardSessionService.listActiveForStudent(authentication.getName());
+    public com.morales.chemicallab.dto.QueryPage<WhiteboardStudentSessionResponse> listarSesionesDisponibles(Authentication authentication, @org.springframework.web.bind.annotation.RequestParam(defaultValue="0") int page,@org.springframework.web.bind.annotation.RequestParam(defaultValue="25") int size) {
+        return whiteboardSessionService.listActiveForStudent(authentication.getName(),page,size);
     }
 
     @PostMapping("/{id}/join")
@@ -37,8 +37,8 @@ public class WhiteboardStudentController {
     }
 
     @GetMapping("/history")
-    public List<WhiteboardHistoryItemResponse> verHistorial(Authentication authentication) {
-        return whiteboardSessionService.getStudentHistory(authentication.getName());
+    public com.morales.chemicallab.dto.QueryPage<WhiteboardHistoryItemResponse> verHistorial(Authentication authentication, @org.springframework.web.bind.annotation.RequestParam(defaultValue="0") int page,@org.springframework.web.bind.annotation.RequestParam(defaultValue="25") int size) {
+        return whiteboardSessionService.getStudentHistory(authentication.getName(),page,size);
     }
 
     @GetMapping("/{id}")

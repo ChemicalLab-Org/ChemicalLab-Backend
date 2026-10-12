@@ -34,6 +34,7 @@ public class AdminAuditLogController {
     private static final int MAX_PAGE_SIZE = 100;
 
     private final AuditLogService auditLogService;
+    private final com.morales.chemicallab.security.storage.QueryLimits queryLimits;
 
     @GetMapping
     public AuditLogPageResponse listarLogs(
@@ -49,9 +50,11 @@ public class AdminAuditLogController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
 
-        int safePage = Math.max(page, 0);
-        int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
-        Pageable pageable = PageRequest.of(safePage, safeSize);
+        queryLimits.page(page,size);
+        search=com.morales.chemicallab.security.storage.QueryLimits.search(search);
+        int safePage=page;
+        int safeSize=size;
+        Pageable pageable = PageRequest.of(safePage, safeSize,org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC,"createdAt","id"));
 
         return AuditLogPageResponse.from(
                 auditLogService.listLogs(category, eventType, severity, actorRole, search, from, to, pageable));
