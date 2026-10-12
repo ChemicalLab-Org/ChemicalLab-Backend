@@ -1,5 +1,10 @@
 package com.morales.chemicallab.config;
 
+import com.morales.chemicallab.security.limits.AccountTrafficLimits;
+import com.morales.chemicallab.security.limits.JsonInputGuard;
+import com.morales.chemicallab.security.limits.TransportInputFilter;
+import com.morales.chemicallab.security.limits.TransportLimits;
+
 import com.morales.chemicallab.entity.Role;
 import com.morales.chemicallab.security.CustomUserDetailsService;
 import com.morales.chemicallab.security.JwtAuthenticationFilter;
@@ -40,6 +45,9 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final RestAuthenticationEntryPoint authenticationEntryPoint;
     private final RestAccessDeniedHandler accessDeniedHandler;
+    private final TransportLimits transportLimits;
+    private final JsonInputGuard inputGuard;
+    private final AccountTrafficLimits trafficLimits;
 
     // Orígenes permitidos para CORS, separados por comas (propiedad app.cors.allowed-origins).
     // En despliegue se define con la URL del frontend; en local usa los orígenes de Angular.
@@ -137,6 +145,8 @@ public class SecurityConfig {
                 )
                 .authenticationProvider(authenticationProvider())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(new TransportInputFilter(transportLimits, inputGuard, trafficLimits),
+                        org.springframework.security.web.access.intercept.AuthorizationFilter.class)
                 .formLogin(form -> form.disable())
                 .httpBasic(httpBasic -> httpBasic.disable());
 

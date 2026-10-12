@@ -237,7 +237,7 @@ class WhiteboardSecurityTransportDbTest {
     }
 
     @Test void legacyObjectsAndSnapshotPutCannotForgeOwnership() throws Exception {
-        String legacy = "{\"v\":1,\"strokes\":[],\"shapes\":[],\"texts\":[{\"id\":\"legacy\",\"wx\":1,\"wy\":1,\"color\":\"#123456\",\"size\":24,\"runs\":[],\"ownerUserId\":" + student.getId() + "}]}";
+        String legacy = "{\"v\":1,\"strokes\":[],\"shapes\":[],\"texts\":[{\"id\":\"legacy\",\"wx\":1,\"wy\":1,\"color\":\"#123456\",\"size\":24,\"runs\":[{\"text\":\"Legacy fictitious\",\"bold\":false,\"italic\":false,\"underline\":false}],\"ownerUserId\":" + student.getId() + "}]}";
         sql().update("update whiteboard_sessions set current_state_json=? where id=?", legacy, board);
         var visible = request("GET", "/api/whiteboards/student/" + board + "/state", login(student), null);
         assertThat(json.readTree(json.readTree(visible.body()).path("stateJson").asText()).path("texts").get(0).path("ownerUserId").isNull()).isTrue();

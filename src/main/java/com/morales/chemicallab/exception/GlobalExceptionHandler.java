@@ -1,5 +1,7 @@
 package com.morales.chemicallab.exception;
 
+import com.morales.chemicallab.security.limits.InputRejectedException;
+
 import com.morales.chemicallab.dto.ErrorResponse;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -21,6 +23,18 @@ import java.util.NoSuchElementException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(InputRejectedException.class)
+    public ResponseEntity<Map<String, Object>> handleInput(InputRejectedException ex) {
+        var response = ResponseEntity.status(ex.status());
+        if (ex.status() == 429 || ex.status() == 503) response.header("Retry-After", "1");
+        return response.body(Map.of("status", ex.status(), "code", ex.code(), "message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, Object>> handleUnreadable() {
+        return ResponseEntity.badRequest().body(Map.of("status", 400, "code", "INPUT_INVALID", "message", "La entrada JSON no es válida."));
+    }
 
     @ExceptionHandler(CurrentPasswordInvalidException.class)
     public ResponseEntity<Map<String, Object>> handleCurrentPasswordInvalid(CurrentPasswordInvalidException ex) {

@@ -1,5 +1,8 @@
 package com.morales.chemicallab.service;
 
+import com.morales.chemicallab.security.limits.InputRejectedException;
+import com.morales.chemicallab.security.limits.TransportLimits;
+
 import com.morales.chemicallab.dto.WhiteboardDrawEventRequest;
 import com.morales.chemicallab.dto.WhiteboardDrawEventResponse;
 import com.morales.chemicallab.dto.WhiteboardDrawEventType;
@@ -87,6 +90,7 @@ public class WhiteboardDrawEventService {
     private final WhiteboardBroadcastService broadcastService;
     private final WhiteboardObjectState objectState;
     private final EntityManager entityManager;
+    private final TransportLimits limits;
 
     /**
      * Valida un evento de dibujo y, si es válido, lo difunde a los suscriptores de la sesión.
@@ -156,6 +160,7 @@ public class WhiteboardDrawEventService {
 
         // Los eventos de texto (TEXT/TEXT_DELETE) viajan por el mismo canal con su propio payload;
         // el resto (DRAW/ERASE/CLEAR) conservan exactamente la validación anterior.
+        validateInput(request);
         WhiteboardDrawEventResponse response;
         if (eventType == WhiteboardDrawEventType.TEXT
                 || eventType == WhiteboardDrawEventType.TEXT_DELETE) {
@@ -355,7 +360,7 @@ public class WhiteboardDrawEventService {
         if (value == null) {
             return;
         }
-        if (value <= 0 || value > max) {
+        if (!Double.isFinite(value) || value <= 0 || value > max) {
             throw new IllegalArgumentException(label + " no es válido.");
         }
     }
@@ -391,5 +396,30 @@ public class WhiteboardDrawEventService {
             throw new IllegalArgumentException("El color debe ser un valor hexadecimal (p. ej. #1a2b3c).");
         }
         return normalized;
+    }
+
+    private void validateInput(WhiteboardDrawEventRequest request) {
+        for (String id : new String[] { request.clientEventId(), request.textId(), request.shapeId(), request.strokeId() })
+            if (id != null && (id.isBlank() || id.length() > 100)) throw InputRejectedException.invalid();
+        if (request.points() != null) {
+            if (request.points().size() > limits.getEventPoints()) throw new InputRejectedException(413, "INPUT_LIMIT_EXCEEDED", "El evento supera el máximo de puntos permitido.");
+            for (var point : request.points()) {
+                if (point == null || point.x() == null || point.y() == null || !Double.isFinite(point.x()) || !Double.isFinite(point.y())
+                        || Math.abs(point.x()) > limits.getCoordinate() || Math.abs(point.y()) > limits.getCoordinate())
+                    throw new InputRejectedException(400, "INPUT_INVALID", "Cada punto debe tener coordenadas finitas y dentro del límite permitido.");
+            }
+        }
+        if (request.fontSize() != null && !Double.isFinite(request.fontSize())) throw InputRejectedException.invalid();
+        validateMeasure(request.strokeWidth(), MAX_STROKE_WIDTH, "El grosor");
+        validateMeasure(request.eraserSize(), MAX_ERASER_SIZE, "El borrador");
+        if (request.runs() != null) {
+            if (request.runs().size() > limits.getTextRuns()) throw InputRejectedException.size();
+            int total = 0;
+            for (var run : request.runs()) {
+                if (run == null || run.text() == null) throw InputRejectedException.invalid();
+                total += run.text().length();
+                if (total > limits.getTextChars()) throw InputRejectedException.size();
+            }
+        }
     }
 }

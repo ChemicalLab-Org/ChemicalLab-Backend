@@ -1,5 +1,7 @@
 package com.morales.chemicallab.service;
 
+import com.morales.chemicallab.security.limits.BoardStateValidator;
+
 import com.morales.chemicallab.dto.*;
 import com.morales.chemicallab.entity.*;
 import com.morales.chemicallab.repository.StudentProfileRepository;
@@ -74,6 +76,8 @@ public class WhiteboardSessionService {
     private final UsageMetricService usageMetricService;
     private final WhiteboardBroadcastService broadcastService;
     private final EntityManager entityManager;
+    private final WhiteboardObjectState objectState;
+    private final BoardStateValidator stateValidator;
 
     // =========================================================================
     // DOCENTE
@@ -265,6 +269,7 @@ public class WhiteboardSessionService {
             throw new IllegalArgumentException("La sesión está finalizada: no se puede actualizar su estado.");
         }
         String stateJson = request == null ? null : request.stateJson();
+        stateValidator.read(stateJson, session.getStateRevision() == 0);
         if (stateJson != null && stateJson.length() > MAX_STATE_JSON_CHARS) {
             throw new IllegalArgumentException("El estado de la pizarra supera el tamaño máximo permitido.");
         }
@@ -603,7 +608,7 @@ public class WhiteboardSessionService {
         return new WhiteboardBoardStateResponse(
                 session.getId(),
                 session.getStatus(),
-                WhiteboardObjectState.snapshotForClient(session),
+                objectState.snapshotForClient(session),
                 session.getStateUpdatedAt(), session.getStateRevision());
     }
 

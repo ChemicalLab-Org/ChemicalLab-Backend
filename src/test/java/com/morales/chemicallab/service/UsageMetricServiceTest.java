@@ -48,12 +48,24 @@ class UsageMetricServiceTest {
     @Mock
     private UserAccountRepository userAccountRepository;
 
+    @org.mockito.Spy private com.morales.chemicallab.security.limits.JsonInputGuard inputGuard = new com.morales.chemicallab.security.limits.JsonInputGuard(new com.morales.chemicallab.security.limits.TransportLimits());
     @InjectMocks
     private UsageMetricService service;
 
     // =========================================================================
     // REGISTRO
     // =========================================================================
+
+    @Test void t07aRechazaMapaExcesivoAntesDePersistir() {
+        var metadata = new LinkedHashMap<String, String>();
+        for (int i = 0; i < 33; i++) metadata.put("fictitious" + i, "value");
+        org.mockito.Mockito.lenient().when(userAccountRepository.findByUsername("EST0042"))
+                .thenReturn(Optional.of(user(42L, "EST0042", Role.ESTUDIANTE)));
+        var request = new RecordUsageEventRequest(UsageModule.PERIODIC_TABLE, UsageEventType.PERIODIC_ELEMENT_VIEWED,
+                "ELEMENT", "Na", null, metadata);
+        assertThatThrownBy(() -> service.recordEvent("EST0042", request)).isInstanceOf(IllegalArgumentException.class);
+        verify(usageEventRepository, never()).save(any());
+    }
 
     @Test
     void recordEvent_usaUsuarioYRolDelTokenNoDeLaPeticion() {

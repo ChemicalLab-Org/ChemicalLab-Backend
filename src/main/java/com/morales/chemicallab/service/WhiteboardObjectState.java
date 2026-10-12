@@ -1,5 +1,9 @@
 package com.morales.chemicallab.service;
 
+import com.morales.chemicallab.security.limits.BoardStateValidator;
+import com.morales.chemicallab.security.limits.InputRejectedException;
+import com.morales.chemicallab.security.limits.TransportLimits;
+
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.node.*;
 import com.morales.chemicallab.dto.*;
@@ -18,11 +22,18 @@ import java.util.*;
 public class WhiteboardObjectState {
     private static final ObjectMapper JSON = new ObjectMapper();
     private final WhiteboardObjectOwnershipRepository ownership;
+    private final BoardStateValidator validator;
+    private final TransportLimits limits;
 
     /** Never expose client-declared authorship from a pre-T03 snapshot as verified metadata. */
-    public static String snapshotForClient(WhiteboardSession board) {
+    public String snapshotForClient(WhiteboardSession board) {
         String raw = board.getCurrentStateJson();
-        if (raw == null || board.getStateRevision() > 0) return raw;
+        if (raw == null) return null;
+        try { readVerified(board); }
+        catch (InputRejectedException ex) {
+            throw new InputRejectedException(409, "HISTORICAL_STATE_INVALID", "El estado guardado necesita revisión. No se ha modificado; contacta al docente.");
+        }
+        if (board.getStateRevision() > 0) return raw;
         try {
             JsonNode root = JSON.readTree(raw);
             for (String field : List.of("texts", "shapes", "strokes")) {
@@ -31,12 +42,12 @@ public class WhiteboardObjectState {
                 }
             }
             return root.toString();
-        } catch (Exception ex) { return raw; } // preserve historical data; edits still fail closed
+        } catch (Exception ex) { throw InputRejectedException.invalid(); }
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
     public WhiteboardDrawEventResponse apply(WhiteboardSession board, UserAccount actor, WhiteboardDrawEventResponse event) {
-        ObjectNode state = read(board.getCurrentStateJson());
+        ObjectNode state = readVerified(board);
         Map<String, WhiteboardObjectOwnership> identities = new HashMap<>();
         ownership.findByBoard_Id(board.getId()).forEach(row -> identities.put(key(row.getKind(), row.getObjectId()), row));
         // Import the existing snapshot conservatively: visible names/prefixes never establish authorship.
@@ -108,8 +119,9 @@ public class WhiteboardObjectState {
         }
         long revision = board.getStateRevision() + 1;
         state.put("v", 1).put("revision", revision);
+        validator.validate(state, false);
         String serialized = state.toString();
-        if (serialized.length() > 2_000_000) throw new IllegalArgumentException("El estado de la pizarra supera el tamaño máximo permitido.");
+        if (serialized.length() > limits.getStateChars()) throw InputRejectedException.size();
         board.setCurrentStateJson(serialized);
         board.setStateRevision(revision);
         board.setStateUpdatedAt(LocalDateTime.now());
@@ -119,17 +131,17 @@ public class WhiteboardObjectState {
                 strokeId, event.strokeIndex(), ownerId, revision);
     }
 
-    private ObjectNode read(String raw) {
-        if (raw == null || raw.isBlank()) return JSON.createObjectNode();
-        try { if (JSON.readTree(raw) instanceof ObjectNode node) return node; }
-        catch (Exception ignored) { /* preserve unparseable historical data, fail closed on edits */ }
-        throw invalidState();
-    }
     private ArrayNode array(ObjectNode state, String kind) {
         String field = switch (kind) { case "TEXT" -> "texts"; case "SHAPE" -> "shapes"; default -> "strokes"; };
         if (!state.has(field)) return state.putArray(field);
         if (state.get(field) instanceof ArrayNode array) return array;
         throw invalidState();
+    }
+    private ObjectNode readVerified(WhiteboardSession board) {
+        var state = validator.read(board.getCurrentStateJson(), board.getStateRevision() == 0);
+        if (board.getStateRevision() > 0 && (!state.path("revision").isIntegralNumber()
+                || state.path("revision").longValue() != board.getStateRevision())) throw InputRejectedException.invalid();
+        return state;
     }
     private void putOwner(ObjectNode item, WhiteboardObjectOwnership row) {
         if (row.getOwner() == null) item.putNull("ownerUserId"); else item.put("ownerUserId", row.getOwner().getId());

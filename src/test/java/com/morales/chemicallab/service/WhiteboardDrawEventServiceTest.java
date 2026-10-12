@@ -45,6 +45,7 @@ class WhiteboardDrawEventServiceTest {
     @Mock private WhiteboardBroadcastService broadcastService;
     @Mock private jakarta.persistence.EntityManager entityManager;
     @Mock private WhiteboardObjectState objectState;
+    @org.mockito.Spy private com.morales.chemicallab.security.limits.TransportLimits limits = new com.morales.chemicallab.security.limits.TransportLimits();
 
     @org.junit.jupiter.api.BeforeEach void passthroughValidatedState() {
         // These existing tests cover payload/interaction policy. Persistent authorship has real DB/transport tests.
@@ -93,6 +94,18 @@ class WhiteboardDrawEventServiceTest {
         assertThat(response.actorRole()).isEqualTo(Role.DOCENTE);
         assertThat(response.points()).hasSize(2);
         verify(broadcastService).broadcastDraw(any());
+    }
+
+    @Test void t07aRechazaCoordenadasNoFinitasSinDifundir() {
+        TeacherProfile docente = teacher(1L, "docente1");
+        when(userAccountRepository.findByUsername("docente1")).thenReturn(Optional.of(docente.getUser()));
+        when(teacherProfileRepository.findByUser(docente.getUser())).thenReturn(Optional.of(docente));
+        when(sessionRepository.findById(10L)).thenReturn(Optional.of(session(10L, docente, WhiteboardSessionStatus.ACTIVE, false)));
+        var invalid = new WhiteboardDrawEventRequest(WhiteboardDrawEventType.DRAW, WhiteboardDrawTool.PEN,
+                "#112233", 2.0, null, List.of(new WhiteboardPoint(Double.NaN, 2.0)), "finite", null, null, null);
+        assertThatThrownBy(() -> service.processDrawEvent("docente1", 10L, invalid)).isInstanceOf(IllegalArgumentException.class);
+        verify(objectState, never()).apply(any(), any(), any());
+        verify(broadcastService, never()).broadcastDraw(any());
     }
 
     @Test

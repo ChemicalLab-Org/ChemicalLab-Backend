@@ -39,6 +39,10 @@ import static org.mockito.Mockito.when;
  */
 @ExtendWith(MockitoExtension.class)
 class WhiteboardSessionServiceTest {
+    private final com.morales.chemicallab.security.limits.TransportLimits limits = new com.morales.chemicallab.security.limits.TransportLimits();
+    @org.mockito.Spy private WhiteboardObjectState objectState = new WhiteboardObjectState(null,
+        new com.morales.chemicallab.security.limits.BoardStateValidator(limits, new com.morales.chemicallab.security.limits.JsonInputGuard(limits)), limits);
+    @org.mockito.Spy private com.morales.chemicallab.security.limits.BoardStateValidator stateValidator = new com.morales.chemicallab.security.limits.BoardStateValidator(limits, new com.morales.chemicallab.security.limits.JsonInputGuard(limits));
     @org.mockito.Spy private com.morales.chemicallab.security.files.FileValidationService fileValidationService = new com.morales.chemicallab.security.files.FileValidationService();
 
     @Mock private WhiteboardSessionRepository sessionRepository;
@@ -383,7 +387,7 @@ class WhiteboardSessionServiceTest {
         WhiteboardSession s = session(10L, docente, WhiteboardSessionStatus.ACTIVE, "3", "A");
         when(sessionRepository.findById(10L)).thenReturn(Optional.of(s));
         assertThatThrownBy(() -> service.saveBoardState("docente1", 10L,
-                new WhiteboardBoardStateRequest("{\"strokes\":[],\"texts\":[]}")))
+                new WhiteboardBoardStateRequest("{\"v\":1,\"strokes\":[],\"texts\":[]}")))
                 .hasMessageContaining("eventos verificados");
         assertThat(s.getCurrentStateJson()).isNull();
         verify(sessionRepository, never()).save(any());
@@ -422,7 +426,7 @@ class WhiteboardSessionServiceTest {
         stubStudent(alumno);
         TeacherProfile docente = teacher(1L, "docente1");
         WhiteboardSession s = session(10L, docente, WhiteboardSessionStatus.ACTIVE, "3", "A");
-        s.setCurrentStateJson("{\"strokes\":[1]}");
+        s.setCurrentStateJson("{\"v\":1,\"strokes\":[],\"texts\":[]}");
         when(sessionRepository.findById(10L)).thenReturn(Optional.of(s));
 
         WhiteboardBoardStateResponse response = service.getStudentBoardState("EST0001", 10L);
