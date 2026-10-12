@@ -29,8 +29,8 @@ public class UserManagementController {
     }
 
     @GetMapping("/teachers")
-    public List<TeacherResponse> listarDocentes() {
-        return userManagementService.listTeachers();
+    public QueryPage<TeacherResponse> listarDocentes(@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="25") int size,@RequestParam(required=false) String search,@RequestParam(defaultValue="all") String status) {
+        return userManagementService.listTeachers(page,size,search,status);
     }
 
     @PatchMapping("/teachers/{teacherUserId}/deactivate")
@@ -59,9 +59,12 @@ public class UserManagementController {
     }
 
     @GetMapping("/teachers/{teacherUserId}/students")
-    public List<StudentResponse> listarEstudiantesDeDocente(@PathVariable Long teacherUserId) {
-        return userManagementService.listStudentsByTeacher(teacherUserId);
+    public QueryPage<StudentResponse> listarEstudiantesDeDocente(@PathVariable Long teacherUserId,@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="25") int size,@RequestParam(required=false) String search,@RequestParam(required=false) String grade,@RequestParam(required=false) String section,@RequestParam(defaultValue="all") String status) {
+        return userManagementService.listStudentsByTeacher(teacherUserId,page,size,search,grade,section,status);
     }
+
+    @GetMapping("/teachers/{teacherUserId}/students/summary")
+    public RosterSummary resumenEstudiantes(@PathVariable Long teacherUserId){return userManagementService.studentSummary(teacherUserId);}
 
     @PutMapping("/teachers/{teacherUserId}/students/{studentId}")
     public StudentResponse editarEstudiante(

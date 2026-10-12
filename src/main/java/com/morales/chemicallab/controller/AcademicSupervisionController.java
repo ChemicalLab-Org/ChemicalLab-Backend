@@ -36,19 +36,22 @@ public class AcademicSupervisionController {
     }
 
     @GetMapping("/concepts")
-    public List<SupervisionConceptResponse> contenidos() {
-        return academicSupervisionService.listConcepts();
+    public com.morales.chemicallab.dto.QueryPage<SupervisionConceptResponse> contenidos(@org.springframework.web.bind.annotation.RequestParam(defaultValue="0") int page,@org.springframework.web.bind.annotation.RequestParam(defaultValue="25") int size,@org.springframework.web.bind.annotation.RequestParam(required=false) String search,@org.springframework.web.bind.annotation.RequestParam(required=false) String status,@org.springframework.web.bind.annotation.RequestParam(required=false) String category,@org.springframework.web.bind.annotation.RequestParam(required=false) String section) {
+        return academicSupervisionService.listConcepts(page,size,search,status,category,section);
     }
 
     @GetMapping("/evaluations")
-    public List<SupervisionEvaluationResponse> evaluaciones() {
-        return academicSupervisionService.listEvaluations();
+    public com.morales.chemicallab.dto.QueryPage<SupervisionEvaluationResponse> evaluaciones(@org.springframework.web.bind.annotation.RequestParam(defaultValue="0") int page,@org.springframework.web.bind.annotation.RequestParam(defaultValue="25") int size,@org.springframework.web.bind.annotation.RequestParam(required=false) String search,@org.springframework.web.bind.annotation.RequestParam(required=false) String status,@org.springframework.web.bind.annotation.RequestParam(required=false) String section,@org.springframework.web.bind.annotation.RequestParam(defaultValue="false") boolean withAttempts) {
+        return academicSupervisionService.listEvaluations(page,size,search,status,section,withAttempts);
     }
 
     @GetMapping("/assignments")
-    public List<SupervisionAssignmentResponse> asignaciones() {
-        return academicSupervisionService.listAssignments();
+    public com.morales.chemicallab.dto.QueryPage<SupervisionAssignmentResponse> asignaciones(@org.springframework.web.bind.annotation.RequestParam(defaultValue="0") int page,@org.springframework.web.bind.annotation.RequestParam(defaultValue="25") int size,@org.springframework.web.bind.annotation.RequestParam(required=false) String search,@org.springframework.web.bind.annotation.RequestParam(required=false) String type,@org.springframework.web.bind.annotation.RequestParam(required=false) String grade,@org.springframework.web.bind.annotation.RequestParam(required=false) String section,@org.springframework.web.bind.annotation.RequestParam(required=false) String active) {
+        return academicSupervisionService.listAssignments(page,size,search,type,grade,section,active);
     }
+
+    @GetMapping("/options")
+    public com.morales.chemicallab.repository.SupervisionQueryRepository.Options options(){return academicSupervisionService.options();}
 
     @GetMapping("/activity")
     public AdminActivityResponse actividad() {

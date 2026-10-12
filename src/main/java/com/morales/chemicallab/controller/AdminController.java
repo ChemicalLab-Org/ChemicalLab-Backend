@@ -41,14 +41,22 @@ public class AdminController {
     }
 
     @GetMapping("/users")
-    public List<AdminUserResponse> listarUsuarios() {
-        return adminService.listUsers();
+    public com.morales.chemicallab.dto.QueryPage<AdminUserResponse> listarUsuarios(
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue="0") int page,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue="25") int size,
+            @org.springframework.web.bind.annotation.RequestParam(required=false) String search,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue="all") String filter) {
+        return adminService.listUsers(page,size,search,filter);
     }
 
     /** Docentes activos disponibles como docente responsable al crear/editar estudiantes. */
     @GetMapping("/users/teacher-options")
-    public List<TeacherOptionResponse> opcionesDocentes() {
-        return adminService.listActiveTeacherOptions();
+    public com.morales.chemicallab.dto.QueryPage<TeacherOptionResponse> opcionesDocentes(
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue="0") int page,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue="25") int size,
+            @org.springframework.web.bind.annotation.RequestParam(required=false) String search,
+            @org.springframework.web.bind.annotation.RequestParam(required=false) Long selected) {
+        return adminService.listActiveTeacherOptions(page,size,search,selected);
     }
 
     /**

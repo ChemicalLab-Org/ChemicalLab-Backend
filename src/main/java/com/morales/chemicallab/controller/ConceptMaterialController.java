@@ -30,6 +30,12 @@ import org.springframework.web.multipart.MultipartFile;
 public class ConceptMaterialController {
 
     private final ConceptMaterialService conceptMaterialService;
+    @GetMapping("/{conceptId}/materials")
+    public com.morales.chemicallab.dto.QueryPage<ConceptMaterialResponse> listMaterials(Authentication authentication,@PathVariable Long conceptId,
+            @RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="25") int size) {
+        return conceptMaterialService.listMaterials(authentication.getName(),conceptId,page,size);
+    }
+
 
     // =========================================================================
     // DOCENTE

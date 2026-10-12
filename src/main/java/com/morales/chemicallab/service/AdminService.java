@@ -49,6 +49,7 @@ public class AdminService {
     private final com.morales.chemicallab.security.AccountSessionService sessions;
     private final PasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
+    private final AdminQueryRepository queries;
 
     // Tipo de recurso afectado en los eventos de trazabilidad de gestión de usuarios.
     private static final String TARGET_USER = "UserAccount";
@@ -87,20 +88,10 @@ public class AdminService {
     // LISTADO UNIFICADO DE USUARIOS
     // =========================================================================
 
-    public List<AdminUserResponse> listUsers() {
-        Map<Long, TeacherProfile> teacherByUserId = teacherProfileRepository.findAll().stream()
-                .collect(Collectors.toMap(t -> t.getUser().getId(), t -> t));
-        Map<Long, StudentProfile> studentByUserId = studentProfileRepository.findAll().stream()
-                .collect(Collectors.toMap(s -> s.getUser().getId(), s -> s));
-
-        Long selfId = authenticatedUserId();
-
-        return userAccountRepository.findAll().stream()
-                .map(user -> toAdminUserResponse(user, teacherByUserId, studentByUserId, selfId))
-                .sorted(Comparator
-                        .comparing((AdminUserResponse u) -> u.role().name())
-                        .thenComparing(AdminUserResponse::fullName, String.CASE_INSENSITIVE_ORDER))
-                .toList();
+    public List<AdminUserResponse> listUsers() { return listUsers(0,25,null,"all").content(); }
+    @Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ,timeout=15)
+    public com.morales.chemicallab.dto.QueryPage<AdminUserResponse> listUsers(int page,int size,String search,String filter) {
+        return queries.users(page,size,search,filter,authenticatedUserId());
     }
 
     /**
@@ -411,15 +402,10 @@ public class AdminService {
     }
 
     /** Lista los docentes activos como opciones para asignar el docente responsable. */
-    public List<TeacherOptionResponse> listActiveTeacherOptions() {
-        return teacherProfileRepository.findAll().stream()
-                .filter(t -> Boolean.TRUE.equals(t.getUser().getActive()))
-                .map(t -> new TeacherOptionResponse(
-                        t.getUser().getId(),
-                        t.getNames() + " " + t.getLastNames(),
-                        t.getUser().getUsername()))
-                .sorted(Comparator.comparing(TeacherOptionResponse::fullName, String.CASE_INSENSITIVE_ORDER))
-                .toList();
+    public List<TeacherOptionResponse> listActiveTeacherOptions() { return listActiveTeacherOptions(0,25,null,null).content(); }
+    @Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ,timeout=15)
+    public com.morales.chemicallab.dto.QueryPage<TeacherOptionResponse> listActiveTeacherOptions(int page,int size,String search,Long selected) {
+        return queries.teachers(page,size,search,selected);
     }
 
     // =========================================================================
@@ -593,14 +579,7 @@ public class AdminService {
 
     /** Genera el siguiente código de estudiante con el patrón {@code ESTXXXX}. */
     private String generateStudentCode() {
-        int max = 0;
-        for (StudentProfile s : studentProfileRepository.findAll()) {
-            String code = s.getStudentCode();
-            if (code != null && code.matches("EST\\d{4}")) {
-                max = Math.max(max, Integer.parseInt(code.substring(3)));
-            }
-        }
-        return String.format("EST%04d", max + 1);
+        return String.format("EST%04d", queries.nextStudentCode());
     }
 
     private String generateTemporaryPassword() {

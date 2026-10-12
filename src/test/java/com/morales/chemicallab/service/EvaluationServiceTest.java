@@ -118,6 +118,7 @@ class EvaluationServiceTest {
     private EvaluationAttemptRepository attemptRepository;
     @Mock
     private EvaluationAttemptEventRepository attemptEventRepository;
+    @Mock private AttemptTraceQueryRepository traceQueries;
     @Mock
     private EvaluationAnswerRepository answerRepository;
     @Mock
@@ -1834,7 +1835,8 @@ class EvaluationServiceTest {
                         .eventType(AttemptEventType.EXIT_ATTEMPTED).occurredAt(inicio.plusMinutes(4)).build(),
                 EvaluationAttemptEvent.builder().id(6L).attempt(attempt)
                         .eventType(AttemptEventType.ATTEMPT_SUBMITTED).occurredAt(inicio.plusMinutes(8)).build());
-        when(attemptEventRepository.findByAttemptOrderByOccurredAtAsc(attempt)).thenReturn(eventos);
+        var timeline=eventos.stream().map(e->new AttemptEventResponse(e.getId(),e.getEventType(),e.getDescription(),e.getMetadata(),e.getOccurredAt())).toList();
+        when(traceQueries.trace(50L,0,25)).thenReturn(new AttemptTraceQueryRepository.Trace(6,1,1,1,List.of("PERIODIC_TABLE"),QueryPage.of(timeline,0,25,6)));
 
         AttemptTraceabilityResponse res = service.getAttemptTraceability("docente1", 50L);
 

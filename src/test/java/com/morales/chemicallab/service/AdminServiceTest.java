@@ -61,6 +61,7 @@ class AdminServiceTest {
     @Mock
     private com.morales.chemicallab.security.AccountSessionService sessions;
 
+    @Mock private AdminQueryRepository queries;
     @InjectMocks
     private AdminService service;
 
@@ -140,34 +141,13 @@ class AdminServiceTest {
     // LISTADO UNIFICADO DE USUARIOS
     // =========================================================================
 
-    @Test
-    void listUsers_combinaPerfilesYNoExponeContrasena() {
-        UserAccount admin = account(1L, "admin", Role.ADMINISTRADOR, true);
-        TeacherProfile teacher = teacher(2L, "Pedro", "Martínez");
-        StudentProfile studentProfile = student(3L, "EST0001", "Ana", "Mendoza");
-
-        when(userAccountRepository.findAll())
-                .thenReturn(List.of(admin, teacher.getUser(), studentProfile.getUser()));
-        when(teacherProfileRepository.findAll()).thenReturn(List.of(teacher));
-        when(studentProfileRepository.findAll()).thenReturn(List.of(studentProfile));
-
-        List<AdminUserResponse> users = service.listUsers();
-
-        assertThat(users).hasSize(3);
-
-        AdminUserResponse docente = users.stream()
-                .filter(u -> u.role() == Role.DOCENTE).findFirst().orElseThrow();
-        assertThat(docente.fullName()).isEqualTo("Pedro Martínez");
-        assertThat(docente.code()).isNull();
-
-        AdminUserResponse estudiante = users.stream()
-                .filter(u -> u.role() == Role.ESTUDIANTE).findFirst().orElseThrow();
-        assertThat(estudiante.fullName()).isEqualTo("Ana Mendoza");
-        assertThat(estudiante.code()).isEqualTo("EST0001");
-
-        AdminUserResponse administrador = users.stream()
-                .filter(u -> u.role() == Role.ADMINISTRADOR).findFirst().orElseThrow();
-        assertThat(administrador.username()).isEqualTo("admin");
+    @Test void listUsersDelegatesToBoundedSqlProjection() {
+        var page=com.morales.chemicallab.dto.QueryPage.<AdminUserResponse>of(List.of(),0,25,0);
+        when(queries.users(0,25,null,"all",null)).thenReturn(page);
+        assertThat(service.listUsers()).isEmpty();
+        verify(userAccountRepository,never()).findAll();
+        verify(studentProfileRepository,never()).findAll();
+        verify(teacherProfileRepository,never()).findAll();
     }
 
     // =========================================================================

@@ -23,6 +23,8 @@ public class UserManagementService {
     private final UserAccountRepository userAccountRepository;
     private final TeacherProfileRepository teacherProfileRepository;
     private final StudentProfileRepository studentProfileRepository;
+    private final RosterQueryRepository roster;
+    private final AdminQueryRepository queries;
     private final com.morales.chemicallab.security.AccountSessionService sessions;
     private final PasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
@@ -78,12 +80,9 @@ public class UserManagementService {
     }
 
     @Transactional(readOnly = true)
-    public List<TeacherResponse> listTeachers() {
-        return teacherProfileRepository.findAll()
-                .stream()
-                .map(this::toTeacherResponse)
-                .toList();
-    }
+    public List<TeacherResponse> listTeachers(){return listTeachers(0,25,null,"all").content();}
+    @Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ,timeout=15)
+    public QueryPage<TeacherResponse> listTeachers(int page,int size,String search,String status){return roster.teachers(page,size,search,status);}
 
     public TeacherResponse deactivateTeacher(Long teacherUserId) {
         UserAccount user = userAccountRepository.findById(teacherUserId)
@@ -193,14 +192,15 @@ public class UserManagementService {
     }
 
     @Transactional(readOnly = true)
-    public List<StudentResponse> listStudentsByTeacher(Long teacherUserId) {
+    public List<StudentResponse> listStudentsByTeacher(Long teacherUserId){return listStudentsByTeacher(teacherUserId,0,25,null,null,null,"all").content();}
+    @Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ,timeout=15)
+    public QueryPage<StudentResponse> listStudentsByTeacher(Long teacherUserId,int page,int size,String search,String grade,String section,String status){
         validateAuthenticatedTeacher(teacherUserId);
-        TeacherProfile teacher = findTeacherProfileByUserId(teacherUserId);
-        return studentProfileRepository.findByTeacher(teacher)
-                .stream()
-                .map(this::toStudentResponse)
-                .toList();
+        return roster.students(findTeacherProfileByUserId(teacherUserId).getId(),page,size,search,grade,section,status);
     }
+    @Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ,timeout=15)
+    public RosterSummary studentSummary(Long teacherUserId){validateAuthenticatedTeacher(teacherUserId);return roster.summary(findTeacherProfileByUserId(teacherUserId).getId());}
+
 
     public StudentResponse updateStudent(Long teacherUserId, Long studentId, UpdateStudentRequest request) {
         validateAuthenticatedTeacher(teacherUserId);
@@ -475,17 +475,6 @@ public class UserManagementService {
         return userAccountRepository.findByUsername(authentication.getName()).orElse(null);
     }
 
-    private String generateStudentCode() {
-        List<StudentProfile> all = studentProfileRepository.findAll();
-        int max = 0;
-        for (StudentProfile s : all) {
-            String code = s.getStudentCode();
-            if (code != null && code.matches("EST\\d{4}")) {
-                int num = Integer.parseInt(code.substring(3));
-                if (num > max) max = num;
-            }
-        }
-        return String.format("EST%04d", max + 1);
-    }
+    private String generateStudentCode(){return String.format("EST%04d",queries.nextStudentCode());}
 
 }

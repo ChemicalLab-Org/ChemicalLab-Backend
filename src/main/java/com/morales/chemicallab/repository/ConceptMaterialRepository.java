@@ -25,9 +25,13 @@ public interface ConceptMaterialRepository extends JpaRepository<ConceptMaterial
             from ConceptMaterial m
             where m.conceptContent.id = :conceptId
               and m.active = true
-            order by m.type asc, m.createdAt asc
+            order by m.type asc, m.createdAt asc, m.id asc
             """)
-    List<ConceptMaterialView> findMetadataByConcept(@Param("conceptId") Long conceptId);
+    List<ConceptMaterialView> findMetadataByConcept(@Param("conceptId") Long conceptId, org.springframework.data.domain.Pageable pageable);
+
+    default List<ConceptMaterialView> findMetadataByConcept(Long conceptId) {
+        return findMetadataByConcept(conceptId,org.springframework.data.domain.PageRequest.of(0,25));
+    }
 
     // Carga la entidad completa (incluidos los bytes) para descargar/visualizar un archivo.
     Optional<ConceptMaterial> findByIdAndConceptContentIdAndActiveTrue(Long id, Long conceptContentId);

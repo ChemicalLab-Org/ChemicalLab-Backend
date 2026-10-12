@@ -28,7 +28,7 @@ public class WhiteboardAdminController {
     }
 
     @GetMapping
-    public List<WhiteboardAdminSessionResponse> listar() {
-        return whiteboardSessionService.listAdminSessions();
+    public com.morales.chemicallab.dto.QueryPage<WhiteboardAdminSessionResponse> listar(@org.springframework.web.bind.annotation.RequestParam(defaultValue="0") int page,@org.springframework.web.bind.annotation.RequestParam(defaultValue="25") int size) {
+        return whiteboardSessionService.listAdminSessions(page,size);
     }
 }

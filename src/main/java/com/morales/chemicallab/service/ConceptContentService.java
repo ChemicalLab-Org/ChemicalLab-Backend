@@ -253,14 +253,6 @@ public class ConceptContentService {
     // =========================================================================
 
     @Transactional(readOnly = true)
-    public List<ConceptContentResponse> listAllConcepts() {
-        return conceptContentRepository.findAll()
-                .stream()
-                .map(this::toConceptContentResponse)
-                .toList();
-    }
-
-    @Transactional(readOnly = true)
     public ConceptContentResponse getAnyConceptById(Long conceptId) {
         ConceptContent content = conceptContentRepository.findById(conceptId)
                 .orElseThrow(() -> new EntityNotFoundException("El contenido conceptual no existe."));
@@ -381,6 +373,7 @@ public class ConceptContentService {
                         .map(this::toAssignmentResponse)
                         .toList();
 
+        var materials=listMaterials(content.getId());
         return new ConceptContentResponse(
                 content.getId(),
                 content.getTitle(),
@@ -396,9 +389,10 @@ public class ConceptContentService {
                 teacher.getId(),
                 teacherName,
                 assignments,
-                listMaterials(content.getId()),
+                materials,
                 content.getCreatedAt(),
-                content.getUpdatedAt()
+                content.getUpdatedAt(),
+                com.morales.chemicallab.dto.QueryPage.of(materials,0,25,conceptMaterialRepository.countByConceptContentIdAndActiveTrue(content.getId()))
         );
     }
 
@@ -423,6 +417,7 @@ public class ConceptContentService {
     }
 
     private StudentConceptContentResponse toStudentResponse(ConceptContent content) {
+        var materials=listMaterials(content.getId());
         return new StudentConceptContentResponse(
                 content.getId(),
                 content.getTitle(),
@@ -433,7 +428,8 @@ public class ConceptContentService {
                 List.copyOf(content.getKeyPoints()),
                 List.copyOf(content.getExamples()),
                 content.getSuggestedActivity(),
-                listMaterials(content.getId())
+                materials,
+                com.morales.chemicallab.dto.QueryPage.of(materials,0,25,conceptMaterialRepository.countByConceptContentIdAndActiveTrue(content.getId()))
         );
     }
 }

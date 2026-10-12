@@ -142,7 +142,7 @@ class ConceptMaterialServiceTest {
     }
 
     @Test
-    void reemplazaArchivoExistenteSinDejarHuerfanos() {
+    void reemplazaArchivoExistenteSinDejarHuerfanos() throws Exception {
         TeacherProfile docente = teacher(1L, "docente1");
         stubTeacher(docente);
         when(conceptContentRepository.findById(10L)).thenReturn(Optional.of(content(10L, docente)));
@@ -155,8 +155,11 @@ class ConceptMaterialServiceTest {
         var file = new MockMultipartFile("file", "nuevo.pdf", PDF, pdf());
         service.addFileMaterial("docente1", 10L, file, null);
 
-        // El archivo anterior se elimina para no conservar bytes huérfanos.
-        verify(conceptMaterialRepository).delete(previo);
+        // The same identity is updated; PostgreSQL accounts the exact byte delta.
+        verify(conceptMaterialRepository, never()).delete(any());
+        verify(conceptMaterialRepository).save(previo);
+        assertThat(previo.getId()).isEqualTo(99L);
+        assertThat(previo.getFileData()).isEqualTo(file.getBytes());
         verify(auditLogService).recordInfo(eq(LogEventType.CONCEPT_MATERIAL_REPLACED),
                 any(), any(), any(), any(), any(), any());
     }

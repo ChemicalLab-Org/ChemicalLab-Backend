@@ -15,12 +15,12 @@ import com.morales.chemicallab.entity.WhiteboardInteractionOverride;
  * <p>Es la fuente de verdad del backend, compartida por la lógica REST y por la validación
  * de eventos de dibujo entrantes por WebSocket.</p>
  */
-final class WhiteboardInteractionPolicy {
+public final class WhiteboardInteractionPolicy {
 
     private WhiteboardInteractionPolicy() {
     }
 
-    static boolean effective(boolean globalEnabled, WhiteboardInteractionOverride override) {
+    public static boolean effective(boolean globalEnabled, WhiteboardInteractionOverride override) {
         WhiteboardInteractionOverride resolved =
                 override == null ? WhiteboardInteractionOverride.FOLLOW_GLOBAL : override;
         return switch (resolved) {

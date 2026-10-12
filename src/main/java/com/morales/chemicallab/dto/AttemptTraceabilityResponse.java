@@ -40,5 +40,6 @@ public record AttemptTraceabilityResponse(
         // Herramientas permitidas consultadas durante el intento (p. ej. PERIODIC_TABLE).
         List<String> toolsUsed,
         // Línea de tiempo cronológica de eventos del intento.
-        List<AttemptEventResponse> events
+        List<AttemptEventResponse> events,
+        QueryPage<AttemptEventResponse> eventsPage
 ) {}

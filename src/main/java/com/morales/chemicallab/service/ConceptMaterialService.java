@@ -32,7 +32,7 @@ import java.util.Locale;
  *   <li><strong>Visibilidad:</strong> el estudiante solo descarga materiales de contenidos
  *       publicados y asignados a su grado/sección; el administrador accede en solo lectura.</li>
  *   <li><strong>Un archivo por contenido:</strong> subir un archivo reemplaza el anterior
- *       (se elimina para no dejar bytes huérfanos). Los enlaces sí pueden ser varios.</li>
+ *       (se actualiza su identidad y se contabiliza la diferencia de bytes). Los enlaces sí pueden ser varios.</li>
  * </ul>
  */
 @Service
@@ -47,6 +47,7 @@ public class ConceptMaterialService {
     private final StudentProfileRepository studentProfileRepository;
     private final AuditLogService auditLogService;
     private final FileValidationService fileValidationService;
+    private final com.morales.chemicallab.security.storage.QueryLimits queryLimits;
 
     private static final String TARGET_CONCEPT = "ConceptContent";
 
@@ -76,19 +77,11 @@ public class ConceptMaterialService {
         var existing = conceptMaterialRepository
                 .findFirstByConceptContentIdAndTypeAndActiveTrue(conceptId, MaterialType.FILE);
         boolean replaced = existing.isPresent();
-        existing.ifPresent(conceptMaterialRepository::delete);
 
-        ConceptMaterial material = ConceptMaterial.builder()
-                .conceptContent(content)
-                .type(MaterialType.FILE)
-                .title(cleanTitle(rawTitle))
-                .originalFileName(fileName)
-                .contentType(contentType)
-                .fileSize((long) data.length)
-                .fileData(data)
-                .uploadedBy(username)
-                .active(true)
-                .build();
+
+        ConceptMaterial material = existing.orElseGet(() -> ConceptMaterial.builder().conceptContent(content).type(MaterialType.FILE).active(true).build());
+        material.setTitle(cleanTitle(rawTitle));material.setOriginalFileName(fileName);material.setContentType(contentType);
+        material.setFileSize((long)data.length);material.setFileData(data);material.setUploadedBy(username);
         conceptMaterialRepository.save(material);
 
         LogEventType eventType = replaced
@@ -162,6 +155,24 @@ public class ConceptMaterialService {
      * asignados a su grado/sección; el administrador en solo lectura. Los enlaces no se
      * descargan por aquí (se abren directamente desde su URL).
      */
+    @Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ,timeout=15)
+    public com.morales.chemicallab.dto.QueryPage<ConceptMaterialResponse> listMaterials(String username,Long conceptId,int page,int size) {
+        var pageable=queryLimits.page(page,size);
+        UserAccount user = userAccountRepository.findByUsername(username)
+                .orElseThrow(() -> new EntityNotFoundException("El usuario no existe."));
+
+        switch (user.getRole()) {
+            case DOCENTE -> requireOwnedConcept(conceptId, requireTeacher(username));
+            case ESTUDIANTE -> requireConceptVisibleToStudent(username, conceptId);
+            case ADMINISTRADOR -> requireExistingConcept(conceptId);
+            default -> throw new IllegalArgumentException("El rol del usuario no permite esta operación.");
+        }
+
+        var rows=conceptMaterialRepository.findMetadataByConcept(conceptId,pageable).stream()
+            .map(v->ConceptMaterialResponse.fromView(conceptId,v)).toList();
+        return com.morales.chemicallab.dto.QueryPage.of(rows,page,size,conceptMaterialRepository.countByConceptContentIdAndActiveTrue(conceptId));
+    }
+
     @Transactional(readOnly = true)
     public MaterialDownload downloadMaterial(String username, Long conceptId, Long materialId) {
         UserAccount user = userAccountRepository.findByUsername(username)
