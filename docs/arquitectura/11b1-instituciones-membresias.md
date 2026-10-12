@@ -162,14 +162,97 @@ corresponde a T12/T13 y no se afirma entregada por estas tablas.
 
 ## Verificación y evidencias
 
-Resultados y SHA probado se incorporan después de finalizar las ejecuciones.
+**SHA de código probado:** `34547cfebcb8cf29ba951cb6dc3797f0cb44ee71`.
+`clean package` completo finalizó el 2026-10-12 a las 15:58:38 America/Lima:
+**54 suites, 611 pruebas, cero fallos, errores u omisiones; JAR generado**.
+Las 18 pruebas de `InstitutionPersistenceDbTest` están incluidas en esas 611;
+no se suman otra vez. El commit de cierre posterior cambia exclusivamente esta
+documentación; sus fuentes, SQL, tests y POM son idénticos al SHA probado.
+
+| Ejecución | Alcance y resultado |
+| --- | --- |
+| Selección inicial, iteración sin commit (`focused-sixth.log`) | 16 casos institucionales, 0/0/0; anterior al caso de actor y a la corrección de restauración. No es una suite completa ni la validación del código final |
+| Primer intento completo, `a4cde60dff4b4ef869ddf8879d311c35b2cdb6ce` | Interrumpido al agotar las 100 conexiones del cluster de ensayo; T10 no pudo arrancar una JVM. No cuenta como suite completa |
+| Segundo intento completo, mismo SHA `a4cde60…` (`full-package-final.log`) | 610 casos, 0 fallos, 15 errores, 0 omisiones; faltaba perfil test en las suites legacy. Sin JAR. No se presenta como aprobado |
+| Ejecución definitiva, `34547cf…` (`full-verified.log`) | Suite completa y empaquetado: 611/0/0/0; PostgreSQL desechable con 300 conexiones y perfil test explícito |
+| Ensayos nativos, `34547cf…` | psql expansión/repetición, rechazo de divergencia, dump/restore/revalidación y dos carreras con dos procesos psql cada una; resultados propios, fuera del conteo JUnit |
+
+Los demás intentos de compilación/fixture quedan en los logs locales de iteración,
+sin convertir fallos de preparación en pruebas aprobadas. Los mensajes de guardas
+de arranque y `SECURITY_AUDIT_EVIDENCE_UNAVAILABLE` de casos deliberados no se
+interpretan como errores de la ejecución JUnit: los XML finales y el resumen
+Maven confirman cero fallos/errores. No se acumulan conteos de ejecuciones.
+
+| Invariante verificado | Evidencia del bloque |
+| --- | --- |
+| Cuenta simultánea en A y B; roles separados/combinados | Dos membresías independientes, ADMIN_INSTITUCION + DOCENTE en A, ESTUDIANTE en B; suspender A conserva estado/versión de B |
+| Duplicados y referencias contradictorias | Servicio y SQL rechazan pareja duplicada, cuenta/institución inexistente, grant de otro tenant y cambio de identidad de membresía |
+| Roles/fechas/solapamiento | SQL rechaza ADMINISTRADOR/roles desconocidos, ventanas vacías/invertidas/infinitas, grant anterior al estado actual y solapamiento, incluso historia revocada; permite borde adyacente |
+| Transiciones e historia | PENDING, ACTIVE, SUSPENDED, reactivación, ENDED y readmisión conservan versiones 0–7 y snapshots previos; readmisión conserva ID sin restaurar grants |
+| Historia protegida | Update/delete/truncate ordinarios rechazados; ARCHIVED no se reactiva; grants solo se revocan |
+| Concurrencia | Dos conexiones JDBC con transacciones independientes y, además, dos procesos OS psql por carrera: un commit y un rechazo; una membresía y un grant. Rechazos por unique y exclusion, no por timeout |
+| Expansión | Aplicación y repetición sobre legacy poblado, sin asignación automática; objetos sin versión y divergencias de columnas/triggers se rechazan sin reparar |
+| Compatibilidad/autorización | Mapas completos de user_accounts y account_sessions idénticos, incluidos IDs/hashes/rol/versiones; /auth/me conserva ESTUDIANTE; grants nuevos no habilitan rutas admin/docente ni tópico STOMP ajeno |
+| Auditoría | Rollback revierte grant, versión, eventos y SUCCESS; fallo de destino revierte transición; actor autenticado, institutionId y correlación conservados sin token/nombres de negocio |
+| Recuperación | Constraints reconstituidos desde pg_get_constraintdef conservan firma; pg_dump/pg_restore real ficticio valida expansión y siete firmas de datos sin discrepancias |
+
+El ensayo nativo usó `chemicallab_t11b1_expansion_test` y
+`chemicallab_t11b1_restore_test`, en el mismo cluster ficticio. Un primer restore
+reveló una diferencia de representación de arrays varchar en CHECKs equivalentes;
+se hicieron explícitos los casts a text, sin ampliar valores permitidos, y se
+repitió el ensayo limpio. El restore final preservó firmas de cuentas, sesiones,
+instituciones, membresías, eventos, grants y ledger (7/7). La revalidación con
+trigger deshabilitado salió con código psql 3; al restaurar su enablement volvió
+a validar. No se editó el fingerprint para ocultar diferencias.
+
+Comandos nativos usados, con variables de conexión restringidas al cluster ficticio:
+
+```powershell
+pg_dump -Fc --file fictitious-expansion.dump chemicallab_t11b1_expansion_test
+createdb chemicallab_t11b1_restore_test
+pg_restore --single-transaction --exit-on-error --dbname chemicallab_t11b1_restore_test fictitious-expansion.dump
+psql --dbname chemicallab_t11b1_restore_test --single-transaction --set ON_ERROR_STOP=1 --file src/main/resources/db/expansion/t11b1-v1.sql
+```
+
+Fuente SQL ensayada en UTF-8/LF, SHA-256:
+`23eb762d3ac581289e05f09725ab235efea7cf3d50b832e3a98f89e730e59548`.
+El checksum de un checkout CRLF puede diferir; contrastar el contenido Git del
+SHA probado y la normalización antes de concluir una divergencia de fuente.
+
+Se retiraron las tres bases ficticias, se comprobó cero bases `chemicallab%` en
+ese cluster y se detuvo el servidor. Manifiesto final: 26/26 archivos conservados
+(10 documentos de seguridad anteriores y 16 E2E), cero discrepancias SHA-256.
+Frontend permanece en `feature/validaciones-datos-institucionales`,
+`e88589635a8269c50ee0f53fccf157f0d0985034`, con su `?? e2e-selenium/` previo.
+Auditoría original conservada:
+`1eff5d59f7a114dfee91cb557a0405c2f7247e43cd2926d2542172c0255e499b`.
+El diff backend contiene diez archivos exclusivamente de este bloque y conserva
+todos sus documentos anteriores. Fetch de entrega reconfirmó develop en la base
+57c6e58, sin avances posteriores que incorporar.
+
 El comando reproducible usa JDK 17 y exclusivamente el PostgreSQL desechable
 `127.0.0.1:55431/chemicallab_t01_test`, rol ficticio `t11b1_fixture`:
 
 ```powershell
-./mvnw.cmd '-Dspring.datasource.url=jdbc:postgresql://127.0.0.1:55431/chemicallab_t01_test' '-Dspring.datasource.username=t11b1_fixture' '-Dspring.datasource.password=fictitious' '-Dtest=InstitutionPersistenceDbTest' test
-./mvnw.cmd '-Dspring.datasource.url=jdbc:postgresql://127.0.0.1:55431/chemicallab_t01_test' '-Dspring.datasource.username=t11b1_fixture' '-Dspring.datasource.password=fictitious' clean package
+./mvnw.cmd '-Dspring.profiles.active=test' '-Dspring.datasource.url=jdbc:postgresql://127.0.0.1:55431/chemicallab_t01_test' '-Dspring.datasource.username=t11b1_fixture' '-Dspring.datasource.password=fictitious' '-Dtest=InstitutionPersistenceDbTest' test
+./mvnw.cmd '-Dspring.profiles.active=test' '-Dspring.datasource.url=jdbc:postgresql://127.0.0.1:55431/chemicallab_t01_test' '-Dspring.datasource.username=t11b1_fixture' '-Dspring.datasource.password=fictitious' clean package
 ```
+
+Para preparar un cluster nuevo de ensayo, con PostgreSQL 18 en PATH y ese puerto
+libre, desde la raíz backend (el directorio elegido debe estar vacío):
+
+```powershell
+initdb -D ../.codex-work/t11b1-repro-postgres -U t11b1_fixture -A trust --encoding=UTF8 --locale=C
+pg_ctl -D ../.codex-work/t11b1-repro-postgres -l ../.codex-work/t11b1-repro-postgres.log -o '-h 127.0.0.1 -p 55431 -c max_connections=300' -w start
+createdb -h 127.0.0.1 -p 55431 -U t11b1_fixture chemicallab_t01_test
+# Tras finalizar y retirar exclusivamente los datos ficticios:
+pg_ctl -D ../.codex-work/t11b1-repro-postgres -m fast -w stop
+```
+
+Trust se limita al ensayo loopback; no es una configuración productiva. La suite
+abre varios contextos y JVM simultáneos: 100 conexiones no bastaron, por eso se
+usaron 300. El perfil test es imprescindible para las suites legacy SpringBootTest;
+sus defaults públicos de ensayo no habilitan bootstrap, demos ni instalación real.
 
 El fixture existente rechaza destinos que no coincidan con la DB loopback ficticia,
 crea schemas aleatorios y los elimina al terminar. Logs/manifiestos quedan en
