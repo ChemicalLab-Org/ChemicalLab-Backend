@@ -37,7 +37,9 @@ class ConcurrencyDbTest {
         Path directory = Files.createDirectories(Path.of("target", "t10-processes", f.schema));
         Path ready = directory.resolve(number + ".ready"), stop = directory.resolve(number + ".stop");
         stops.add(stop);
-        var command = List.of(Path.of(System.getProperty("java.home"), "bin", "java.exe").toString(),
+        String javaExecutable = Path.of(System.getProperty("java.home"), "bin",
+                System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java").toString();
+        var command = List.of(javaExecutable,
                 "-Xmx384m", "-Dspring.devtools.restart.enabled=false", "-cp", System.getProperty("surefire.test.class.path", System.getProperty("java.class.path")),
                 ConcurrencyServer.class.getName(), f.setting("spring.datasource.url"), f.setting("spring.datasource.username"),
                 f.setting("spring.datasource.password"), f.schema, Base64.getEncoder().encodeToString(f.key),
