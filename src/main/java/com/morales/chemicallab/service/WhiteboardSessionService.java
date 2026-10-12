@@ -325,7 +325,12 @@ public class WhiteboardSessionService {
         }
         participantRepository.save(participant);
 
-        recordJoinMetric(username, session);
+        // Best-effort telemetry must describe a committed join, never a later rollback.
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new org.springframework.transaction.support.TransactionSynchronization() {
+                @Override public void afterCommit() { recordJoinMetric(username, session); }
+            });
+        } else recordJoinMetric(username, session);
 
         // Avisa al canal de la sesión para que el panel de participantes del docente se actualice
         // sin recargar. Solo en la primera unión (no en re-uniones idempotentes) para no generar ruido.
@@ -349,7 +354,10 @@ public class WhiteboardSessionService {
         }
         StudentProfile student = requireStudent(username);
         WhiteboardSession session = sessionRepository.findById(sessionId).orElse(null);
-        if (session == null || !belongsToStudentSection(session, student)
+        if (session == null) return;
+        // Match join, teacher controls and drawing: read participants only after locking the board.
+        entityManager.refresh(session, LockModeType.PESSIMISTIC_WRITE);
+        if (!belongsToStudentSection(session, student)
                 || session.getStatus() == WhiteboardSessionStatus.CLOSED) {
             return;
         }
@@ -454,6 +462,9 @@ public class WhiteboardSessionService {
     private WhiteboardSession requireVisibleToStudent(Long sessionId, StudentProfile student) {
         WhiteboardSession session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new EntityNotFoundException("La sesión de pizarra no existe."));
+        if (!TransactionSynchronizationManager.isCurrentTransactionReadOnly()) {
+            entityManager.refresh(session, LockModeType.PESSIMISTIC_WRITE);
+        }
         if (!belongsToStudentSection(session, student)) {
             throw new EntityNotFoundException("La sesión no está disponible para tu grado o sección.");
         }
