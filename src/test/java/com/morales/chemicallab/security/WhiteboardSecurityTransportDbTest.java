@@ -62,7 +62,7 @@ class WhiteboardSecurityTransportDbTest {
         var env = new StandardEnvironment();
         env.getPropertySources().remove(StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME);
         env.getPropertySources().remove(StandardEnvironment.SYSTEM_PROPERTIES_PROPERTY_SOURCE_NAME);
-        var application = new SpringApplication(ChemicalLabBackendApplication.class);
+        var application = new SpringApplication(applicationSources());
         application.setEnvironment(env);
         var args = new ArrayList<>(List.of("--spring.profiles.active=test", "--spring.config.location=classpath:/",
                 "--server.address=127.0.0.1", "--server.port=0",
@@ -80,6 +80,8 @@ class WhiteboardSecurityTransportDbTest {
         }
         return application.run(args.toArray(String[]::new));
     }
+
+    Class<?>[] applicationSources() { return new Class<?>[] { ChemicalLabBackendApplication.class }; }
 
     @BeforeEach void fixture() {
         teacher = account(Role.DOCENTE, null, "3", "A");

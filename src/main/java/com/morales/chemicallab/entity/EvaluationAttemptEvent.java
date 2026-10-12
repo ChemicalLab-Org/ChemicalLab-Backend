@@ -54,7 +54,7 @@ public class EvaluationAttemptEvent {
     @PrePersist
     protected void onCreate() {
         if (occurredAt == null) {
-            occurredAt = LocalDateTime.now();
+            occurredAt = LocalDateTime.now(java.time.ZoneId.of("America/Lima"));
         }
     }
 }

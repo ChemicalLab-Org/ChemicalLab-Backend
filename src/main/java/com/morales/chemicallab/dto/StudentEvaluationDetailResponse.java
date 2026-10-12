@@ -21,5 +21,10 @@ public record StudentEvaluationDetailResponse(
         QuestionDisplayMode questionDisplayMode,
         Boolean randomizeQuestions,
         List<StudentQuestionResponse> questions,
-        Long assignmentId
+        Long assignmentId,
+        java.time.LocalDateTime startAt,
+        java.time.LocalDateTime dueAt,
+        String accessState,
+        boolean questionsVisible,
+        java.time.LocalDateTime serverNow
 ) {}

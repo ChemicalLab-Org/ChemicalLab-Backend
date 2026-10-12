@@ -51,6 +51,6 @@ public class EvaluationAssignment {
 
     @PrePersist
     protected void onCreate() {
-        assignedAt = LocalDateTime.now();
+        if (assignedAt == null) assignedAt = LocalDateTime.now(java.time.ZoneId.of("America/Lima"));
     }
 }
