@@ -135,6 +135,8 @@ class LoginProtectionDbTest {
                     if (expectedBody == null) expectedBody = response.body();
                     assertThat(response.body()).isEqualTo(expectedBody);
                     var headers = new TreeMap<>(response.headers().map());
+                    assertThat(java.util.UUID.fromString(response.headers().firstValue("X-Correlation-ID").orElseThrow()).version()).isEqualTo(4);
+                    headers.remove("x-correlation-id"); // Independent server randomness, uniform across every outcome.
                     headers.remove("date"); // Transport wall clock, not an authentication field.
                     if (expectedHeaders == null) expectedHeaders = headers;
                     assertThat(headers).isEqualTo(expectedHeaders);

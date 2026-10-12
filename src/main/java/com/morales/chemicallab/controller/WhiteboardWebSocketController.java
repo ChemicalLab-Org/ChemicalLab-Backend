@@ -41,6 +41,7 @@ public class WhiteboardWebSocketController {
     private final WhiteboardDrawEventService whiteboardDrawEventService;
     private final WhiteboardSessionService whiteboardSessionService;
     private final WhiteboardConnections connections;
+    private final com.morales.chemicallab.security.audit.AuditRejections audit;
 
     @MessageMapping("/whiteboards/{sessionId}/draw")
     public void draw(@DestinationVariable Long sessionId,
@@ -66,12 +67,19 @@ public class WhiteboardWebSocketController {
     @MessageExceptionHandler
     @SendToUser(destinations = "/queue/whiteboard-errors", broadcast = false)
     public Map<String, Object> handleError(Exception ex, org.springframework.messaging.Message<?> message) {
+        var accessor=org.springframework.messaging.simp.stomp.StompHeaderAccessor.wrap(message);
+        var actor=accessor.getUser() instanceof org.springframework.security.core.Authentication authentication && authentication.getPrincipal() instanceof com.morales.chemicallab.security.SessionPrincipal p ? p : null;
+        var correlation=message.getHeaders().get("auditCorrelation") instanceof java.util.UUID id ? id : java.util.UUID.randomUUID();
+        try(var context=com.morales.chemicallab.security.audit.AuditContext.open(correlation)){
+            if(audit!=null) audit.record(ex instanceof IllegalArgumentException || ex instanceof org.springframework.security.access.AccessDeniedException ? com.morales.chemicallab.entity.LogEventType.STOMP_DENIED : com.morales.chemicallab.entity.LogEventType.OPERATION_FAILED,
+                actor,"STOMP",com.morales.chemicallab.security.audit.AuditSafety.requestedId(accessor.getDestination()),"reason="+(ex instanceof IllegalArgumentException || ex instanceof org.springframework.security.access.AccessDeniedException?"STOMP_PERMISSION":"STOMP_FAILURE"),null);
+        }
         boolean quota=com.morales.chemicallab.security.storage.StorageErrors.quota(ex);
         String error = quota ? com.morales.chemicallab.security.storage.StorageErrors.message() : ex instanceof IllegalArgumentException ? ex.getMessage() : "No se pudo aplicar la acción. Resincroniza la pizarra.";
         String id = org.springframework.messaging.simp.stomp.StompHeaderAccessor.wrap(message).getFirstNativeHeader("client-event-id");
         if (id == null || id.length() > 100) id = "";
         String code = quota ? "STORAGE_QUOTA_EXCEEDED" : ex instanceof InputRejectedException rejection ? rejection.code() : "DRAW_REJECTED";
-        return Map.of("code", code, "resync", true, "accepted", false, "clientEventId", id, "error", error);
+        return Map.of("code", code, "resync", true, "accepted", false, "clientEventId", id, "error", error, "auditCorrelationId",correlation.toString());
     }
 
     private void requirePrincipal(Principal principal) {

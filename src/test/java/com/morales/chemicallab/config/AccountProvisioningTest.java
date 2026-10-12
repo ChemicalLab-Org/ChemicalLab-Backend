@@ -149,6 +149,6 @@ class AccountProvisioningTest {
         env.setProperty("app.bootstrap.admin.password", "fictitious-password-for-tests");
     }
 
-    private DemoAccountSeeder demos() { return new DemoAccountSeeder(users, teachers, students, encoder, env); }
-    private AdminBootstrap bootstrap() { return new AdminBootstrap(users, encoder, env, jdbc); }
+    private DemoAccountSeeder demos() { return new DemoAccountSeeder(users, teachers, students, encoder, env, org.mockito.Mockito.mock(com.morales.chemicallab.service.AuditLogService.class)); }
+    private AdminBootstrap bootstrap() { return new AdminBootstrap(users, encoder, env, jdbc, org.mockito.Mockito.mock(com.morales.chemicallab.service.AuditLogService.class)); }
 }

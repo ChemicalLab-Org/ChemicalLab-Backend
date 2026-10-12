@@ -25,6 +25,7 @@ public class AdminBootstrap implements ApplicationRunner {
     private final PasswordEncoder passwordEncoder;
     private final Environment environment;
     private final JdbcTemplate jdbcTemplate;
+    private final com.morales.chemicallab.service.AuditLogService audit;
 
     @Override
     @Transactional
@@ -44,10 +45,12 @@ public class AdminBootstrap implements ApplicationRunner {
         if (users.existsByUsername(username) || (!email.isEmpty() && users.existsByEmail(email))) {
             throw new IllegalStateException("La identidad del bootstrap ya está ocupada; revise la cuenta existente sin sobrescribirla.");
         }
-        users.save(UserAccount.builder()
+        UserAccount admin=UserAccount.builder()
                 .username(username).email(email.isEmpty() ? null : email)
                 .password(passwordEncoder.encode(environment.getProperty("app.bootstrap.admin.password")))
-                .role(Role.ADMINISTRADOR).active(true).temporaryPassword(true).build());
+                .role(Role.ADMINISTRADOR).active(true).temporaryPassword(true).build();
+        users.save(admin);
+        audit.recordInfo(com.morales.chemicallab.entity.LogEventType.USER_CREATED,"UserAccount",admin.getId(),null,null,null,"role=ADMINISTRADOR;source=BOOTSTRAP");
         log.info("Primer administrador creado con contraseña temporal. Deshabilite APP_BOOTSTRAP_ADMIN_ENABLED y retire sus credenciales.");
     }
 }

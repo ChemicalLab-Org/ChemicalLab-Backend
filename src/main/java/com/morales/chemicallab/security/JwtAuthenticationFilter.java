@@ -35,6 +35,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
             SecurityContextHolder.getContext().setAuthentication(authentication);
             var principal = (SessionPrincipal) authentication.getPrincipal();
+            request.setAttribute(com.morales.chemicallab.security.audit.AuditRequestFilter.ACTOR,principal);
             if (principal.temporaryPassword() && !allowedWhileTemporary(request)) {
                 response.setStatus(403);
                 response.setContentType("application/json");

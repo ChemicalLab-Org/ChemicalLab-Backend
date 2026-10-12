@@ -273,6 +273,7 @@ public class AdminService {
         UserAccount user = userAccountRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado."));
         sessions.lock(user);
+        long auditPreviousVersion = user.getCredentialsVersion();
 
         // Solo se registran los nombres de los campos modificados, nunca sus valores.
         List<String> changedFields = new ArrayList<>();
@@ -336,6 +337,8 @@ public class AdminService {
         // El log se registra solo tras una actualización correcta. El actor (administrador) y su
         // rol se resuelven en AuditLogService desde el contexto de seguridad. No se guardan
         // contraseñas, contraseñas temporales, tokens ni los valores de los campos.
+        if (user.getCredentialsVersion()!=auditPreviousVersion)
+            auditLogService.recordInfo(LogEventType.PERMISSIONS_CHANGED,"UserAccount",user.getId(),null,null,null,null);
         auditLogService.recordInfo(LogEventType.USER_UPDATED, TARGET_USER, user.getId(),
                 user.getUsername(), "Actualizar usuario",
                 "Se actualizaron los datos del usuario " + user.getUsername() + ".",

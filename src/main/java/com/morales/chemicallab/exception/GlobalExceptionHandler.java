@@ -56,6 +56,11 @@ public class GlobalExceptionHandler {
                         "message", ex.getMessage(), "retryAfterSeconds", ex.retryAfter()));
     }
 
+    @ExceptionHandler(com.morales.chemicallab.security.audit.AuditUnavailableException.class)
+    public ResponseEntity<Map<String,Object>> handleAuditUnavailable(){
+        return ResponseEntity.status(503).body(Map.of("status",503,"code","AUDIT_UNAVAILABLE","message","No se pudo confirmar la operación. Inténtalo de nuevo."));
+    }
+
     // Manejadores existentes — mantienen compatibilidad con el motor químico
 
     @ExceptionHandler(IllegalArgumentException.class)

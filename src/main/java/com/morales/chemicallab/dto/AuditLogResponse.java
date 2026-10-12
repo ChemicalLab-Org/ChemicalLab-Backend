@@ -26,5 +26,8 @@ public record AuditLogResponse(
         String action,
         String description,
         String metadata,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        String outcome,
+        java.util.UUID correlationId,
+        String declaredIdentifier
 ) {}

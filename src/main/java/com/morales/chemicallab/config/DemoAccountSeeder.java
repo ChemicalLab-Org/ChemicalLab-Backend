@@ -43,6 +43,7 @@ public class DemoAccountSeeder implements ApplicationRunner {
     private final StudentProfileRepository studentProfileRepository;
     private final PasswordEncoder passwordEncoder;
     private final Environment environment;
+    private final com.morales.chemicallab.service.AuditLogService audit;
 
     @Override
     @Transactional
@@ -92,6 +93,7 @@ public class DemoAccountSeeder implements ApplicationRunner {
                 .build();
 
         teacherProfileRepository.save(teacher);
+        audit.recordInfo(com.morales.chemicallab.entity.LogEventType.USER_CREATED,"UserAccount",user.getId(),null,null,null,"role=DOCENTE;source=DEMO");
         log.info("Demo teacher created. Username: [{}]. Set TEACHER_INITIAL_PASSWORD env var to override the default password.", TEACHER_USERNAME);
         return teacher;
     }
@@ -136,6 +138,7 @@ public class DemoAccountSeeder implements ApplicationRunner {
                 .build();
 
         studentProfileRepository.save(student);
+        audit.recordInfo(com.morales.chemicallab.entity.LogEventType.USER_CREATED,"UserAccount",user.getId(),null,null,null,"role=ESTUDIANTE;source=DEMO");
         log.info("Demo student created. Username: [{}]. Set STUDENT_INITIAL_PASSWORD env var to override the default password.", STUDENT_USERNAME);
     }
 
