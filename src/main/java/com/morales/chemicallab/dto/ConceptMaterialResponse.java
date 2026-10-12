@@ -11,7 +11,7 @@ import java.util.Set;
  *
  * <ul>
  *   <li>{@code previewAvailable}: indica si el material puede previsualizarse dentro del
- *       sistema (PDF e imágenes). Las diapositivas (PPT/PPTX) se ofrecen solo para descarga.</li>
+ *       sistema (imágenes). Los documentos PDF/PPT/PPTX se ofrecen solo para descarga.</li>
  *   <li>{@code downloadUrl}: ruta relativa del endpoint de descarga/visualización para
  *       archivos. Es nula para enlaces externos, que se abren mediante {@code url}.</li>
  * </ul>
@@ -30,7 +30,7 @@ public record ConceptMaterialResponse(
 
     // Tipos que un navegador puede mostrar en línea; el resto se ofrece como descarga.
     private static final Set<String> PREVIEWABLE_CONTENT_TYPES =
-            Set.of("application/pdf", "image/png", "image/jpeg");
+            Set.of("image/png", "image/jpeg");
 
     /**
      * Construye la respuesta a partir de la proyección de metadata y del identificador del

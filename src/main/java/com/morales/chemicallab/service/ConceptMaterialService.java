@@ -14,10 +14,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import com.morales.chemicallab.security.files.FileValidationService;
 
 import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
 
 /**
  * Lógica de negocio de los materiales de apoyo de los contenidos conceptuales: archivos
@@ -28,9 +27,7 @@ import java.util.Set;
  *   <li><strong>Almacenamiento (MVP):</strong> los archivos se guardan como bytes en
  *       PostgreSQL ({@code bytea}) con un límite estricto de 10&nbsp;MB. No se usa el
  *       sistema de archivos local porque el despliegue en Render no garantiza persistencia.</li>
- *   <li><strong>Tipos permitidos:</strong> lista blanca de {@code Content-Type} con su
- *       extensión compatible. Cualquier otro tipo (ejecutables, comprimidos, scripts…) se
- *       rechaza. No se confía solo en la extensión.</li>
+ *   <li><strong>Tipos permitidos:</strong> formato real validado en JVM acotada; imágenes normalizadas.</li>
  *   <li><strong>Pertenencia:</strong> el docente solo opera sobre sus propios contenidos.</li>
  *   <li><strong>Visibilidad:</strong> el estudiante solo descarga materiales de contenidos
  *       publicados y asignados a su grado/sección; el administrador accede en solo lectura.</li>
@@ -49,26 +46,12 @@ public class ConceptMaterialService {
     private final TeacherProfileRepository teacherProfileRepository;
     private final StudentProfileRepository studentProfileRepository;
     private final AuditLogService auditLogService;
+    private final FileValidationService fileValidationService;
 
     private static final String TARGET_CONCEPT = "ConceptContent";
 
-    // Límite estricto de tamaño por archivo (10 MB), validado además del límite multipart.
-    private static final long MAX_FILE_SIZE_BYTES = 10L * 1024 * 1024;
     private static final int MAX_URL_LENGTH = 2048;
     private static final int MAX_TITLE_LENGTH = 150;
-
-    // Lista blanca: Content-Type permitido -> extensiones compatibles. Lo que no esté aquí
-    // (ejecutables, comprimidos, scripts, HTML, SVG…) se rechaza.
-    private static final Map<String, Set<String>> ALLOWED_TYPES = Map.of(
-            "application/pdf", Set.of("pdf"),
-            "application/vnd.ms-powerpoint", Set.of("ppt"),
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation", Set.of("pptx"),
-            "image/png", Set.of("png"),
-            "image/jpeg", Set.of("jpg", "jpeg"));
-
-    // Tipos que se muestran en línea (preview); el resto se descarga como adjunto.
-    private static final Set<String> INLINE_CONTENT_TYPES =
-            Set.of("application/pdf", "image/png", "image/jpeg");
 
     // =========================================================================
     // DOCENTE — gestión de materiales
@@ -84,12 +67,10 @@ public class ConceptMaterialService {
         TeacherProfile teacher = requireTeacher(username);
         ConceptContent content = requireOwnedConcept(conceptId, teacher);
 
-        validateFile(file);
-        String contentType = file.getContentType();
-        String fileName = sanitizeFileName(file.getOriginalFilename());
-        validateContentType(contentType, fileName);
-
-        byte[] data = readBytes(file);
+        var validated = fileValidationService.material(file);
+        String contentType = validated.contentType();
+        String fileName = validated.fileName();
+        byte[] data = validated.data();
 
         // Reemplazo: se elimina el archivo previo (si lo hay) para mantener un solo adjunto.
         var existing = conceptMaterialRepository
@@ -201,43 +182,15 @@ public class ConceptMaterialService {
             throw new IllegalArgumentException("Este material no es un archivo descargable.");
         }
 
-        boolean inline = material.getContentType() != null
-                && INLINE_CONTENT_TYPES.contains(material.getContentType());
-
+        var validated = fileValidationService.historical(material.getFileData(),
+                material.getContentType(), material.getOriginalFileName(), false);
         return new MaterialDownload(
-                material.getFileData(),
-                material.getContentType(),
-                material.getOriginalFileName(),
-                inline);
+                validated.data(), validated.contentType(), validated.fileName(), validated.image());
     }
 
     // =========================================================================
     // VALIDACIONES
     // =========================================================================
-
-    private void validateFile(MultipartFile file) {
-        if (file == null || file.isEmpty()) {
-            throw new IllegalArgumentException("Debes adjuntar un archivo.");
-        }
-        if (file.getSize() > MAX_FILE_SIZE_BYTES) {
-            throw new IllegalArgumentException("El archivo supera el tamaño máximo permitido (10 MB).");
-        }
-    }
-
-    private void validateContentType(String contentType, String fileName) {
-        String normalizedType = contentType == null ? "" : contentType.trim().toLowerCase(Locale.ROOT);
-        Set<String> allowedExtensions = ALLOWED_TYPES.get(normalizedType);
-        if (allowedExtensions == null) {
-            throw new IllegalArgumentException(
-                    "Tipo de archivo no permitido. Solo se aceptan PDF, diapositivas (PPT/PPTX) e imágenes (PNG/JPG).");
-        }
-        // No se confía solo en la extensión, pero debe ser coherente con el Content-Type.
-        String extension = extensionOf(fileName);
-        if (extension == null || !allowedExtensions.contains(extension)) {
-            throw new IllegalArgumentException(
-                    "La extensión del archivo no coincide con su tipo permitido.");
-        }
-    }
 
     /** Valida y normaliza una URL de enlace externo: solo http/https, sin esquemas peligrosos. */
     private String validateUrl(String rawUrl) {
@@ -257,40 +210,6 @@ public class ConceptMaterialService {
             throw new IllegalArgumentException("La URL contiene un esquema no permitido.");
         }
         return url;
-    }
-
-    /**
-     * Sanitiza el nombre original del archivo: descarta cualquier componente de ruta
-     * (previene path traversal) y caracteres de control que permitirían inyectar cabeceras.
-     */
-    private String sanitizeFileName(String rawName) {
-        if (rawName == null || rawName.isBlank()) {
-            return "archivo";
-        }
-        // Toma solo el último segmento tras / o \ y elimina secuencias "..".
-        String name = rawName.replace('\\', '/');
-        name = name.substring(name.lastIndexOf('/') + 1);
-        name = name.replace("..", "").replaceAll("[\\r\\n\"]", "").trim();
-        if (name.isEmpty()) {
-            return "archivo";
-        }
-        return name.length() > 255 ? name.substring(name.length() - 255) : name;
-    }
-
-    private String extensionOf(String fileName) {
-        int dot = fileName.lastIndexOf('.');
-        if (dot < 0 || dot == fileName.length() - 1) {
-            return null;
-        }
-        return fileName.substring(dot + 1).toLowerCase(Locale.ROOT);
-    }
-
-    private byte[] readBytes(MultipartFile file) {
-        try {
-            return file.getBytes();
-        } catch (Exception ex) {
-            throw new IllegalArgumentException("No se pudo leer el archivo adjunto.");
-        }
     }
 
     private String cleanTitle(String value) {

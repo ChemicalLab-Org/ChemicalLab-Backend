@@ -4,8 +4,6 @@ import com.morales.chemicallab.dto.*;
 import com.morales.chemicallab.service.WhiteboardSessionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ContentDisposition;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -13,7 +11,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
@@ -122,27 +119,7 @@ public class WhiteboardTeacherController {
 
     /** Construye la respuesta HTTP de descarga de la captura final como imagen en línea. */
     static ResponseEntity<byte[]> snapshotResponse(WhiteboardSnapshotDownload download) {
-        ContentDisposition disposition = ContentDisposition.builder("inline")
-                .filename(download.fileName() != null ? download.fileName() : "captura",
-                        StandardCharsets.UTF_8)
-                .build();
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentDisposition(disposition);
-        headers.setContentType(resolveMediaType(download.contentType()));
-        headers.setContentLength(download.data().length);
-
-        return ResponseEntity.ok().headers(headers).body(download.data());
+        return SafeFileResponse.of(download.data(), download.contentType(), download.fileName());
     }
 
-    private static MediaType resolveMediaType(String contentType) {
-        if (contentType == null || contentType.isBlank()) {
-            return MediaType.APPLICATION_OCTET_STREAM;
-        }
-        try {
-            return MediaType.parseMediaType(contentType);
-        } catch (Exception ex) {
-            return MediaType.APPLICATION_OCTET_STREAM;
-        }
-    }
 }
