@@ -134,7 +134,12 @@ class StorageQueriesDbTest {
         a.send(f.drawDestination(),f.text("mine","create-a"));assertThat(a.await(x->x.contains("create-a"),5000)).isNotNull();
         teacher.send(f.drawDestination(),f.text("other","create-b"));assertThat(teacher.await(x->x.contains("create-b"),5000)).isNotNull();
         a.send(f.drawDestination(),f.deletion("TEXT","mine","delete-a"));assertThat(a.await(x->x.contains("delete-a"),5000)).isNotNull();
-        String before=f.state();a.frame("SEND\ndestination:"+f.drawDestination()+"\ncontent-type:application/json\nclient-event-id:over-limit\n\n"+f.text("new","over-limit")+"\0");assertThat(a.await(x->x.contains("STORAGE_QUOTA_EXCEEDED"),5000)).contains("over-limit");assertThat(f.state()).isEqualTo(before);
+        String before=f.state();a.frame("SEND\ndestination:"+f.drawDestination()+"\ncontent-type:application/json\nclient-event-id:over-limit\n\n"+f.text("new","over-limit")+"\0");
+        String quotaResponse=a.await(x->x.contains("STORAGE_QUOTA_EXCEEDED"),5000);assertThat(quotaResponse).contains("over-limit");assertThat(f.state()).isEqualTo(before);
+        var quotaAudit=f.sql().queryForMap("select * from system_logs where target_id=? and metadata='reason=STORAGE_QUOTA_EXCEEDED' order by id desc limit 1",f.board);
+        assertThat(quotaAudit.get("event_type")).isEqualTo("STOMP_DENIED");assertThat(quotaAudit.get("outcome")).isEqualTo("REJECTED");
+        assertThat(quotaAudit.get("actor_user_id")).isEqualTo(f.student.getId());assertThat(quotaResponse).contains(quotaAudit.get("correlation_id").toString());
+        assertThat(quotaAudit.toString()).doesNotContain("over-limit",f.PASSWORD,"TEXT_CREATE");
         b.send(f.drawDestination(),f.text("mine","foreign-restore"));assertThat(b.await(x->x.contains("DRAW_REJECTED"),5000)).isNotNull();
         cap("OWNERSHIP_COUNT",1); // Historical excess must not revoke restoration of existing identities.
         a.send(f.drawDestination(),f.text("mine","own-restore"));assertThat(a.await(x->x.contains("own-restore"),5000)).isNotNull();assertThat(used("BOARD",f.board,"OWNERSHIP_COUNT")).isEqualTo(2);
@@ -167,7 +172,8 @@ class StorageQueriesDbTest {
             } finally {release.countDown();pool.shutdownNow();}
         }
         int deleted=0;for(int i=0;i<4;i++){var result=retention.batch(cutoff,false);assertThat(result.deleted()).isLessThanOrEqualTo(2);deleted+=result.deleted();}
-        assertThat(deleted).isEqualTo(5);assertThat(retention.batch(cutoff,false).deleted()).isZero();assertThat(used("ACCOUNT",f.student.getId(),"USAGE_COUNT")).isEqualTo(before-5);assertThat(f.sql().queryForObject("select count(*) from system_logs",Long.class)).isEqualTo(audit);
+        assertThat(deleted).isEqualTo(5);assertThat(retention.batch(cutoff,false).deleted()).isZero();assertThat(used("ACCOUNT",f.student.getId(),"USAGE_COUNT")).isEqualTo(before-5);assertThat(f.sql().queryForObject("select count(*) from system_logs",Long.class)).isEqualTo(audit+3);
+        assertThat(f.sql().queryForObject("select count(*) from system_logs where event_type='TECHNICAL_RETENTION_EXECUTED'",Long.class)).isEqualTo(3);
         assertThatThrownBy(()->retention.batch(LocalDateTime.now(),false)).isInstanceOf(IllegalArgumentException.class);
     }
 

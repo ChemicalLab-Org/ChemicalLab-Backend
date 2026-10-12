@@ -10,6 +10,12 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class AuditSafetyTest {
+    @Test void retentionScopeAcceptsOnlyValidatedCutoffAndBoundedCounts(){
+        assertThat(AuditSafety.metadata("cutoff=2025-01-01T00:00:00;candidates=2;deleted=2;batchSize=2;ids=1,2;users=secret;body=secret"))
+            .isEqualTo("cutoff=2025-01-01T00:00:00;candidates=2;deleted=2;batchSize=2");
+        assertThat(AuditSafety.metadata("cutoff=2025-02-30T00:00:00;candidates=1001;deleted=-1;batchSize=2\nFORGED_LOG")).isNull();
+        assertThat(AuditSafety.metadata("cutoff=2025-01-01T00:00:00\nFORGED_LOG;deleted=99999")).isNull();
+    }
     @Test void productionCannotInstallAuditSchemaEvenOnDisposableNamedUrl(){
         var env=mock(org.springframework.core.env.Environment.class);
         when(env.getActiveProfiles()).thenReturn(new String[]{"prod"});

@@ -70,11 +70,12 @@ public class WhiteboardWebSocketController {
         var accessor=org.springframework.messaging.simp.stomp.StompHeaderAccessor.wrap(message);
         var actor=accessor.getUser() instanceof org.springframework.security.core.Authentication authentication && authentication.getPrincipal() instanceof com.morales.chemicallab.security.SessionPrincipal p ? p : null;
         var correlation=message.getHeaders().get("auditCorrelation") instanceof java.util.UUID id ? id : java.util.UUID.randomUUID();
-        try(var context=com.morales.chemicallab.security.audit.AuditContext.open(correlation)){
-            if(audit!=null) audit.record(ex instanceof IllegalArgumentException || ex instanceof org.springframework.security.access.AccessDeniedException ? com.morales.chemicallab.entity.LogEventType.STOMP_DENIED : com.morales.chemicallab.entity.LogEventType.OPERATION_FAILED,
-                actor,"STOMP",com.morales.chemicallab.security.audit.AuditSafety.requestedId(accessor.getDestination()),"reason="+(ex instanceof IllegalArgumentException || ex instanceof org.springframework.security.access.AccessDeniedException?"STOMP_PERMISSION":"STOMP_FAILURE"),null);
-        }
         boolean quota=com.morales.chemicallab.security.storage.StorageErrors.quota(ex);
+        boolean rejected=quota || ex instanceof IllegalArgumentException || ex instanceof org.springframework.security.access.AccessDeniedException;
+        try(var context=com.morales.chemicallab.security.audit.AuditContext.open(correlation)){
+            if(audit!=null) audit.record(rejected ? com.morales.chemicallab.entity.LogEventType.STOMP_DENIED : com.morales.chemicallab.entity.LogEventType.OPERATION_FAILED,
+                actor,"STOMP",com.morales.chemicallab.security.audit.AuditSafety.requestedId(accessor.getDestination()),"reason="+(quota?"STORAGE_QUOTA_EXCEEDED":rejected?"STOMP_PERMISSION":"STOMP_FAILURE"),null);
+        }
         String error = quota ? com.morales.chemicallab.security.storage.StorageErrors.message() : ex instanceof IllegalArgumentException ? ex.getMessage() : "No se pudo aplicar la acción. Resincroniza la pizarra.";
         String id = org.springframework.messaging.simp.stomp.StompHeaderAccessor.wrap(message).getFirstNativeHeader("client-event-id");
         if (id == null || id.length() > 100) id = "";

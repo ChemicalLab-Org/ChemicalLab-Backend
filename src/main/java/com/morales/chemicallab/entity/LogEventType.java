@@ -79,6 +79,7 @@ public enum LogEventType {
     WHITEBOARD_PARTICIPANT_INTERACTION_UPDATED(LogCategory.WHITEBOARD),
 
     // Sistema / administración
+    TECHNICAL_RETENTION_EXECUTED(LogCategory.ADMIN),
     SYSTEM_HEALTH_CHECK(LogCategory.SYSTEM),
     ADMIN_ACTION(LogCategory.ADMIN);
 

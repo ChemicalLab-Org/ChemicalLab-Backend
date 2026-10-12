@@ -79,6 +79,7 @@ La evidencia obligatoria de operaciones confirmadas sí tiene atomicidad durable
 | REST_DENIED | AuditRequestFilter, respuesta final /api | Ausente; 400/401/403/409/413/429 relevantes, sesión verificada cuando exista y objetivo solicitado numérico cuando se reconoce |
 | STOMP_DENIED | Interceptor inbound y handler privado | Ausente; rechazo CONNECT/SEND/SUBSCRIBE/permiso/entrada; no registra cada mensaje válido, latido ni entrega por destinatario |
 | OPERATION_FAILED | Filtro REST para 5xx y fallos STOMP operativos | Ausente; resultado FAILED, código fijo, nunca un éxito de transacción revertida |
+| TECHNICAL_RETENTION_EXECUTED | TechnicalRetentionService.batch | Lote real de borrado de usage_events antes sin evidencia administrativa; ahora evidencia SUCCESS en la transacción de borrado, estado y liberación de cuotas, con actor verificado del contexto HTTP |
 
 LOGOUT histórico queda legible; los nuevos tipos distinguen explícitamente
 revocación individual/global. Los enums RESULT_VIEWED, SYSTEM_HEALTH_CHECK,
@@ -163,6 +164,55 @@ del administrador, con límite 100, paginación y orden createdAt,id de T07-B. L
 no exponen mutaciones. El trigger protege DML ordinario, sin declarar inmutabilidad
 frente a un administrador DB que pueda desactivarlo o alterar tablas/funciones.
 No hay retención ni borrado automático de auditoría; T07-B solo selecciona usage_events.
+
+### Lotes administrativos de retención y cuota STOMP
+
+Corrección de la revisión de PR #63 sobre
+`8078caeca0f83fda5a221dc0579e4aa7baf4c1d8`: los arneses locales ReviewAudit.java
+y ReviewQuotaClassification.java se ejecutaron nuevamente antes de editar el código.
+El primero reprodujo HTTP 200, deleted=1 e incremento de system_logs=0 y repitió
+cinco controles T08 aprobados. El segundo reprodujo STORAGE_QUOTA_EXCEEDED con
+OPERATION_FAILED/FAILED/reason=STOMP_FAILURE. Los arneses, logs y datos ficticios
+permanecen fuera de la PR; no se publica evidencia sensible.
+
+Cada lote coordinado, no simulado, que elimina al menos una fila emite exactamente
+un TECHNICAL_RETENTION_EXECUTED de categoría ADMIN, resultado SUCCESS y objetivo
+TechnicalRetention/1 (la fila singleton de coordinación, no un ID eliminado).
+Actor y correlación se obtienen del contexto autenticado del administrador y del
+request del servidor. El acceso HTTP continúa reservado al administrador.
+Metadata se limita a cutoff ISO local validado, candidates, deleted y batchSize
+(cantidades entre 0 y 1000); identifica el alcance exclusivamente sobre usage_events.
+No contiene listas de usuarios, IDs eliminados, descripciones ni contenidos.
+La fecha cutoff conserva la semántica LocalDateTime del contrato T07-B.
+
+El evento confirma junto con todos los DELETE, technical_retention_state y las
+liberaciones USAGE_COUNT de los triggers T07-B. Si falla la auditoría obligatoria,
+HTTP responde 503 AUDIT_UNAVAILABLE y se revierten las tres clases de cambio.
+Recuperar el destino permite un reintento explícito, sin evidencia de éxito duplicada
+de la operación fallida. Si otros escritores dejan cero borrados efectivos tras
+seleccionar candidatos, no se avanza el estado ni se emite un evento de borrado.
+
+Simulation=true, coordinated=false y ausencia de candidatos conservan sus resultados
+distintos en la respuesta, sin mutación durable de datos/estado/cuotas ni evento
+TECHNICAL_RETENTION_EXECUTED. El bloqueo de coordinación de la simulación es temporal.
+Los rechazos HTTP por retención deshabilitada o permisos insuficientes y los fallos
+pueden generar la muestra REST_DENIED/OPERATION_FAILED ya documentada; no significan
+un borrado realizado. delete-enabled=false sigue siendo el valor por defecto, sin
+scheduler nuevo. System_logs y registros académicos siguen protegidos de la retención.
+
+El handler privado STOMP reconoce P7501 mediante StorageErrors.quota antes de
+clasificar la evidencia: STOMP_DENIED/REJECTED/reason=STORAGE_QUOTA_EXCEEDED.
+Una avería operativa distinta conserva OPERATION_FAILED/FAILED/reason=STOMP_FAILURE.
+No extrae texto SQL ni mensajes de excepción. Preserva code/error privados,
+clientEventId, auditCorrelationId, accepted=false y resync=true; el presupuesto de
+rechazos anterior sigue aplicando, sin promesa de historial exhaustivo.
+
+El primer pase de corrección ejecutó 41 casos: un fallo en la aserción nueva de
+históricos, cero errores/omisiones. La aserción excluía por tipo también los lotes
+de pruebas previas; se corrigió para excluir solo la fila recién insertada y
+comprobar que todos los históricos permanecen completos. No se contabiliza ese
+pase como validación aprobada. Los demás casos, incluidos rollback íntegro por
+auditoría averiada y las dos clasificaciones STOMP, aprobaron sus aserciones.
 
 Antes de una futura publicación, con autorización operativa separada:
 

@@ -11,6 +11,7 @@ import java.util.List;
 @Service @RequiredArgsConstructor
 public class TechnicalRetentionService {
     private final JdbcTemplate jdbc;
+    private final AuditLogService audit;
     @Value("${app.retention.delete-enabled:false}") private boolean enabled;
     @Value("${app.retention.batch-size:500}") private int batchSize;
     @Value("${app.retention.minimum-age-days:180}") private int minimumAgeDays;
@@ -28,7 +29,13 @@ public class TechnicalRetentionService {
         if(!simulation && !ids.isEmpty()) {
             // Selected IDs are bounded; quota releases belong to this same transaction.
             for(long id:ids)deleted+=jdbc.update("delete from usage_events where id=? and occurred_at<?",id,cutoff);
-            jdbc.update("update technical_retention_state set last_cutoff=?,last_deleted=? where id=1",cutoff,deleted);
+            if(deleted>0) {
+                jdbc.update("update technical_retention_state set last_cutoff=?,last_deleted=? where id=1",cutoff,deleted);
+                audit.recordInfo(com.morales.chemicallab.entity.LogEventType.TECHNICAL_RETENTION_EXECUTED,
+                    "TechnicalRetention",1L,null,null,null,
+                    "cutoff="+cutoff.format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                        +";candidates="+ids.size()+";deleted="+deleted+";batchSize="+batchSize);
+            }
         }
         return new Result(simulation,true,ids.size(),deleted,List.copyOf(ids),cutoff);
     }
