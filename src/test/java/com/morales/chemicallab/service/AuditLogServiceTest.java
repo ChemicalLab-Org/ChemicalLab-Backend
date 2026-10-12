@@ -67,21 +67,6 @@ class AuditLogServiceTest {
     }
 
     @Test
-    void recordLoginFailed_noGuardaContrasenaYUsaWarning() {
-        service.recordLoginFailed("usuario.intentado", "Contraseña incorrecta.");
-
-        SystemLog saved = capturePersisted();
-        assertThat(saved.getEventType()).isEqualTo(LogEventType.LOGIN_FAILED);
-        assertThat(saved.getCategory()).isEqualTo(LogCategory.AUTH);
-        assertThat(saved.getSeverity()).isEqualTo(LogSeverity.WARNING);
-        assertThat(saved.getActorUserId()).isNull();
-        assertThat(saved.getActorUsername()).isEqualTo("usuario.intentado");
-        // El intento fallido nunca debe guardar la contraseña ingresada.
-        assertThat(saved.getDescription()).doesNotContainIgnoringCase("password");
-        assertThat(saved.getMetadata()).isNull();
-    }
-
-    @Test
     void recordWarning_passwordReset_noFiltraContrasenaTemporal() {
         // Reproduce la llamada que hacen los servicios al restablecer una contraseña:
         // jamás se pasa la contraseña temporal generada, solo datos no sensibles.
@@ -94,17 +79,17 @@ class AuditLogServiceTest {
         assertThat(saved.getSeverity()).isEqualTo(LogSeverity.WARNING);
         assertThat(saved.getMetadata()).isEqualTo("role=ESTUDIANTE");
         assertThat(saved.getMetadata()).doesNotContainIgnoringCase("password");
-        assertThat(saved.getDescription()).doesNotContainIgnoringCase("password");
+        assertThat(saved.getDescription()).isEqualTo("PASSWORD_RESET");
     }
 
     @Test
-    void safePersist_noPropagaErroresDeLogging() {
+    void requiredEvidenceFailurePropagatesAndPreventsBusinessSuccess() {
         doThrow(new RuntimeException("BD no disponible")).when(auditLogWriter).persist(any());
 
-        // Un fallo al guardar el log no debe romper la operación que lo originó.
-        assertThatCode(() -> service.recordInfo(LogEventType.EVALUATION_CREATED, "Evaluation",
+        // T08: a caller cannot confirm a critical action without its required evidence.
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.recordInfo(LogEventType.EVALUATION_CREATED, "Evaluation",
                 1L, "Examen", "Crear evaluación", "Se creó una evaluación.", null))
-                .doesNotThrowAnyException();
+                .isInstanceOf(RuntimeException.class);
     }
 
     // =========================================================================
@@ -232,8 +217,8 @@ class AuditLogServiceTest {
 
     private SystemLog capturePersisted() {
         ArgumentCaptor<SystemLog> captor = ArgumentCaptor.forClass(SystemLog.class);
-        verify(auditLogWriter).persist(captor.capture());
-        return captor.getValue();
+        verify(auditLogWriter, org.mockito.Mockito.atLeastOnce()).persist(captor.capture());
+        return captor.getAllValues().get(0);
     }
 
     private SystemLog sampleLog() {

@@ -28,6 +28,7 @@ public class AccountSessionService {
     private final UserAccountRepository users;
     private final JwtService jwt;
     private final EntityManager entityManager;
+    private final com.morales.chemicallab.service.AuditLogService audit;
 
     /** Account writers and successful login lock before changing credentials or issuing sessions. */
     @Transactional(propagation = Propagation.MANDATORY)
@@ -106,6 +107,8 @@ public class AccountSessionService {
             var principal = (SessionPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
             sessions.findById(principal.sessionId()).orElseThrow(AccountSessionService::invalid).setRevokedAt(Instant.now());
         }
+        audit.recordInfo(all ? com.morales.chemicallab.entity.LogEventType.SESSIONS_REVOKED : com.morales.chemicallab.entity.LogEventType.SESSION_REVOKED,
+                "UserAccount",user.getId(),null,null,null,"revokedAll="+all);
     }
 
     private void validate(AccountSession session, UserAccount user, long version) {

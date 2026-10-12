@@ -240,7 +240,7 @@ public class WhiteboardSessionService {
                 session.getName(), "Actualizar interacción individual",
                 "Se actualizó el permiso de interacción de un estudiante en la sesión «"
                         + session.getName() + "».",
-                "override=" + request.interactionOverride());
+                "override=" + request.interactionOverride() + ";participantUserId=" + student.getUser().getId());
 
         broadcastService.broadcastControl(
                 controlEvent(session, WhiteboardControlEventType.PARTICIPANT_PERMISSION_UPDATED, student.getId()));

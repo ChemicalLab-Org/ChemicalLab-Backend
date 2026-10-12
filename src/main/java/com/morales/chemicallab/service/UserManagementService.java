@@ -210,6 +210,7 @@ public class UserManagementService {
                 .orElseThrow(() -> new IllegalArgumentException("Estudiante no encontrado."));
 
         sessions.lock(student.getUser());
+        long auditPreviousVersion = student.getUser().getCredentialsVersion();
         validateStudentBelongsToTeacher(student, teacher);
 
         // Se calculan los campos modificados ANTES de aplicar los cambios. Solo se guarda
@@ -256,6 +257,11 @@ public class UserManagementService {
         // El log se registra solo tras una actualización correcta. El actor (docente) y su rol
         // se resuelven en AuditLogService a partir del contexto de seguridad. No se guardan
         // contraseñas, contraseñas temporales, tokens ni los valores de los campos.
+        if(changedFields.contains("estado"))
+            auditLogService.recordInfo(Boolean.TRUE.equals(student.getUser().getActive())?LogEventType.USER_REACTIVATED:LogEventType.USER_DEACTIVATED,
+                    "UserAccount",student.getUser().getId(),null,null,null,null);
+        if (student.getUser().getCredentialsVersion()!=auditPreviousVersion)
+            auditLogService.recordInfo(LogEventType.PERMISSIONS_CHANGED,"UserAccount",student.getUser().getId(),null,null,null,null);
         auditLogService.recordInfo(LogEventType.USER_UPDATED, TARGET_USER, student.getUser().getId(),
                 student.getStudentCode(), "Actualizar estudiante",
                 "El docente actualizó la información del estudiante " + student.getStudentCode() + ".",

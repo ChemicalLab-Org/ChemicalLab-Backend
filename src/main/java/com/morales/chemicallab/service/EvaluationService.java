@@ -254,6 +254,7 @@ public class EvaluationService {
         evaluation.setUpdatedAt(accessPolicy.now());
         if (evaluation.getCreatedAt() == null) evaluation.setCreatedAt(accessPolicy.now());
         evaluationRepository.save(evaluation);
+        auditLogService.recordInfo(LogEventType.EVALUATION_ARCHIVED,TARGET_EVALUATION,evaluation.getId(),null,null,null,null);
         return toEvaluationResponse(evaluation);
     }
 
@@ -285,6 +286,7 @@ public class EvaluationService {
         // tienen ni piden alternativas.
         if (type == QuestionType.MULTIPLE_CHOICE) {
             replaceOptions(question, request.options());
+            auditLogService.recordInfo(LogEventType.EVALUATION_UPDATED,TARGET_EVALUATION,evaluation.getId(),null,null,null,"questionId="+question.getId());
         } else {
             logOpenQuestionSaved(evaluation, "Crear pregunta abierta");
         }
@@ -311,6 +313,7 @@ public class EvaluationService {
 
         if (type == QuestionType.MULTIPLE_CHOICE) {
             replaceOptions(question, request.options());
+            auditLogService.recordInfo(LogEventType.EVALUATION_UPDATED,TARGET_EVALUATION,evaluation.getId(),null,null,null,"questionId="+question.getId());
         } else {
             // Si la pregunta pasó a abierta, se eliminan las alternativas que pudiera tener.
             clearOptions(question);
@@ -348,6 +351,7 @@ public class EvaluationService {
 
         question.setActive(false);
         questionRepository.save(question);
+        auditLogService.recordInfo(LogEventType.EVALUATION_UPDATED,TARGET_EVALUATION,evaluation.getId(),null,null,null,"questionId="+question.getId());
         return toQuestionResponse(question);
     }
 
@@ -470,6 +474,7 @@ public class EvaluationService {
         recordLifecycleEvent(attempt, AttemptEventType.ATTEMPT_STARTED,
                 "El estudiante inició el intento.", null);
 
+        auditLogService.recordInfo(LogEventType.EVALUATION_ATTEMPT_STARTED,TARGET_EVALUATION,evaluation.getId(),null,null,null,"attemptId="+attempt.getId());
         return toAttemptResponse(attempt);
     }
 

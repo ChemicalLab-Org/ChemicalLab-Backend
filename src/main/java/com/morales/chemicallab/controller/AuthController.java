@@ -22,12 +22,20 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
+    private final com.morales.chemicallab.security.audit.AuditRejections audit;
     private final com.morales.chemicallab.security.AuthenticationLimits limits;
 
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request) {
         var budget = limits.login(request);
-        return authService.login(request, budget);
+        try { return authService.login(request, budget); }
+        catch (com.morales.chemicallab.exception.LoginRejectedException ex) {
+            if(org.springframework.web.context.request.RequestContextHolder.getRequestAttributes()
+                    instanceof org.springframework.web.context.request.ServletRequestAttributes attributes)
+                attributes.getRequest().setAttribute(com.morales.chemicallab.security.audit.AuditRequestFilter.LOGIN_REJECTED,true);
+            audit.record(com.morales.chemicallab.entity.LogEventType.LOGIN_FAILED,null,"UserAccount",null,"reason="+ex.auditReason(),request.usernameOrEmail());
+            throw ex;
+        }
     }
 
     @GetMapping("/me")

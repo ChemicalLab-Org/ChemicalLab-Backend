@@ -12,8 +12,6 @@ import com.morales.chemicallab.repository.SystemLogRepository;
 import com.morales.chemicallab.repository.UserAccountRepository;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -23,31 +21,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import com.morales.chemicallab.security.SessionPrincipal;
+import com.morales.chemicallab.security.audit.*;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Servicio central de trazabilidad. Registra eventos importantes del sistema y permite
- * consultarlos desde el panel administrativo.
- *
- * <p>Principios de diseño:</p>
- * <ul>
- *   <li><strong>No rompe la operación principal:</strong> el guardado ocurre en una
- *       transacción aparte ({@link AuditLogWriter}) y cualquier error se captura aquí, de
- *       modo que un fallo de logging nunca impide iniciar sesión, crear un usuario o
- *       publicar una evaluación.</li>
- *   <li><strong>No guarda datos sensibles:</strong> nunca se registran contraseñas,
- *       contraseñas temporales, tokens ni respuestas completas de exámenes.</li>
- *   <li><strong>Actor automático:</strong> para eventos de usuarios autenticados el actor
- *       se resuelve del contexto de seguridad; el login tiene métodos específicos.</li>
- * </ul>
- */
+/** Commit-coupled audit evidence; query contracts remain paginated and administrator-only. */
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
+@Transactional(propagation = org.springframework.transaction.annotation.Propagation.SUPPORTS, readOnly = true)
 public class AuditLogService {
-
-    private static final Logger log = LoggerFactory.getLogger(AuditLogService.class);
 
     private final SystemLogRepository systemLogRepository;
     private final UserAccountRepository userAccountRepository;
@@ -75,53 +58,51 @@ public class AuditLogService {
         recordEvent(eventType, LogSeverity.ERROR, targetType, targetId, targetLabel, action, description, metadata);
     }
 
-    /**
-     * Registra un evento resolviendo el actor a partir del usuario autenticado. La
-     * categoría se deriva del tipo de evento. El guardado se delega al escritor en una
-     * transacción aparte y cualquier fallo se captura para no afectar la operación origen.
-     */
+    /** Mandatory evidence shares the calling business transaction. */
     public void recordEvent(LogEventType eventType, LogSeverity severity, String targetType,
                             Long targetId, String targetLabel, String action,
                             String description, String metadata) {
-        UserAccount actor = resolveAuthenticatedUser();
+        SessionPrincipal actor = resolveAuthenticatedUser();
         SystemLog systemLog = baseBuilder(eventType, severity)
-                .actorUserId(actor != null ? actor.getId() : null)
-                .actorUsername(actor != null ? actor.getUsername() : null)
-                .actorRole(actor != null ? actor.getRole() : null)
-                .targetType(targetType)
+                .actorUserId(actor != null ? actor.userId() : null)
+                .actorUsername(actor != null ? AuditSafety.text(actor.username(),100) : null)
+                .actorRole(actor != null ? actor.role() : null)
+                .targetType(AuditSafety.target(targetType))
                 .targetId(targetId)
-                .targetLabel(targetLabel)
-                .action(action)
-                .description(description)
-                .metadata(metadata)
+                .targetLabel(null)
+                .action(eventType.name())
+                .description(eventType.name())
+                .metadata(AuditSafety.metadata(metadata))
                 .build();
-        safePersist(systemLog);
+        if ("UserAccount".equals(targetType) && targetId!=null) {
+            userAccountRepository.findById(targetId).ifPresent(user -> {
+                String extra="credentialsVersion="+user.getCredentialsVersion();
+                systemLog.setMetadata(AuditSafety.metadata((systemLog.getMetadata()==null?"":systemLog.getMetadata()+";")+extra));
+            });
+        }
+        auditLogWriter.persist(systemLog);
+        if(java.util.Set.of(LogEventType.PASSWORD_CHANGED,LogEventType.PASSWORD_RESET,LogEventType.USER_DEACTIVATED,
+                LogEventType.USER_REACTIVATED,LogEventType.PERMISSIONS_CHANGED).contains(eventType)
+                && (!org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive() || AuditContext.claimRevocation(targetId))) {
+            SystemLog revocation=baseBuilder(LogEventType.SESSIONS_REVOKED,LogSeverity.INFO)
+                .actorUserId(systemLog.getActorUserId()).actorUsername(systemLog.getActorUsername()).actorRole(systemLog.getActorRole())
+                .targetType(systemLog.getTargetType()).targetId(targetId).action("SESSIONS_REVOKED").description("SESSIONS_REVOKED")
+                .metadata(systemLog.getMetadata()).correlationId(systemLog.getCorrelationId()).createdAt(systemLog.getCreatedAt()).build();
+            auditLogWriter.persist(revocation);
+        }
+
     }
 
     /** Registra un inicio de sesión exitoso con el usuario autenticado como actor. */
     public void recordLoginSuccess(UserAccount user) {
         SystemLog systemLog = baseBuilder(LogEventType.LOGIN_SUCCESS, LogSeverity.INFO)
                 .actorUserId(user != null ? user.getId() : null)
-                .actorUsername(user != null ? user.getUsername() : null)
+                .actorUsername(user != null ? AuditSafety.text(user.getUsername(),100) : null)
                 .actorRole(user != null ? user.getRole() : null)
-                .action("Inicio de sesión")
-                .description("Inicio de sesión correcto.")
+                .targetType("UserAccount").targetId(user.getId()).action("LOGIN_SUCCESS")
+                .description("LOGIN_SUCCESS")
                 .build();
-        safePersist(systemLog);
-    }
-
-    /**
-     * Registra un intento de inicio de sesión fallido. El actor queda sin identificar
-     * (no hay sesión válida); solo se guarda el usuario o correo intentado y el motivo.
-     * Nunca se almacena la contraseña ingresada.
-     */
-    public void recordLoginFailed(String attemptedUsername, String reason) {
-        SystemLog systemLog = baseBuilder(LogEventType.LOGIN_FAILED, LogSeverity.WARNING)
-                .actorUsername(attemptedUsername)
-                .action("Inicio de sesión fallido")
-                .description(reason)
-                .build();
-        safePersist(systemLog);
+        auditLogWriter.persist(systemLog);
     }
 
     // =========================================================================
@@ -208,26 +189,14 @@ public class AuditLogService {
                 .eventType(eventType)
                 .category(eventType.getDefaultCategory())
                 .severity(severity)
-                .createdAt(LocalDateTime.now());
+                .createdAt(LocalDateTime.now(java.time.ZoneId.of("America/Lima")))
+                .outcome("SUCCESS").correlationId(AuditContext.correlation());
     }
 
-    /** Guarda el log sin propagar errores: la trazabilidad no debe romper la operación. */
-    private void safePersist(SystemLog systemLog) {
-        try {
-            auditLogWriter.persist(systemLog);
-        } catch (Exception ex) {
-            // No relanzamos: un fallo de logging no debe afectar la operación principal.
-            log.warn("No fue posible registrar el evento de trazabilidad {}: {}",
-                    systemLog.getEventType(), ex.getMessage());
-        }
-    }
-
-    private UserAccount resolveAuthenticatedUser() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || authentication.getName() == null) {
-            return null;
-        }
-        return userAccountRepository.findByUsername(authentication.getName()).orElse(null);
+    private SessionPrincipal resolveAuthenticatedUser() {
+        Authentication authentication=SecurityContextHolder.getContext().getAuthentication();
+        return authentication!=null && authentication.isAuthenticated()
+                && authentication.getPrincipal() instanceof SessionPrincipal principal ? principal : null;
     }
 
     private AuditLogResponse toResponse(SystemLog systemLog) {
@@ -245,6 +214,6 @@ public class AuditLogService {
                 systemLog.getAction(),
                 systemLog.getDescription(),
                 systemLog.getMetadata(),
-                systemLog.getCreatedAt());
+                systemLog.getCreatedAt(), systemLog.getOutcome(), systemLog.getCorrelationId(), systemLog.getDeclaredIdentifier());
     }
 }

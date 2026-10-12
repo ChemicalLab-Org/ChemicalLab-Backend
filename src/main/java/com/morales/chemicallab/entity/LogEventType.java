@@ -14,6 +14,13 @@ public enum LogEventType {
     LOGIN_SUCCESS(LogCategory.AUTH),
     LOGIN_FAILED(LogCategory.AUTH),
     LOGOUT(LogCategory.AUTH),
+    PASSWORD_CHANGED(LogCategory.AUTH),
+    SESSION_REVOKED(LogCategory.AUTH),
+    SESSIONS_REVOKED(LogCategory.AUTH),
+    PERMISSIONS_CHANGED(LogCategory.USER_MANAGEMENT),
+    REST_DENIED(LogCategory.AUTH),
+    STOMP_DENIED(LogCategory.AUTH),
+    OPERATION_FAILED(LogCategory.SYSTEM),
 
     // Gestión de usuarios
     USER_CREATED(LogCategory.USER_MANAGEMENT),
@@ -72,6 +79,7 @@ public enum LogEventType {
     WHITEBOARD_PARTICIPANT_INTERACTION_UPDATED(LogCategory.WHITEBOARD),
 
     // Sistema / administración
+    TECHNICAL_RETENTION_EXECUTED(LogCategory.ADMIN),
     SYSTEM_HEALTH_CHECK(LogCategory.SYSTEM),
     ADMIN_ACTION(LogCategory.ADMIN);
 

@@ -184,7 +184,7 @@ public class SecurityConfig {
         config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
         // Necesario para que el frontend pueda leer la cabecera Authorization en la respuesta
         config.setAllowCredentials(true);
-        config.setExposedHeaders(List.of("Retry-After"));
+        config.setExposedHeaders(List.of("Retry-After", "X-Correlation-ID"));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/api/**", config);

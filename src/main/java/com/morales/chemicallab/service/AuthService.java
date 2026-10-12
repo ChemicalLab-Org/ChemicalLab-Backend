@@ -62,8 +62,9 @@ public class AuthService {
         user.setTemporaryPassword(false);
         userAccountRepository.save(user);
 
-        return new PasswordChangeResponse("La contraseña fue actualizada correctamente.", false,
-                sessions.issue(user), BEARER);
+        String replacement = sessions.issue(user);
+        auditLogService.recordInfo(com.morales.chemicallab.entity.LogEventType.PASSWORD_CHANGED,"UserAccount",user.getId(),null,null,null,null);
+        return new PasswordChangeResponse("La contraseña fue actualizada correctamente.", false, replacement, BEARER);
     }
 
     /**
@@ -127,8 +128,7 @@ public class AuthService {
         boolean active = user != null && Boolean.TRUE.equals(user.getActive());
         if (!allowed || !matches || !identity || !active) {
             String reason = !allowed ? "ACCOUNT_RATE_LIMITED" : user == null ? "ACCOUNT_NOT_FOUND" : !active ? "ACCOUNT_DISABLED" : !identity ? "IDENTITY_CHANGED" : "PASSWORD_MISMATCH";
-            auditLogService.recordLoginFailed(identifier, reason);
-            throw new LoginRejectedException();
+            throw new LoginRejectedException(reason);
         }
         // Failed attempts never serialize on a real account's row: otherwise parallel
         // guesses could reveal alias association by waiting for another verification.
@@ -137,8 +137,7 @@ public class AuthService {
                 || passwordEncoder.matches(request.password(), user.getPassword());
         if (!stillMatches || !Boolean.TRUE.equals(user.getActive())
                 || !(identifier.equals(user.getUsername()) || identifier.equals(user.getEmail()))) {
-            auditLogService.recordLoginFailed(identifier, "ACCOUNT_CHANGED");
-            throw new LoginRejectedException();
+            throw new LoginRejectedException("ACCOUNT_CHANGED");
         }
         if (passwordEncoder instanceof CompatiblePasswordEncoder compatible && compatible.upgradeEncoding(user.getPassword())) {
             user.upgradePasswordHash(user.getPassword(), compatible.upgradeVerified(request.password()));

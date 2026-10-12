@@ -78,6 +78,14 @@ public class SystemLog {
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
+    @Column(length = 16)
+    private String outcome;
+
+    private java.util.UUID correlationId;
+
+    @Column(length = 80)
+    private String declaredIdentifier;
+
     @PrePersist
     protected void onCreate() {
         if (createdAt == null) {
