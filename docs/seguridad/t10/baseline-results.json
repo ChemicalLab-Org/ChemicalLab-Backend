@@ -1,0 +1,86 @@
+[ {
+  "scenario" : "start:evaluations",
+  "statuses" : [ 201, 400 ],
+  "baseline" : true
+}, {
+  "scenario" : "last-attempt:evaluations",
+  "statuses" : [ 201, 400 ],
+  "baseline" : true
+}, {
+  "scenario" : "start:evaluations",
+  "statuses" : [ 201, 400 ],
+  "baseline" : true
+}, {
+  "scenario" : "last-attempt:evaluations",
+  "statuses" : [ 201, 400 ],
+  "baseline" : true
+}, {
+  "scenario" : "start:evaluations",
+  "statuses" : [ 201, 400 ],
+  "baseline" : true
+}, {
+  "scenario" : "last-attempt:evaluations",
+  "statuses" : [ 201, 400 ],
+  "baseline" : true
+}, {
+  "scenario" : "insert:whiteboard_participants",
+  "statuses" : [ 200, 500 ],
+  "baseline" : true
+}, {
+  "scenario" : "insert:whiteboard_participants",
+  "statuses" : [ 200, 500 ],
+  "baseline" : true
+}, {
+  "scenario" : "insert:whiteboard_participants",
+  "statuses" : [ 200, 500 ],
+  "baseline" : true
+}, {
+  "scenario" : "insert:concept_materials",
+  "statuses" : [ 201, 201 ],
+  "baseline" : true
+}, {
+  "scenario" : "insert:concept_materials",
+  "statuses" : [ 201, 201 ],
+  "baseline" : true
+}, {
+  "scenario" : "insert:concept_materials",
+  "statuses" : [ 201, 201 ],
+  "baseline" : true
+}, {
+  "scenario" : "save-submit:evaluations",
+  "statuses" : [ 200, 200 ],
+  "baseline" : true
+}, {
+  "scenario" : "save-submit:evaluations",
+  "statuses" : [ 200, 200 ],
+  "baseline" : true
+}, {
+  "scenario" : "save-submit:evaluations",
+  "statuses" : [ 200, 200 ],
+  "baseline" : true
+}, {
+  "scenario" : "submit-submit:evaluations",
+  "statuses" : [ 200, 400 ],
+  "baseline" : true
+}, {
+  "scenario" : "join-after-close",
+  "statuses" : [ 200, 200 ],
+  "participants" : 1,
+  "baseline" : true
+}, {
+  "scenario" : "different-users:evaluations",
+  "statuses" : [ 201, 201 ],
+  "baseline" : true
+}, {
+  "scenario" : "delete-then-replace",
+  "statuses" : [ 204, 503 ],
+  "baseline" : true
+}, {
+  "scenario" : "permission-rejoin",
+  "persistedOverride" : "FOLLOW_GLOBAL",
+  "baseline" : true
+}, {
+  "scenario" : "permission-presence",
+  "persistedOverride" : "FOLLOW_GLOBAL",
+  "baseline" : true
+} ]

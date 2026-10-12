@@ -1,0 +1,514 @@
+{
+  "date": "2026-10-12",
+  "timezone": "America/Lima",
+  "branch": "security/t10-concurrencia",
+  "merge_performed": false,
+  "implementation_and_tests_sha": "c21b15eee974aad640c2ff9a9c7e7e78869eebd9",
+  "backend_base_sha": "67833d10aea1d9d19fce3e3ed92ecf1aa8520ad5",
+  "publication_note": "The later delivery commit only adds docs/seguridad/02-10-concurrencia.md and docs/seguridad/t10/*.json. Its published HEAD is identified in the PR delivery, not claimed as a rerun.",
+  "backend_full": {
+    "command": "mvn -o clean package with test profile and disposable PostgreSQL",
+    "tests": 593,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "finished_at": "2026-10-12T08:57:42-05:00",
+    "elapsed": "08:55 min",
+    "result": "BUILD SUCCESS",
+    "concurrency_tests": 17,
+    "independent_backend_process_pids": [
+      24516,
+      29496
+    ],
+    "suites": [
+      {
+        "name": "com.morales.chemicallab.ChemicalLabBackendApplicationTests",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.config.AccountProvisioningTest",
+        "tests": 17,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.config.SecureStartupTest",
+        "tests": 21,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.config.StartupPersistenceDbTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.exception.GlobalExceptionHandlerTest",
+        "tests": 12,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.security.AccountSessionsDbTest",
+        "tests": 18,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.security.AuditReliabilityDbTest",
+        "tests": 12,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.security.AuditSafetyTest",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.security.ClientOriginResolverTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.security.ConcurrencyDbTest",
+        "tests": 17,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.security.EvaluationWindowHttpDbTest",
+        "tests": 10,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.security.FileDeliveryHttpDbTest",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.security.files.FileValidationTest",
+        "tests": 22,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.security.files.FileWorkerLimitsTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.security.JdbcDriverRegressionDbTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.security.JwtRotationTest",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.security.limits.InputBudgetsTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.security.limits.TransportInputFilterTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.security.LoginHardeningTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.security.LoginProtectionDbTest",
+        "tests": 13,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.security.PasswordPolicyTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.security.RetentionAuditDbTest",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.security.StompAuditClassificationTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.security.StorageQueriesDbTest",
+        "tests": 15,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.security.TransportLimitsDbTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.security.WhiteboardConnectionLimitsTest",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.security.WhiteboardSecurityTransportDbTest",
+        "tests": 18,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.AcademicSupervisionServiceTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.AdminServiceTest",
+        "tests": 19,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.AuditLogQueryDbTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.AuditLogServiceTest",
+        "tests": 9,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.AuthServiceTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.ChemicalEngineServiceTest",
+        "tests": 37,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.ChemicalNomenclatureServiceTest",
+        "tests": 38,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.ChemistryCatalogServiceTest",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.ConceptContentPersistenceDbTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.ConceptContentServiceTest",
+        "tests": 15,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.ConceptMaterialServiceTest",
+        "tests": 13,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.EvaluationAccessPolicyTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.EvaluationAttemptEventPersistenceDbTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.EvaluationOpenQuestionPersistenceDbTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.EvaluationServiceTest",
+        "tests": 88,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.StudentUsageRecordServiceTest",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.StudentValidationTest",
+        "tests": 26,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.SystemHealthServiceTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.UsageMetricServiceTest",
+        "tests": 9,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.UsagePanelServiceTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.UserManagementServiceTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.WhiteboardDrawEventServiceTest",
+        "tests": 23,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.WhiteboardInteractionPolicyTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.WhiteboardJoinPersistenceDbTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.service.WhiteboardSessionServiceTest",
+        "tests": 36,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "com.morales.chemicallab.validation.InputValidationTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    ]
+  },
+  "baseline_partial": {
+    "tests": 9,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "finished_at": "2026-10-12T08:41:12-05:00",
+    "independent_backend_process_pids": [
+      25280,
+      30316
+    ],
+    "application_main_and_pom_sha": "67833d10aea1d9d19fce3e3ed92ecf1aa8520ad5",
+    "purpose": "Assertions reproduce defective outcomes and preserved T05 controls; not a security pass."
+  },
+  "join_rollback_before_partial": {
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "finished_at": "2026-10-12T08:47:06-05:00",
+    "purpose": "Original join metric writer, after board/material lock fixes but before afterCommit correction; not the final SHA.",
+    "metric_delta": 1,
+    "participant_count": 0
+  },
+  "intermediate_partial": {
+    "tests": 62,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "finished_at": "2026-10-12T08:44:45-05:00",
+    "purpose": "13 concurrency plus material and board unit tests before metric correction and final test expansion; not final SHA."
+  },
+  "packaged_formats": {
+    "checks": 10,
+    "passed": 10,
+    "failed": 0,
+    "formats": [
+      "PDF",
+      "PPT",
+      "PPTX",
+      "PNG",
+      "JPEG"
+    ],
+    "valid_and_truncated": true,
+    "outer_jar_child_command_verified": true,
+    "implementation_sha": "c21b15eee974aad640c2ff9a9c7e7e78869eebd9"
+  },
+  "frontend_partial": {
+    "sha": "ed068f7bc268d0b2cfa3904b1b2a152414a8883c",
+    "modified": false,
+    "tests": 11,
+    "passed": 11,
+    "skipped": 0,
+    "files": [
+      "src/app/core/services/query-pagination.spec.ts",
+      "src/app/features/concepts/material-delivery.spec.ts"
+    ],
+    "started_at": "2026-10-12T08:38:42-05:00",
+    "duration_seconds": 24.66,
+    "full_suite_rerun": false,
+    "production_build_rerun": false,
+    "existing_warning": "polyfills.ts is bundled but outside TypeScript compilation"
+  },
+  "disposable_db": {
+    "postgresql_major": 18,
+    "host": "127.0.0.1",
+    "port": 55440,
+    "database": "chemicallab_t01_test",
+    "temporary_schemas_after_tests": 0,
+    "other_connections_after_tests": 0,
+    "child_processes_stopped": true,
+    "cluster_stopped": true,
+    "production_access": false,
+    "production_ddl": false
+  },
+  "preservation": {
+    "local_security_documents": 8,
+    "local_security_document_hashes_unchanged": true,
+    "e2e_files": 16,
+    "e2e_hashes_unchanged": true,
+    "original_audit_sha256": "1eff5d59f7a114dfee91cb557a0405c2f7247e43cd2926d2542172c0255e499b",
+    "original_backend_branch": "develop",
+    "original_backend_sha": "67833d10aea1d9d19fce3e3ed92ecf1aa8520ad5",
+    "original_backend_clean": true,
+    "original_frontend_branch": "feature/validaciones-datos-institucionales",
+    "original_frontend_sha": "e88589635a8269c50ee0f53fccf157f0d0985034",
+    "original_frontend_untracked_e2e_preserved": true,
+    "previous_versioned_notes_changed": false
+  },
+  "observed_existing_frontend_deployment": {
+    "sha": "ed068f7bc268d0b2cfa3904b1b2a152414a8883c",
+    "context": "Vercel",
+    "state": "success",
+    "url": "https://vercel.com/carlos-morales-projects1/chemical-lab-frontend/5baxQiva7x7vFQrGyKYoSL4tHcbS",
+    "manual_deployment": false,
+    "new_t10_frontend_deployment": false
+  },
+  "evidence_sha256": {
+    "jar": "8eb9affcb5ef60c6a4e42229ba0d4daecbe74fff03ce855f57b1bfc8c125c316",
+    "backend_full_log": "30e4067ddf6a926e991adcf4acac82beeeace20b8d7a529838de5e3603d6c09a",
+    "baseline_log": "52a2531b1f8a14804544d75c32c7950c60d03639738c7695eef400819d5d93eb",
+    "join_rollback_before_log": "605a7d5beaa19aecf30cf5ec5c17801e349c7d13c3c2aee693075097de21a3b4",
+    "intermediate_partial_log": "8127c112e78298372429efcc2c8d7ff550a9a398f2b1fa5359eb74ec63af9b69",
+    "frontend_partial_log": "f61a3fd8d8abf3c220b75767433c7e3cdb5fb354c0fb6a19929935896d7e602a",
+    "packaged_formats_log": "98682c6916adf7255c53f5b89ce77b87eee313abcc8bce5deccebeb63d77fff2",
+    "baseline_results": "11bdfc801fc8f279f91f4bbb4a3129c62f2aab2e2b6899d30b6d2564616d3e0f",
+    "join_rollback_before_results": "b4925e18cf3883457991e0950ad32f9a3c32a8ad0fd0ccc90c577a74b4e4940f",
+    "final_results": "a74b4b43bafbe6818613fb2fda69c9beadeaa84c0980989633a1377d1f573ee0"
+  },
+  "limits": [
+    "Bounded concurrency, not sustained load or production certification",
+    "All API writers must adopt the parent-row lock protocol; mixed old/new instances not certified",
+    "No schema changes; historical duplicates reported and preserved",
+    "SEC-13 sustained measurements, plans, latency, memory, indexes/backfill and operational quotas/alerts/retention remain pending",
+    "VER-01 Jetty Site, maintained JDK/Node, actual image/digest/OS/JRE and production DB/TLS remain pending",
+    "Simple STOMP broker does not distribute events across instances",
+    "No merge, T11, institution model, manual deploy, global installation, production rotation or retention"
+  ]
+}

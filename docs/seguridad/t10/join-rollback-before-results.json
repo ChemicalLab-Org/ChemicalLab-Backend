@@ -1,0 +1,7 @@
+[ {
+  "metricDelta" : 1,
+  "baseline" : true,
+  "status" : 500,
+  "participants" : 0,
+  "scenario" : "join-rollback-metric"
+} ]
