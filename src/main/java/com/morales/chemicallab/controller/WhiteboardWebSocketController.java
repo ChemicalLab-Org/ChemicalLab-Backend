@@ -1,5 +1,7 @@
 package com.morales.chemicallab.controller;
 
+import com.morales.chemicallab.security.limits.InputRejectedException;
+
 import com.morales.chemicallab.dto.WhiteboardDrawEventRequest;
 import com.morales.chemicallab.service.WhiteboardDrawEventService;
 import com.morales.chemicallab.service.WhiteboardSessionService;
@@ -35,7 +37,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class WhiteboardWebSocketController {
 
-    private static final Logger log = LoggerFactory.getLogger(WhiteboardWebSocketController.class);
 
     private final WhiteboardDrawEventService whiteboardDrawEventService;
     private final WhiteboardSessionService whiteboardSessionService;
@@ -64,10 +65,12 @@ public class WhiteboardWebSocketController {
      */
     @MessageExceptionHandler
     @SendToUser(destinations = "/queue/whiteboard-errors", broadcast = false)
-    public Map<String, Object> handleError(Exception ex) {
-        log.debug("Evento de pizarra rechazado: {}", ex.getMessage());
+    public Map<String, Object> handleError(Exception ex, org.springframework.messaging.Message<?> message) {
         String error = ex instanceof IllegalArgumentException ? ex.getMessage() : "No se pudo aplicar la acción. Resincroniza la pizarra.";
-        return Map.of("code", "DRAW_REJECTED", "resync", true, "error", error);
+        String id = org.springframework.messaging.simp.stomp.StompHeaderAccessor.wrap(message).getFirstNativeHeader("client-event-id");
+        if (id == null || id.length() > 100) id = "";
+        String code = ex instanceof InputRejectedException rejection ? rejection.code() : "DRAW_REJECTED";
+        return Map.of("code", code, "resync", true, "accepted", false, "clientEventId", id, "error", error);
     }
 
     private void requirePrincipal(Principal principal) {

@@ -1,5 +1,10 @@
 package com.morales.chemicallab.security;
 
+import com.morales.chemicallab.security.limits.AccountTrafficLimits;
+import com.morales.chemicallab.security.limits.InputRejectedException;
+import com.morales.chemicallab.security.limits.JsonInputGuard;
+import com.morales.chemicallab.security.limits.TransportLimits;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
@@ -19,6 +24,10 @@ import java.util.regex.Pattern;
 public class WhiteboardStompAuthChannelInterceptor implements ChannelInterceptor {
     private final AccountSessionService sessions;
     private final WhiteboardConnections connections;
+    private final AccountTrafficLimits traffic;
+    private final JsonInputGuard guard;
+    private final TransportLimits limits;
+    private final org.springframework.beans.factory.ObjectProvider<org.springframework.messaging.simp.SimpMessagingTemplate> messaging;
     private static final Pattern TOPIC = Pattern.compile("/topic/whiteboards/([1-9][0-9]*)");
     private static final Pattern SEND = Pattern.compile("/app/whiteboards/([1-9][0-9]*)/(draw|presence)");
 
@@ -42,10 +51,14 @@ public class WhiteboardStompAuthChannelInterceptor implements ChannelInterceptor
                 accessor.removeNativeHeader("Authorization");
                 return message;
             }
+            var principal = connections.principal(id);
+            // Includes heartbeat and rejected operations: flooding rejections cannot flood the outbound queue.
+            traffic.take(principal.userId(), "frame");
             connections.validate(id);
             if (accessor.getMessageType() == SimpMessageType.HEARTBEAT) return message;
             String destination = accessor.getDestination();
             if (command == StompCommand.SUBSCRIBE) {
+                traffic.take(principal.userId(), "control");
                 if ("/user/queue/whiteboard-errors".equals(destination)) {
                     connections.subscribe(id, accessor.getSubscriptionId(), 0); return message;
                 }
@@ -54,7 +67,23 @@ public class WhiteboardStompAuthChannelInterceptor implements ChannelInterceptor
                 connections.subscribe(id, accessor.getSubscriptionId(), board);
             } else if (command == StompCommand.SEND) {
                 connections.observe(id, board(SEND, destination));
+                try {
+                    traffic.take(principal.userId(), destination.endsWith("/draw") ? "draw" : "presence");
+                    if (!(message.getPayload() instanceof byte[] bytes)) throw InputRejectedException.invalid();
+                    if (bytes.length > limits.getStompBytes()) throw InputRejectedException.size();
+                    if (destination.endsWith("/draw")) guard.check(bytes, false, false);
+                    else if (bytes.length != 0) throw InputRejectedException.invalid();
+                } catch (InputRejectedException ex) {
+                    var headers = org.springframework.messaging.simp.SimpMessageHeaderAccessor.create(org.springframework.messaging.simp.SimpMessageType.MESSAGE);
+                    headers.setSessionId(id); headers.setLeaveMutable(true);
+                    String eventId = accessor.getFirstNativeHeader("client-event-id");
+                    if (eventId == null || eventId.length() > 100) eventId = "";
+                    messaging.getObject().convertAndSendToUser(principal.getName(), "/queue/whiteboard-errors",
+                            java.util.Map.of("code", ex.code(), "error", ex.getMessage(), "resync", true, "accepted", false, "clientEventId", eventId), headers.getMessageHeaders());
+                    return null;
+                }
             } else if (command == StompCommand.UNSUBSCRIBE) {
+                traffic.take(principal.userId(), "control");
                 connections.unsubscribe(id, accessor.getSubscriptionId());
             } else throw new AccessDeniedException("PROTOCOL_REJECTED");
             return message;

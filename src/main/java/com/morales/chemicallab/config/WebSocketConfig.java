@@ -1,5 +1,7 @@
 package com.morales.chemicallab.config;
 
+import com.morales.chemicallab.security.limits.TransportLimits;
+
 import com.morales.chemicallab.security.WhiteboardStompAuthChannelInterceptor;
 import com.morales.chemicallab.security.WhiteboardConnections;
 import com.morales.chemicallab.security.WhiteboardOutboundInterceptor;
@@ -38,6 +40,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private final WhiteboardStompAuthChannelInterceptor authChannelInterceptor;
     private final WhiteboardConnections connections;
     private final WhiteboardOutboundInterceptor outboundInterceptor;
+    private final TransportLimits limits;
 
     @Value("${app.cors.allowed-origins}")
     private String allowedOrigins;
@@ -48,7 +51,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         String[] origins = parseOrigins();
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns(origins)
-                .withSockJS();
+                .withSockJS().setHttpMessageCacheSize(32).setStreamBytesLimit(limits.getSendBufferBytes());
     }
 
     @Override
@@ -63,6 +66,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void configureClientInboundChannel(ChannelRegistration registration) {
         // Autentica cada conexión STOMP (CONNECT) con el JWT antes de procesar mensajes.
         registration.interceptors(authChannelInterceptor);
+        registration.taskExecutor().corePoolSize(4).maxPoolSize(4).queueCapacity(256);
     }
 
     private String[] parseOrigins() {
@@ -74,9 +78,12 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override public void configureClientOutboundChannel(ChannelRegistration registration) {
         registration.interceptors(outboundInterceptor);
+        registration.taskExecutor().corePoolSize(4).maxPoolSize(4).queueCapacity(256);
     }
 
     @Override public void configureWebSocketTransport(WebSocketTransportRegistration registration) {
         registration.addDecoratorFactory(connections::decorate);
+        registration.setMessageSizeLimit(limits.getStompBytes()).setSendBufferSizeLimit(limits.getSendBufferBytes())
+                .setSendTimeLimit(limits.getSendTimeMs()).setTimeToFirstMessage(5000);
     }
 }

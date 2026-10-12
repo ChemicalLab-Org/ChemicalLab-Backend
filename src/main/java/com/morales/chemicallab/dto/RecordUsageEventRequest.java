@@ -30,5 +30,6 @@ public record RecordUsageEventRequest(
         @Size(max = 300, message = "La descripción es demasiado larga.")
         String description,
 
-        Map<String, String> metadata
+        @Size(max = 32, message = "La metadata tiene demasiadas entradas.")
+        Map<@Size(max = 60) String, @Size(max = 300) String> metadata
 ) {}

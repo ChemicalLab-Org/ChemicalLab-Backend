@@ -80,7 +80,7 @@ class LoginHardeningTest {
     }
 
     @Test void encoderAcceptsLongUnicodePhrases() {
-        var encoder = new SecurityConfig(null, null, null, null).passwordEncoder();
+        var encoder = new SecurityConfig(null, null, null, null, null, null, null).passwordEncoder();
         String phrase = "🧪 Química y cielos abiertos ".repeat(4);
         String hash = encoder.encode(phrase);
         assertThat(encoder.matches(phrase, hash)).isTrue();

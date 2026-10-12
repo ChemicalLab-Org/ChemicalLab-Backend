@@ -1,5 +1,9 @@
 package com.morales.chemicallab.security;
 
+import com.morales.chemicallab.security.limits.AccountTrafficLimits;
+import com.morales.chemicallab.security.limits.InputRejectedException;
+import com.morales.chemicallab.security.limits.TransportLimits;
+
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +23,8 @@ public class WhiteboardConnections {
     public static final long VALIDATION_DEADLINE_MS = 5000;
     private final AccountSessionService sessions;
     private final WhiteboardRealtimeAccess access;
+    private final TransportLimits limits;
+    private final AccountTrafficLimits traffic;
     private final Map<String, Connection> connections = new ConcurrentHashMap<>();
     private final ScheduledExecutorService watchdog = Executors.newSingleThreadScheduledExecutor(r -> daemon(r, "whiteboard-watchdog"));
     private final ThreadPoolExecutor validators = new ThreadPoolExecutor(4, 4, 0, TimeUnit.SECONDS,
@@ -48,7 +54,15 @@ public class WhiteboardConnections {
     public WebSocketHandler decorate(WebSocketHandler delegate) {
         return new WebSocketHandlerDecorator(delegate) {
             @Override public void afterConnectionEstablished(WebSocketSession socket) throws Exception {
-                connections.put(socket.getId(), new Connection(socket));
+                if (socket instanceof org.springframework.web.socket.adapter.NativeWebSocketSession) {
+                    // Both StandardWebSocketSession and WebSocketServerSockJsSession delegate to the native buffer.
+                    socket.setTextMessageSizeLimit(limits.getStompBytes() * 2);
+                    socket.setBinaryMessageSizeLimit(limits.getStompBytes());
+                }
+                synchronized (WhiteboardConnections.this) {
+                    if (connections.size() >= limits.getConnections()) { socket.close(new CloseStatus(4429, "CONNECTION_LIMIT")); return; }
+                    connections.put(socket.getId(), new Connection(socket));
+                }
                 try { super.afterConnectionEstablished(socket); }
                 catch (Exception ex) { remove(socket.getId()); throw ex; }
             }
@@ -59,31 +73,49 @@ public class WhiteboardConnections {
         };
     }
 
-    public void authenticated(String id, SessionPrincipal principal) {
+    public synchronized void authenticated(String id, SessionPrincipal principal) {
         Connection connection = require(id);
         if (connection.principal != null) throw new AccessDeniedException("PROTOCOL_REJECTED");
+        if (connections.values().stream().filter(c -> c.principal != null && c.principal.userId().equals(principal.userId())).count() >= limits.getAccountConnections())
+            throw new InputRejectedException(429, "CONNECTION_LIMIT", "Demasiadas conexiones para esta cuenta.");
         connection.principal = principal;
         connection.validatedAt = System.nanoTime();
     }
 
     public SessionPrincipal validate(String id) {
-        Connection connection = require(id);
-        if (connection.principal == null) throw new AccessDeniedException("CONNECT_REQUIRED");
-        sessions.revalidate(connection.principal);
-        return connection.principal;
+        SessionPrincipal principal = principal(id);
+        sessions.revalidate(principal);
+        return principal;
+    }
+
+    public SessionPrincipal principal(String id) {
+        var principal = require(id).principal;
+        if (principal == null) throw new AccessDeniedException("CONNECT_REQUIRED");
+        return principal;
     }
 
     public void observe(String id, long board) {
         var principal = validate(id);
         access.observe(principal, board);
-        require(id).targets.add(board);
+        synchronized (this) {
+            var connection = require(id);
+            if (!connection.targets.contains(board) && connection.targets.size() >= limits.getConnectionTargets())
+                throw new InputRejectedException(429, "SUBSCRIPTION_LIMIT", "Demasiados destinos abiertos.");
+            connection.targets.add(board);
+        }
     }
 
-    public void subscribe(String id, String subscription, long board) {
+    public synchronized void subscribe(String id, String subscription, long board) {
+        var connection = require(id);
+        long count = connections.values().stream().filter(c -> c.principal != null && c.principal.userId().equals(connection.principal.userId()))
+                .mapToLong(c -> c.subscriptions.size()).sum();
+        if (count >= limits.getAccountSubscriptions() || connection.subscriptions.containsValue(board))
+            throw new InputRejectedException(429, "SUBSCRIPTION_LIMIT", "Demasiadas suscripciones o destino repetido.");
+        if (subscription != null && subscription.length() > 100) throw new AccessDeniedException("PROTOCOL_REJECTED");
         if (subscription == null || subscription.isBlank() || require(id).subscriptions.putIfAbsent(subscription, board) != null)
             throw new AccessDeniedException("PROTOCOL_REJECTED");
     }
-    public void unsubscribe(String id, String subscription) {
+    public synchronized void unsubscribe(String id, String subscription) {
         if (subscription == null || require(id).subscriptions.remove(subscription) == null)
             throw new AccessDeniedException("PROTOCOL_REJECTED");
     }
@@ -102,7 +134,8 @@ public class WhiteboardConnections {
     }
 
     public void reject(String id, Exception error) {
-        if (error instanceof AuthenticationException) close(id, 4001, "SESSION_INVALID");
+        if (error instanceof InputRejectedException) close(id, 4429, "TRAFFIC_LIMIT");
+        else if (error instanceof AuthenticationException) close(id, 4001, "SESSION_INVALID");
         else if (error instanceof AccessDeniedException) close(id, 4003,
                 "BOARD_ACCESS_LOST".equals(error.getMessage()) ? "BOARD_ACCESS_LOST" : "PROTOCOL_REJECTED");
         else close(id, 4503, "VALIDATION_UNAVAILABLE");
@@ -136,6 +169,7 @@ public class WhiteboardConnections {
         return connection;
     }
     private void sweep() {
+        traffic.expire();
         long now = System.nanoTime();
         connections.forEach((id, connection) -> {
             if (now - connection.validatedAt > TimeUnit.MILLISECONDS.toNanos(VALIDATION_DEADLINE_MS)) {

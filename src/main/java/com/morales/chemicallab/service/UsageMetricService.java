@@ -1,5 +1,7 @@
 package com.morales.chemicallab.service;
 
+import com.morales.chemicallab.security.limits.JsonInputGuard;
+
 import com.morales.chemicallab.dto.RecordUsageEventRequest;
 import com.morales.chemicallab.dto.UsageCountResponse;
 import com.morales.chemicallab.dto.UsageEventResponse;
@@ -52,6 +54,7 @@ public class UsageMetricService {
 
     private final UsageEventRepository usageEventRepository;
     private final UserAccountRepository userAccountRepository;
+    private final JsonInputGuard inputGuard;
 
     // =========================================================================
     // REGISTRO
@@ -73,6 +76,7 @@ public class UsageMetricService {
         UserAccount user = userAccountRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalArgumentException("El usuario autenticado no existe."));
 
+        inputGuard.metadata(request.metadata());
         UsageEvent event = UsageEvent.builder()
                 .userId(user.getId())
                 .username(user.getUsername())
