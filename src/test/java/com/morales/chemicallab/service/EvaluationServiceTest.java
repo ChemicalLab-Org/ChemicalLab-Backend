@@ -34,6 +34,45 @@ import static org.mockito.Mockito.when;
 class EvaluationServiceTest {
 
     @Test
+    void futureEmptySectionMustBlockCorrectionBeforeAndAfterActivation() {
+        assertMembershipCannotUnlockCorrection(true);
+    }
+
+    @Test
+    void finishedCurrentGroupMustBlockCorrectionBeforeAndAfterIncorporation() {
+        assertMembershipCannotUnlockCorrection(false);
+    }
+
+    private void assertMembershipCannotUnlockCorrection(boolean futureSection) {
+        var owner = teacher(1L, "docente1");
+        var pupil = student(2L, "T05A", "3", "A");
+        var newcomer = student(3L, "T05NEW", "3", futureSection ? "B" : "A");
+        newcomer.getUser().setActive(false);
+        stubStudent(pupil);
+        var exam = evaluation(10L, owner, EvaluationStatus.PUBLISHED, 1);
+        var slotA = assignment(11L, exam, owner, "3", "A", accessPolicy.now().plusHours(1));
+        var slotB = assignment(12L, exam, owner, "3", "B", accessPolicy.now().plusDays(2));
+        slotB.setStartAt(accessPolicy.now().plusDays(1));
+        stubGroup(exam, slotA, List.of(pupil));
+        if (futureSection) {
+            when(assignmentRepository.findByEvaluationOrderByAssignedAtDesc(exam)).thenReturn(List.of(slotA, slotB));
+            when(studentProfileRepository.findByGradeAndSection("3", "B")).thenReturn(List.of(newcomer));
+        }
+        stubAttemptsUsed(exam, pupil, 1L);
+        var attempt = gradedAttempt(20L, exam, pupil, 1, 3, 5);
+        when(attemptRepository.findById(20L)).thenReturn(Optional.of(attempt));
+        var before = service.getStudentAttemptResult("T05A", 20L);
+        var generalBefore = service.getAttempt("T05A", 20L);
+        newcomer.getUser().setActive(true);
+        if (!futureSection) when(studentProfileRepository.findByGradeAndSection("3", "A")).thenReturn(List.of(pupil, newcomer));
+        var after = service.getStudentAttemptResult("T05A", 20L);
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertThat(before.reviewAvailable()).as("before roster change").isFalse(),
+                () -> assertThat(generalBefore.correctionVisible()).as("general DTO before roster change").isFalse(),
+                () -> assertThat(after.reviewAvailable()).as("after roster change").isFalse());
+    }
+
+    @Test
     void t05Sec11GeneralAttemptMustNotRevealCorrectionWhileGroupCanAnswer() {
         var owner = teacher(1L, "docente1");
         var pupil = student(2L, "T05A", "3", "A");
@@ -751,9 +790,8 @@ class EvaluationServiceTest {
         EvaluationAttempt at = gradedAttempt(50L, eval, alumno, 1, 2, 2);
         when(attemptRepository.findByStudentAndStatusInOrderBySubmittedAtDesc(eq(alumno), any()))
                 .thenReturn(List.of(at));
-        // El grupo es la sola alumna asignada y ya usó su único intento: la revisión abre y
-        // por tanto se expone su nota.
-        stubGroup(eval, assignment(40L, eval, docente, "3", "A"), List.of(alumno));
+        // El padrón agotó intentos y la asignación venció: se expone la nota cerrada.
+        stubGroup(eval, assignment(40L, eval, docente, "3", "A", accessPolicy.now().minusMinutes(1)), List.of(alumno));
         stubAttemptsUsed(eval, alumno, 1L);
 
         List<StudentResultSummaryResponse> res = service.listStudentResults("EST0001");
@@ -761,11 +799,11 @@ class EvaluationServiceTest {
         assertThat(res).hasSize(1);
         assertThat(res.get(0).score()).isEqualTo(2);
         assertThat(res.get(0).percentage()).isEqualTo(100.0);
-        // Todas las asignadas finalizaron: la revisión está disponible.
+        // La ventana cerró definitivamente: la revisión está disponible.
         assertThat(res.get(0).reviewAvailable()).isTrue();
         assertThat(res.get(0).canViewDetailedFeedback()).isTrue();
         assertThat(res.get(0).reviewUnlockReason())
-                .isEqualTo(ReviewUnlockReason.ALL_ASSIGNED_STUDENTS_FINISHED);
+                .isEqualTo(ReviewUnlockReason.DEADLINE_REACHED);
         assertThat(res.get(0).assignedStudentsCount()).isEqualTo(1);
         assertThat(res.get(0).finishedStudentsCount()).isEqualTo(1);
         assertThat(res.get(0).pendingStudentsCount()).isZero();
@@ -821,11 +859,11 @@ class EvaluationServiceTest {
     }
 
     // =========================================================================
-    // 26. Cuando todas las asignadas finalizaron, la revisión se habilita (Caso B)
+    // 26. Agotar intentos del padrón no libera revisión hasta cerrar la asignación.
     // =========================================================================
 
     @Test
-    void revisionDisponibleCuandoTodasFinalizaron() {
+    void revisionDisponibleSoloTrasVencerAsignacionAunqueTodasFinalizaron() {
         StudentProfile alumno = student(5L, "EST0001", "3", "A");
         stubStudent(alumno);
         TeacherProfile docente = teacher(1L, "docente1");
@@ -837,9 +875,15 @@ class EvaluationServiceTest {
         EvaluationAnswer ans = EvaluationAnswer.builder()
                 .id(60L).attempt(at).question(q).selectedOption(correcta).correct(true).pointsAwarded(2).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(at));
-        // Grupo de una sola alumna que ya usó su único intento: todas finalizaron.
-        stubGroup(eval, assignment(40L, eval, docente, "3", "A"), List.of(alumno));
+        var slot = assignment(40L, eval, docente, "3", "A", accessPolicy.now().plusHours(1));
+        stubGroup(eval, slot, List.of(alumno));
         stubAttemptsUsed(eval, alumno, 1L);
+        var locked = service.getStudentAttemptResult("EST0001", 50L);
+        assertThat(locked.reviewAvailable()).isFalse();
+        assertThat(locked.pendingStudentsCount()).isZero();
+        assertThat(locked.answers()).isEmpty();
+        assertThat(locked.score()).isNull();
+        slot.setDueAt(accessPolicy.now().minusMinutes(1));
         when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval)).thenReturn(List.of(q));
         when(optionRepository.findByQuestionAndActiveTrueOrderByOrderIndexAsc(q))
                 .thenReturn(List.of(incorrecta, correcta));
@@ -849,7 +893,7 @@ class EvaluationServiceTest {
 
         assertThat(res.reviewAvailable()).isTrue();
         assertThat(res.canViewDetailedFeedback()).isTrue();
-        assertThat(res.reviewUnlockReason()).isEqualTo(ReviewUnlockReason.ALL_ASSIGNED_STUDENTS_FINISHED);
+        assertThat(res.reviewUnlockReason()).isEqualTo(ReviewUnlockReason.DEADLINE_REACHED);
         assertThat(res.answers().get(0).correctOptionText()).isEqualTo("CaO");
         assertThat(res.score()).isEqualTo(2);
     }
@@ -2378,8 +2422,7 @@ class EvaluationServiceTest {
         StudentProfile alumno = student(5L, "EST0001", "3", "A");
         stubStudent(alumno);
         TeacherProfile docente = teacher(1L, "docente1");
-        // El grupo ya finalizó (revisión disponible), pero la calificación del intento sigue
-        // pendiente de revisión manual: la nota aún no se muestra.
+        // La ventana cerró definitivamente, pero la nota sigue pendiente de revisión manual.
         Evaluation eval = evaluation(10L, docente, EvaluationStatus.PUBLISHED, 1);
         EvaluationQuestion open = openQuestion(21L, eval, 3, false);
         EvaluationAttempt attempt = EvaluationAttempt.builder()
@@ -2390,7 +2433,7 @@ class EvaluationServiceTest {
         EvaluationAnswer openAnswer = EvaluationAnswer.builder()
                 .id(61L).attempt(attempt).question(open).answerText("Mi respuesta").reviewed(false).build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
-        stubGroup(eval, assignment(40L, eval, docente, "3", "A"), List.of(alumno));
+        stubGroup(eval, assignment(40L, eval, docente, "3", "A", accessPolicy.now().minusMinutes(1)), List.of(alumno));
         stubAttemptsUsed(eval, alumno, 1L);
         when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval))
                 .thenReturn(List.of(open));
@@ -2426,8 +2469,8 @@ class EvaluationServiceTest {
                 .id(61L).attempt(attempt).question(open).answerText("Mi respuesta").reviewed(true)
                 .pointsAwarded(4).teacherFeedback("Bien explicado.").build();
         when(attemptRepository.findById(50L)).thenReturn(Optional.of(attempt));
-        // El grupo finalizó y la calificación está cerrada: se revela todo.
-        stubGroup(eval, assignment(40L, eval, docente, "3", "A"), List.of(alumno));
+        // La asignación venció y la calificación está cerrada: se revela todo.
+        stubGroup(eval, assignment(40L, eval, docente, "3", "A", accessPolicy.now().minusMinutes(1)), List.of(alumno));
         stubAttemptsUsed(eval, alumno, 1L);
         when(questionRepository.findByEvaluationAndActiveTrueOrderByOrderIndexAsc(eval))
                 .thenReturn(List.of(open));

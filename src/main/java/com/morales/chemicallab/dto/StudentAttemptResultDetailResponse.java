@@ -33,21 +33,20 @@ public record StudentAttemptResultDetailResponse(
         // Indica si la calificación ya está cerrada (y por tanto la nota final es definitiva).
         boolean gradeClosed,
         LocalDateTime submittedAt,
-        // Se mantiene por compatibilidad: equivale a reviewAvailable (revisión desbloqueada
-        // para el grupo). Cuando es false, la corrección detallada no se expone.
+        // Exige cierre definitivo de asignaciones y nota cerrada/GRADED.
         boolean canViewDetailedFeedback,
         List<StudentAnswerResultResponse> answers,
         // --- Disponibilidad de la revisión para el grupo (18.6) ---
-        // true cuando la revisión detallada ya está desbloqueada (venció el plazo o todas
-        // las estudiantes asignadas finalizaron). false mientras siga bloqueada.
+        // true al vencer todas las asignaciones o cerrarse administrativamente.
+        // Los contadores del padrón actual no autorizan el desbloqueo.
         boolean reviewAvailable,
         boolean reviewLocked,
         ReviewUnlockReason reviewUnlockReason,
         // Fecha en que la revisión quedará (o quedó) disponible por plazo, si la evaluación
         // tiene fecha límite; null si no hay plazo definido.
         LocalDateTime reviewAvailableAt,
-        // Progreso general del grupo (sin nombres): cuántas estudiantes asignadas hay,
-        // cuántas ya finalizaron y cuántas siguen pendientes.
+        // Padrón activo actual (sin nombres), intentos agotados y pendientes.
+        // Datos informativos que pueden cambiar sin reabrir una ventana cerrada.
         int assignedStudentsCount,
         int finishedStudentsCount,
         int pendingStudentsCount,

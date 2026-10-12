@@ -42,21 +42,21 @@ se mantienen; ID de intento o asignación enviado por cliente no concede acceso.
 ## Política de corrección
 
 `EvaluationAccessPolicy` concentra ventana, admisión, escritura y exposición;
-`EvaluationService.computeReviewAvailability` resuelve oportunidades para **todas**
-las asignaciones activas y estudiantes activas, deduplicadas por ID. Una sección
+`EvaluationService.computeReviewAvailability` resuelve el cierre definitivo de **todas**
+las asignaciones activas, incluso vacías o futuras. Una sección
 cerrada no libera respuestas si otra sección todavía tiene oportunidad de rendir.
 Un inicio futuro cuenta como oportunidad pendiente. Con múltiples intentos,
 terminar el primero no agota las oportunidades del alumno.
 
 Se puede revisar cuando ninguna oportunidad vigente queda abierta: todas las
-asignaciones vencieron, todas las estudiantes agotaron intentos sin un intento
-que todavía admita escritura, o la evaluación/asignaciones se cerraron por
+asignaciones activas vencieron, o la evaluación/asignaciones se cerraron por
 archivo/desactivación. Las fechas opcionales no crean cierres ficticios; una
-asignación sin dueAt sigue abierta mientras quede alguien con intentos pendientes.
+asignación sin dueAt sigue abierta hasta un cierre administrativo explícito.
 Los contadores finished/pending conservan su sentido de intentos agotados, aunque
 la ventana haya cerrado para alguien que aún no terminó. El motivo histórico
-`ALL_ASSIGNED_STUDENTS_FINISHED` también representa cierre administrativo o de
-oportunidades; no implica que todas tengan una respuesta enviada.
+`ALL_ASSIGNED_STUDENTS_FINISHED` se conserva como nombre histórico para cierre
+administrativo; no implica que todas tengan una respuesta enviada. Agotar los
+intentos del padrón actual **no libera corrección**, ni siquiera con pending=0.
 
 La corrección requiere además `GRADED` y `gradeClosed=true`. Se aplica al DTO general
 de inicio/consulta/guardado/envío/salida y al detalle/listado de resultados. Antes
@@ -150,11 +150,11 @@ simulados; las verificaciones siguientes incluyen el stack HTTP completo y SQL r
 
 | Evidencia | Resultado |
 |---|---|
-| Backend clean package, incluyendo T01–T04 | 494 pruebas, 0 fallos, 0 errores, 0 omitidas; JAR Spring Boot generado |
+| Backend clean package, incluyendo T01–T04 | 499 pruebas, 0 fallos, 0 errores, 0 omitidas; JAR Spring Boot generado |
 | `EvaluationAccessPolicyTest` | Límites ±1 ns, start inclusivo/due exclusivo, opcionales, rangos inválidos, duración mínima, sin gracia, reloj con zona Tokio interpretado en Lima, exposición final |
-| `EvaluationWindowHttpDbTest`, 7 escenarios HTTP sobre PostgreSQL 18 desechable | Dos alumnas/secciones, rutas directas, rechazo ajeno/no asignado, intento no creado al rechazar, respuesta/índice intactos, calificación parcial, nota abierta/cerrada, ajustes, intentos múltiples, archivo/desactivación, recuperación, avance secuencial, carrera guardar/enviar/archivar |
-| HTTP con JVM `-Duser.timezone=Asia/Tokyo` | Los mismos 7 escenarios, 0 fallos, errores u omisiones; límites académicos de Lima independientes del equipo |
-| Angular con fixture STOMP real | 128 pruebas, 0 fallos u omisiones; DOM/HTTP de T05 y regresiones T02–T04 |
+| `EvaluationWindowHttpDbTest`, 10 escenarios HTTP sobre PostgreSQL 18 desechable | Dos alumnas/secciones, rutas directas, rechazo ajeno/no asignado, intento no creado al rechazar, respuesta/índice intactos, calificación parcial, nota abierta/cerrada, ajustes, intentos múltiples, archivo/desactivación, recuperación, avance secuencial, carrera guardar/enviar/archivar, futuras vacías y padrón mutable |
+| HTTP con JVM `-Duser.timezone=Asia/Tokyo` | Los mismos 10 escenarios, 0 fallos, errores u omisiones; límites académicos de Lima independientes del equipo |
+| Angular con fixture STOMP real | 129 pruebas, 0 fallos u omisiones; DOM/HTTP de T05 y regresiones T02–T04 |
 | Build Angular producción | Bundle inicial 943.56 kB; presupuestos originales conservados y pantalla de evaluación diferida. Persisten avisos SCSS y del entorno de tests previamente presentes |
 | Navegador real, localhost con API desechable | Programada sin inicio; disponible exactamente al inicio; respuestas objetiva/abierta guardadas; URL directa y recarga conservan respuestas; selección al dueAt rechazada y recuperación finaliza; revisión bloqueada hasta la otra sección; revisión disponible tras cierre de nota y plazo final |
 
@@ -181,6 +181,66 @@ esquemas; tienen límite automático de 30 minutos. Para T03 Angular usar su JSO
 local como `T03_LIVE_FIXTURE`, luego `npm test -- --watch=false` y `npm run build`.
 
 ## Límites y pendientes
+
+### Corrección del hallazgo de padrón mutable antes del merge
+
+Se reprodujo sobre backend PR #59 HEAD `6cd9e49a58fef1a99c332dc83da98d5c3cc4f244`
+(frontend #81 HEAD `4163d881dd1cb6925868ed24d64f6ef067b6ebed`): A agotó su único
+intento, B futura no tenía alumnas activas y el DTO general exponía score=7 y
+correctionVisible=true. También ocurría con una asignación disponible cuyo padrón
+había terminado. Activar/incorporar una alumna ocultaba otra vez la revisión, después
+de haberla revelado. Antes de corregir se ejecutaron dos pruebas de servicio y dos
+HTTP: 2 fallos de aserción en cada ejecución, 0 errores/omisiones. Logs locales
+`t05-roster-reproduction.log` y `t05-roster-http-reproduction.log`, no versionados.
+
+Se elige **esperar al cierre definitivo de todas las asignaciones**, eliminando la
+liberación anticipada por finalización grupal. No se introduce estado persistente,
+tabla, migración, gancho en altas/activaciones/cambios de sección ni modelo institucional.
+Los contadores de alumnas activas permanecen solo como datos informativos. Las
+asignaciones y límites del examen gobiernan admisión/escritura y revisión bajo los
+bloqueos ya existentes. Los resultados terminales siguen impidiendo crear nuevas
+asignaciones; no existe una operación de reactivación ni extensión de fechas de
+asignaciones cerradas. No es necesario añadir una carrera de cierre persistente/inicio:
+no se añadió ese mecanismo; se conserva la prueba de guardar/enviar/archivar.
+
+| Caso | Antes del cierre definitivo | Después del cierre definitivo |
+|---|---|---|
+| B futura y vacía, A con intentos agotados | Corrección bloqueada; B sin preguntas ni inicio antes de startAt | Solo se libera al vencer B o cerrarse administrativamente |
+| Grupo disponible con todos sus alumnos actuales terminados | Corrección bloqueada aunque finished=assigned y pending=0 | Nota/corrección requiere además gradeClosed y GRADED |
+| Alta/reactivación/cambio de sección | Puede rendir si ventana y reintentos lo permiten; ninguna corrección previa expuesta | Preguntas ocultas, inicio rechazado sin crear intento; revisión permanece disponible |
+| Asignación sin dueAt, padrón terminado/vacío | Permanece bloqueada indefinidamente | El docente debe desactivar las asignaciones restantes o archivar |
+| Intento IN_PROGRESS que cruza el cierre | Puede guardar dentro de su plazo | Rechaza guardar/avanzar; envío/GET conservan respuestas y finalizan; nota abierta permanece oculta |
+
+Tres escenarios nuevos en `EvaluationWindowHttpDbTest` comprueban esas transiciones
+con SQL de fixture para padrón ficticio y autenticación/consultas/mutaciones de
+evaluaciones por HTTP real: futura vacía con reactivación/alta; disponible terminada
+con altas, reactivación y cambio de sección; sin dueAt con cierre por desactivación.
+Verifican intento general, detalle/listado de resultados, detalle/listado de
+evaluaciones, inicio, guardado y recuperación, y preservación de respuestas/notas.
+Las pruebas anteriores mantienen fechas exactas, duración sin gracia, reintentos,
+abiertas, ajustes, cierre de nota, propiedad y carrera concreta. Angular conserva
+los estados del servidor y deja de prometer revisión por finalización del padrón.
+Su prueba DOM comprueba reviewLocked con 100% de intentos agotados, sin inventar
+nota ni registrar revisión efectiva, y el mensaje de cierre explícito sin dueAt.
+
+La suite completa de 499 pruebas se ejecutó con la regla de cierre definitivo. En
+la revisión final se sincronizó además `canViewDetailedFeedback` del resumen con
+la misma condición de nota cerrada/GRADED del detalle. Después de ese ajuste se
+ejecutó `package -Dtest=EvaluationServiceTest,EvaluationAccessPolicyTest,EvaluationWindowHttpDbTest`:
+102 pruebas de evaluaciones y empaquetado del JAR final, sin omisiones. La repetición
+Tokio incluye los casos individuales de reactivación y cambio de sección. Logs locales
+`t05-roster-backend-full.log`, `t05-roster-final-package.log`,
+`t05-roster-tokyo-http.log` y `t05-roster-frontend-default.log`.
+
+Una ejecución Angular paralela al backend abortó por salida inesperada de un worker;
+otra con workers limitados falló en el mock existente de T03. La ejecución final,
+con configuración habitual y backend ya terminado, pasó las 129 pruebas y STOMP
+real. No se deshabilitaron tests ni se alteró el código de T02–T04 para forzar ese
+resultado. Permanecen los avisos previos de mock hoisted/SCSS/polyfills.
+
+La regla evita exposiciones nuevas por padrón mutable; no puede deshacer una
+corrección que alguien hubiese leído antes. Esta corrección sigue en etapa 2,
+seguridad actual, dentro de los PR existentes: no implementa T06 ni campaña T10.
 
 T05 está acotada a la instalación actual de un colegio. No certifica producción,
 infraestructura ni zona histórica de todos los timestamps; no ejecutó carga sostenida,

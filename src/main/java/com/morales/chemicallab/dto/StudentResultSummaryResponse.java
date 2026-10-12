@@ -26,7 +26,7 @@ public record StudentResultSummaryResponse(
         // Indica si la calificación del intento ya fue cerrada (nota final definitiva).
         boolean gradeClosed,
         LocalDateTime submittedAt,
-        // Se mantiene por compatibilidad: equivale a reviewAvailable (revisión desbloqueada).
+        // Exige cierre definitivo de asignaciones y nota cerrada/GRADED.
         boolean canViewDetailedFeedback,
         int attemptsUsed,
         int maxAttempts,

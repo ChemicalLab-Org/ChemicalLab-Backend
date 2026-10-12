@@ -238,6 +238,143 @@ class EvaluationWindowHttpDbTest {
         assertThat(host.sql().queryForObject("select max_attempts from evaluations where id=?", Integer.class, exam)).isEqualTo(2);
     }
 
+    long finishAndCloseCurrentPupil() throws Exception {
+        host.sql().update("update evaluations set max_attempts=1 where id=?", exam);
+        host.sql().update("update user_accounts set active=false where role='ESTUDIANTE' and id<>?", host.student.getId());
+        clock.at(start);
+        long attempt = begin(pupilToken);
+        saved(attempt, objective, right, null); saved(attempt, open, null, "Guardada antes del cierre");
+        ok("POST", "student/attempts/" + attempt + "/submit", pupilToken, "{}");
+        long answerId = host.sql().queryForObject("select id from evaluation_answers where attempt_id=? and question_id=?", Long.class, attempt, open);
+        var service = host.app.getBean(EvaluationService.class);
+        service.manualGradeAnswer(host.teacher.getUsername(), attempt, answerId, new ManualGradeRequest(3, "Reservado"));
+        service.completeReview(host.teacher.getUsername(), attempt);
+        service.closeGrade(host.teacher.getUsername(), attempt);
+        return attempt;
+    }
+
+    void correctionVisibleEverywhere(long attempt) throws Exception {
+        var general = ok("GET", "student/attempts/" + attempt, pupilToken, null);
+        assertThat(general.path("correctionVisible").asBoolean()).isTrue();
+        assertThat(general.path("score").asInt()).isEqualTo(7);
+        var result = ok("GET", "student/attempts/" + attempt + "/result", pupilToken, null);
+        assertThat(result.path("reviewAvailable").asBoolean()).isTrue();
+        assertThat(result.path("canViewDetailedFeedback").asBoolean()).isTrue();
+        assertThat(result.path("answers").get(0).path("correctOptionText").asText()).isEqualTo("CORRECTA-RESERVADA");
+        assertThat(ok("GET", "student/results", pupilToken, null).get(0).path("score").asInt()).isEqualTo(7);
+    }
+
+    void closedAdmission(UserAccount newcomer) throws Exception {
+        String token = host.login(newcomer);
+        int count = host.sql().queryForObject("select count(*) from evaluation_attempts where evaluation_id=?", Integer.class, exam);
+        var detail = ok("GET", "student/" + exam, token, null);
+        assertThat(detail.path("accessState").asText()).isEqualTo("EXPIRED");
+        assertThat(detail.path("questionsVisible").asBoolean()).isFalse();
+        assertThat(detail.path("questions").size()).isZero();
+        assertThat(studentListing(token).path("canStart").asBoolean()).isFalse();
+        rejected("POST", "student/" + exam + "/attempts", token, "{}");
+        assertThat(host.sql().queryForObject("select count(*) from evaluation_attempts where evaluation_id=?", Integer.class, exam)).isEqualTo(count);
+    }
+
+    JsonNode studentListing(String token) throws Exception {
+        return java.util.stream.StreamSupport.stream(ok("GET", "student", token, null).spliterator(), false)
+                .filter(item -> item.path("id").asLong() == exam).findFirst().orElseThrow();
+    }
+
+    @Test void futureEmptyAssignmentBlocksCorrectionThroughReactivationAndEnrollment() throws Exception {
+        host.sql().update("update evaluation_assignments set start_at=?,due_at=? where id=?", start.plusDays(1), start.plusDays(1).plusMinutes(15), b);
+        long result = finishAndCloseCurrentPupil();
+        allRepresentationsHidden(result); // old policy leaked here, with B empty and scheduled
+        clock.at(start.plusMinutes(5));
+        allRepresentationsHidden(result); // A's deadline does not close B
+        var dormant = host.account(Role.ESTUDIANTE, host.teacher, "3", "B");
+        host.sql().update("update user_accounts set active=false where id=?", dormant.getId());
+        host.sql().update("update user_accounts set active=true where id=?", host.peerStudent.getId());
+        String reactivated = host.login(host.peerStudent);
+        assertThat(ok("GET", "student/" + exam, reactivated, null).path("questions").size()).isZero();
+        rejected("POST", "student/" + exam + "/attempts", reactivated, "{}");
+        clock.at(start.plusDays(1).minusNanos(1));
+        rejected("POST", "student/" + exam + "/attempts", reactivated, "{}");
+        clock.at(start.plusDays(1));
+        assertThat(ok("GET", "student/" + exam, reactivated, null).path("questionsVisible").asBoolean()).isTrue();
+        long inProgress = begin(reactivated);
+        ok("POST", "student/attempts/" + inProgress + "/answers", reactivated, answer(objective, wrong, null));
+        var created = host.account(Role.ESTUDIANTE, host.teacher, "3", "B");
+        String enrolled = host.login(created);
+        long enrolledAttempt = begin(enrolled);
+        ok("POST", "student/attempts/" + enrolledAttempt + "/answers", enrolled, answer(objective, right, null));
+        ok("POST", "student/attempts/" + enrolledAttempt + "/answers", enrolled, answer(open, null, "Propia"));
+        hidden(ok("POST", "student/attempts/" + enrolledAttempt + "/submit", enrolled, "{}"));
+        allRepresentationsHidden(result);
+        clock.at(start.plusDays(1).plusMinutes(15));
+        correctionVisibleEverywhere(result);
+        rejected("POST", "student/attempts/" + inProgress + "/answers", reactivated, answer(objective, right, null));
+        assertThat(ok("GET", "student/attempts/" + inProgress, reactivated, null).path("canAnswer").asBoolean()).isFalse();
+        assertThat(host.sql().queryForObject("select selected_option_id from evaluation_answers where attempt_id=? and question_id=?", Long.class, inProgress, objective)).isEqualTo(wrong);
+        closedAdmission(host.account(Role.ESTUDIANTE, host.teacher, "3", "B"));
+        host.sql().update("update user_accounts set active=true where id=?", dormant.getId());
+        closedAdmission(dormant); // reactivation alone, without changing its section
+        host.sql().update("update user_accounts set active=true where id=?", host.outsider.getId());
+        host.sql().update("update student_profiles set grade='3',section='B' where user_id=?", host.outsider.getId());
+        closedAdmission(host.outsider);
+        correctionVisibleEverywhere(result); // changes in membership cannot reopen admission/review
+    }
+
+    @Test void availableFinishedGroupBlocksCorrectionForNewAndReactivatedPupils() throws Exception {
+        ok("PATCH", "teacher/" + exam + "/assignments/" + b + "/deactivate", teacherToken, "{}");
+        long result = finishAndCloseCurrentPupil();
+        allRepresentationsHidden(result); // old policy leaked when the sole active pupil finished
+        var enrolled = host.account(Role.ESTUDIANTE, host.teacher, "3", "A");
+        String enrolledToken = host.login(enrolled);
+        assertThat(ok("GET", "student/" + exam, enrolledToken, null).path("questionsVisible").asBoolean()).isTrue();
+        long activeAttempt = begin(enrolledToken);
+        ok("POST", "student/attempts/" + activeAttempt + "/answers", enrolledToken, answer(objective, wrong, null));
+        host.sql().update("update user_accounts set active=true where id=?", host.peerStudent.getId());
+        host.sql().update("update student_profiles set section='A' where user_id=?", host.peerStudent.getId());
+        String reactivated = host.login(host.peerStudent);
+        assertThat(studentListing(reactivated).path("canStart").asBoolean()).isTrue();
+        long movedAttempt = begin(reactivated);
+        allRepresentationsHidden(result);
+        clock.at(start.plusMinutes(5));
+        correctionVisibleEverywhere(result);
+        rejected("POST", "student/attempts/" + activeAttempt + "/answers", enrolledToken, answer(objective, right, null));
+        var recovery = ok("GET", "student/attempts/" + activeAttempt, enrolledToken, null);
+        assertThat(recovery.path("status").asText()).isEqualTo("PENDING_MANUAL_REVIEW");
+        assertThat(recovery.path("correctionVisible").asBoolean()).isFalse(); // grade remains open
+        var pendingSummary = ok("GET", "student/results", enrolledToken, null).get(0);
+        assertThat(pendingSummary.path("reviewAvailable").asBoolean()).isTrue();
+        assertThat(pendingSummary.path("canViewDetailedFeedback").asBoolean()).isFalse();
+        hidden(pendingSummary);
+        hidden(ok("POST", "student/attempts/" + movedAttempt + "/submit", reactivated,
+                "{\"answers\":[" + answer(objective, right, null) + "]}"));
+        assertThat(host.sql().queryForObject("select selected_option_id from evaluation_answers where attempt_id=? and question_id=?", Long.class, activeAttempt, objective)).isEqualTo(wrong);
+        closedAdmission(host.account(Role.ESTUDIANTE, host.teacher, "3", "A"));
+        var moved = host.account(Role.ESTUDIANTE, host.teacher, "4", "C");
+        host.sql().update("update student_profiles set grade='3',section='A' where user_id=?", moved.getId());
+        closedAdmission(moved); // already active, section change alone
+        host.sql().update("update user_accounts set active=true where id=?", host.outsider.getId());
+        host.sql().update("update student_profiles set grade='3',section='A' where user_id=?", host.outsider.getId());
+        closedAdmission(host.outsider);
+        correctionVisibleEverywhere(result);
+    }
+
+    @Test void undatedFinishedGroupNeedsDefinitiveDeactivationToRevealCorrection() throws Exception {
+        host.sql().update("update evaluation_assignments set due_at=null where id=?", a);
+        ok("PATCH", "teacher/" + exam + "/assignments/" + b + "/deactivate", teacherToken, "{}");
+        long result = finishAndCloseCurrentPupil();
+        clock.at(start.plusYears(1));
+        allRepresentationsHidden(result);
+        var newcomer = host.account(Role.ESTUDIANTE, host.teacher, "3", "A");
+        String token = host.login(newcomer);
+        assertThat(studentListing(token).path("canStart").asBoolean()).isTrue();
+        ok("PATCH", "teacher/" + exam + "/assignments/" + a + "/deactivate", teacherToken, "{}");
+        correctionVisibleEverywhere(result);
+        rejected("GET", "student/" + exam, token, null);
+        rejected("POST", "student/" + exam + "/attempts", token, "{}");
+        rejected("POST", "teacher/" + exam + "/assignments", teacherToken, "{\"grade\":\"3\",\"section\":\"A\"}");
+        correctionVisibleEverywhere(result);
+    }
+
     @Test void concurrentSaveSubmitAndArchivePreserveOneFinalAnswer() throws Exception {
         clock.at(start);
         long attempt = begin(pupilToken);

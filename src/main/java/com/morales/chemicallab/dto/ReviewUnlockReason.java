@@ -8,12 +8,13 @@ package com.morales.chemicallab.dto;
  * <ul>
  *   <li>{@link #DEADLINE_REACHED}: la revisión está disponible porque ya venció el plazo
  *       de la evaluación (fecha límite de la asignación).</li>
- *   <li>{@link #ALL_ASSIGNED_STUDENTS_FINISHED}: la revisión está disponible porque todas
- *       las estudiantes asignadas ya agotaron sus intentos disponibles.</li>
+ *   <li>{@link #ALL_ASSIGNED_STUDENTS_FINISHED}: nombre histórico conservado para el
+ *       cierre administrativo (archivo o desactivación de todas las asignaciones).
+ *       Agotar intentos del padrón actual ya no desbloquea la revisión.</li>
  *   <li>{@link #LOCKED_WAITING_FOR_GROUP}: la revisión sigue bloqueada; existe una fecha
- *       límite futura, pero aún faltan estudiantes por finalizar.</li>
+ *       límite futura de una asignación, aunque el padrón actual ya haya finalizado.</li>
  *   <li>{@link #NO_DEADLINE}: la revisión sigue bloqueada y la evaluación no tiene fecha
- *       límite, por lo que solo se abrirá cuando todo el grupo finalice.</li>
+ *       límite para todas sus asignaciones; requiere cierre administrativo.</li>
  * </ul>
  */
 public enum ReviewUnlockReason {

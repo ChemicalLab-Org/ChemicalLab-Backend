@@ -1549,7 +1549,7 @@ public class EvaluationService {
                 showScore ? attempt.getMaxScore() : null,
                 showScore ? percentageOf(attempt) : null,
                 showScore ? computeFinalScore(attempt) : null, closed,
-                attempt.getSubmittedAt(), reviewAvailable,
+                attempt.getSubmittedAt(), showScore,
                 attemptsUsed, evaluation.getMaxAttempts(),
                 reviewAvailable, !reviewAvailable, availability.reason(), availability.deadlineAt(),
                 availability.assignedStudentsCount(), availability.finishedStudentsCount(),
@@ -1559,13 +1559,13 @@ public class EvaluationService {
     // Mensaje para el estudiante mientras la revisión detallada sigue bloqueada.
     private static final String REVIEW_LOCKED_MESSAGE =
             "Tu evaluación fue enviada correctamente. La revisión estará disponible cuando "
-                    + "todas las estudiantes asignadas hayan finalizado o cuando se cumpla la "
-                    + "fecha límite.";
+                    + "cierren las ventanas de todas las secciones, aunque las alumnas actuales hayan agotado sus intentos. "
+                    + "Las asignaciones sin fecha límite requieren que el docente las cierre.";
 
     /**
      * Disponibilidad de la revisión detallada de una evaluación para las estudiantes, con
      * el motivo del desbloqueo y el progreso general del grupo (sin nombres). Se calcula a
-     * partir del estado del grupo, no del intento individual.
+     * partir del cierre definitivo de las asignaciones, no del padrón actual ni del intento individual.
      */
     private record StudentReviewAvailability(
             boolean reviewAvailable,
@@ -1581,27 +1581,12 @@ public class EvaluationService {
     }
 
     /**
-     * Regla central de la sesión 18.6: la revisión detallada del examen (respuestas
-     * correctas, alternativas, explicación, nota y detalle de aciertos/errores) solo se
-     * habilita para las estudiantes cuando el grupo ya cerró. Así, una alumna que termina
-     * antes que sus compañeras no puede ver la corrección y filtrarla.
-     *
-     * <p>{@code reviewAvailable = deadlineReached OR allAssignedStudentsFinished}, donde:</p>
-     * <ul>
-     *   <li><b>allAssignedStudentsFinished</b>: todas las estudiantes activas con acceso a la
-     *       evaluación (mismo criterio de grado/sección que la vista del estudiante) ya no
-     *       tienen intentos disponibles. Si no hay estudiantes asignadas, no se habilita por
-     *       accidente.</li>
-     *   <li><b>deadlineReached</b>: la evaluación tiene fecha límite y ya se cumplió. El modelo
-     *       actual no guarda una fecha límite en la evaluación; la fecha límite disponible es
-     *       la {@code dueAt} de la asignación (ventana por grado/sección). Para no filtrar entre
-     *       secciones, el plazo desbloquea la revisión solo cuando <b>todas</b> las asignaciones
-     *       activas tienen {@code dueAt} y ya pasó la más tardía; si alguna asignación no tiene
-     *       {@code dueAt}, el plazo no basta y se depende de la finalización grupal.</li>
-     * </ul>
-     *
-     * <p>Una evaluación archivada se considera cerrada para todo el grupo (ya no es rendible),
-     * por lo que también habilita la revisión, conservando el comportamiento previo.</p>
+     * La revisión requiere cierre definitivo de la admisión y escritura: todas las
+     * asignaciones activas vencieron, no queda ninguna asignación activa, o se archivó
+     * la evaluación. Las asignaciones futuras/vacías también cuentan. Una asignación
+     * sin dueAt requiere cierre explícito, aunque el padrón actual agotara sus intentos.
+     * Los contadores del padrón son informativos: altas, reactivaciones y cambios de
+     * sección nunca pueden deshacer el cierre de una ventana ni justificar exposición.
      */
     private StudentReviewAvailability computeReviewAvailability(Evaluation evaluation) {
         List<EvaluationAssignment> assignments = assignmentRepository.findByEvaluationOrderByAssignedAtDesc(evaluation);
@@ -1624,15 +1609,8 @@ public class EvaluationService {
 
         int assignedCount = assignedStudents.size();
         int finishedCount = 0;
-        int closedOpportunityCount = 0;
         for (StudentProfile candidate : assignedStudents.values()) {
-            boolean hasOpenOpportunity = activeAssignments.stream()
-                    .filter(a -> a.getGrade().equals(candidate.getGrade()) && a.getSection().equals(candidate.getSection()))
-                    .anyMatch(a -> accessPolicy.window(a) == EvaluationAccessPolicy.Window.AVAILABLE
-                            || accessPolicy.window(a) == EvaluationAccessPolicy.Window.SCHEDULED);
-            boolean finished = studentFinishedAttempts(evaluation, candidate);
-            if (finished) finishedCount++;
-            if (!hasOpenOpportunity || finished) closedOpportunityCount++;
+            if (studentFinishedAttempts(evaluation, candidate)) finishedCount++;
         }
         int pendingCount = assignedCount - finishedCount;
 
@@ -1649,13 +1627,11 @@ public class EvaluationService {
                 : null;
         boolean deadlineReached = deadlineAt != null && !accessPolicy.now().isBefore(deadlineAt);
 
-        // Sin estudiantes asignadas no se habilita la revisión por accidente.
-        boolean allAssignedStudentsFinished = assignedCount > 0 && closedOpportunityCount == assignedCount;
         boolean archived = !accessPolicy.published(evaluation);
 
         // No active assignment means no new opportunity; in-progress attempts also
         // cannot write under this policy. Deactivation and archive therefore close safely.
-        boolean reviewAvailable = deadlineReached || allAssignedStudentsFinished || archived
+        boolean reviewAvailable = deadlineReached || archived
                 || (!assignments.isEmpty() && activeAssignments.isEmpty());
 
         ReviewUnlockReason reason;
