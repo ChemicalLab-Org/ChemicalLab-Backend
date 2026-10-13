@@ -204,7 +204,7 @@ Esta sección define pertenencia técnica y facultades, no titularidad legal.
 
 `createdBy`/`gradeClosedBy`/autor de objeto son hechos históricos inmutables. `TeachingAssignment` y delegaciones son facultades actuales. Un autor saliente sigue citado pero pierde gestión y consulta escolar al cesar su asignación/membresía, salvo una concesión histórica explícita. El reemplazo recibe la clase y su información necesaria; no modifica antiguos autores, accountId del alumno ni institutionId del recurso. Un recurso asignado a varias clases mantiene su revisión compartida; docente de una clase revisa solo sus destinatarios/intentos y no las notas de las otras.
 
-### 3.2 Matriz propuesta de facultades
+### 3.2 Matriz de facultades propuestas y confirmaciones B6
 
 | Acción | ADMINISTRADOR global | ADMIN_INSTITUCION | DOCENTE | ESTUDIANTE |
 | --- | --- | --- | --- | --- |
@@ -214,7 +214,7 @@ Esta sección define pertenencia técnica y facultades, no titularidad legal.
 | Suspender/terminar membresía | Soporte explícito | Solo membresía local, preservando otras instituciones y cuenta | No suspende globalmente; retirada de clase según permiso delegado | No retira a otros |
 | Contraseña, aliases y cierre global de sesiones | Cuenta propia o recuperación privilegiada auditada | No obtiene/reseteará credencial global de miembro multiinstitucional; inicia recuperación verificada posterior | No recibe password global de alumno; inicia ayuda autorizada posterior | Cuenta propia bajo T02/T04 |
 | Asignar/reemplazar docente o trasladar alumno | Soporte explícito y limitado | Sí, dentro de su institución; traslados externos coordinados T13 | No se adjudica otra clase; puede gestionar matrícula solo si se delega | No autoasigna pertenencia |
-| Crear/editar/publicar recurso y asignarlo | No por privilegio global rutinario; soporte excepcional explícito | Biblioteca y delegación; lectura de supervisión según proyección, sin asumir rol docente | Borrador propio/delegado y asignación a clases donde tiene facultad; revisión publicada inmutable | Solo contenido entregado/publicado y autorizado |
+| Crear/editar/publicar recurso y asignarlo | No por privilegio global rutinario; soporte excepcional explícito | **Confirmado B6:** designa/revoca gestores del mismo colegio; no obtiene facultades de docente solo por administrar. Lectura de supervisión según proyección | Borrador propio o EDIT_DRAFT delegado; PUBLISH y ASSIGN independientes. Co-docencia/entrega no permite editar la plantilla ajena. Revisión publicada inmutable; asignación académica en clases asignadas según facultad | Solo contenido entregado/publicado y autorizado |
 | Consultar/calificar intentos | Supervisión excepcional por institución, auditada; no califica por rol global | Gestiona y supervisa; ADMIN_INSTITUCION por sí solo no califica ni recibe claves ocultas. Para calificar requiere además DOCENTE vigente en esa institución y asignación vigente con facultad de revisión en la clase correspondiente; sin autocalificación | Solo clase asignada, sin autocalificación; nota cerrada no se reabre rutinariamente | Propios; corrección/feedback según T05 |
 | Pizarra en vivo/control/dibujo | Sin acceso realtime por ser global | Sin acceso realtime por ser administrador | Clase asignada; controles docentes y autoría T03 | Matrícula vigente + join + permisos efectivos, solo objetos propios |
 | Descargas/capturas/historial | Soporte específico con alcance y auditoría; no URL pública | Supervisión de evidencia escolar autorizada | Evidencia necesaria de clases gestionadas actualmente | Propia evidencia; captura compartida solo si cumple política histórica siguiente |
@@ -346,14 +346,14 @@ Orden: revisar T11-A → autorizar T11-B → revisar persistencia/ensayo → T12
 
 ## 7. Decisiones funcionales confirmadas y cuestiones pendientes
 
-F02, F03 y F04 fueron confirmadas por el usuario en la revisión T11-A. F05 fue confirmada expresamente al encargar T11-B5, con el alcance acotado del cuadro. El cuadro delimita lo confirmado y sus cuestiones complementarias aún pendientes; estas últimas no condicionan ni vuelven a someter a aprobación las decisiones ya tomadas. Las demás recomendaciones siguen siendo propuesta para revisión antes de implementar lo que dependa de ellas. Ningún punto se resuelve creando datos reales ficticios.
+F02, F03 y F04 fueron confirmadas por el usuario en la revisión T11-A. F05 fue confirmada expresamente al encargar T11-B5, con el alcance acotado del cuadro. Al encargar B6 se confirmaron las facultades de CO_DOCENTE, procedencia administrativa de gestores e independencia EDIT_DRAFT/PUBLISH/ASSIGN, preservando autoría/evidencia y restricciones de calificación; el cuadro vigente incorpora esas decisiones. Las versiones/notas históricas B1–B5 conservan sus pendientes originales. El cuadro delimita lo confirmado y sus cuestiones complementarias aún pendientes; estas últimas no condicionan ni vuelven a someter a aprobación las decisiones ya tomadas. Las demás recomendaciones siguen siendo propuesta para revisión antes de implementar lo que dependa de ellas. Ningún punto se resuelve creando datos reales ficticios.
 
 | ID | Estado y cuestión funcional | Decisión / propuesta e impacto |
 | --- | --- | --- |
 | F01 | Unidad institucional: colegio, sede o grupo de sedes; identificador oficial y administradores por sede | Una frontera por colegio independiente; sedes como atributo interno salvo que exijan aislamiento propio. No usar nombre/código oficial sin confirmar granularidad |
-| F02 | **Confirmada:** pertenencia simultánea a varias instituciones | Una misma cuenta puede pertenecer a varias instituciones, con pertenencias y permisos separados. Pendientes complementarios: combinaciones adicionales de roles, reglas de múltiples clases y co-docencia; se propone RESPONSABLE único y co-docentes con facultades explícitas. La combinación administrativa/docente y no autocalificación están confirmadas en F04 |
+| F02 | **Confirmada:** pertenencia simultánea a varias instituciones; complementos confirmados en B2/B6 | Misma cuenta con pertenencias/permisos separados. B2 confirmó múltiples clases por colegio y clase curso/grupo/período. B6 confirma un RESPONSABLE efectivo y varios CO_DOCENTE con facultades académicas completas en sus clases (sesiones, asignación de materiales/evaluaciones y calificación), respetando restricciones existentes. Persistencia P01; autorización T12 y flujos T13. Otras combinaciones adicionales siguen pendientes |
 | F03 | **Confirmada:** lectura individual después de dejar el colegio | Conserva lectura de resultados individuales anteriores con las restricciones de exposición y cierre T05; no accede por ello a clases activas, compañeros ni capturas compartidas indiscriminadamente. Pendientes complementarios: excepciones de capturas compartidas, tratamiento de suspensiones institucionales y mecanismo de recuperación/consulta; no se propone caducar el derecho confirmado mediante un plazo de membresía |
-| F04 | **Confirmada:** gestión/supervisión y condiciones para calificar | ADMIN_INSTITUCION gestiona y supervisa. Para calificar necesita además DOCENTE vigente y asignación a la clase correspondiente; prohibida autocalificación y sin bypass de nota cerrada. Pendientes complementarios: alcance de delegación de biblioteca, soporte global y correcciones excepcionales auditadas; no conceden calificación por el rol administrativo solo |
+| F04 | **Confirmada:** gestión/supervisión y condiciones para calificar; delegación de biblioteca confirmada en B6 | ADMIN_INSTITUCION designa y revoca gestores de recursos del mismo colegio. EDIT_DRAFT/PUBLISH/ASSIGN independientes y revocables, con autoría/evidencia histórica intactas. Una delegación de biblioteca no concede calificación ni acceso a alumnos; ser co-docente o recibir una entrega no concede edición de la plantilla de otro autor. ADMIN_INSTITUCION solo no califica: exige DOCENTE vigente y asignación a clase, sin autocalificación ni bypass de nota cerrada. Soporte global/correcciones excepcionales siguen pendientes; autorización efectiva T12/T13 |
 | F05 | **Confirmada por el usuario el 13 de octubre de 2026:** reserva del código académico por cuenta y colegio | El código queda reservado para la misma cuenta dentro del colegio, incluso tras retirarse; no puede asignarse a otra persona. Puede coincidir en otro colegio y es independiente del usuario de acceso global. La readmisión conserva identidad y reserva. Esta confirmación no define reutilización de correos/aliases de acceso, normalización nueva ni renombrados académicos; sus flujos y las demás decisiones pendientes siguen pendientes |
 | F06 | Recuperación para menores sin correo y poderes de reset escolar | Ayuda del colegio inicia recuperación central verificada; no entrega credential global ni reset multiinstitucional unilateral. T14 define pruebas/recuperación y MFA administrativa; registro público de alumnos permanece apagado |
 | F07 | Clase, períodos, padrón, incorporaciones y traslados con intento abierto | Clase por curso/período; nuevas matrículas no acceden retroactivamente a todo el historial; alta a entrega explícita. Traslado deja intento en origen, se resuelve/finaliza bajo reglas originales sin reset de límite ni copia de nota |
@@ -390,7 +390,7 @@ T12 exige probar en ambos sentidos A→B y B→A: cuentas sin membresía, membre
 
 T13 exige sustitución durante actividad, baja de docente/alumno, traslado con intento abierto, readmisión y acceso propio histórico: nuevo responsable tiene solo sus clases, saliente pierde facultades actuales, autor sigue intacto, ninguna nota/captura cruza colegio y las ventanas/cierres T05 siguen válidos. F03 exige que con membresía ENDED y sesión global válida el alumno lea resultados individuales anteriores permitidos por T05; clases activas, compañeros y capturas compartidas indiscriminadas se rechazan; salir no revela corrección bloqueada. T14 exige aceptación concurrente única, expiración/revocación/cupo, cuenta existente conservada, recuperación y roles no escalables. Ningún gate se da por cumplido en T11-A.
 
-### 7.3 Matriz vigente de preparación, revisada por T11-C (13 de octubre de 2026)
+### 7.3 Matriz vigente de preparación, actualizada por T11-B6 / P01 (13 de octubre de 2026)
 
 Esta matriz conserva F05 confirmada y la evidencia de preparación B1–B5,
 atribuida a sus SHA en las notas originales. La revisión documental
@@ -398,32 +398,33 @@ atribuida a sus SHA en las notas originales. La revisión documental
 `e2bcc1afe347ba9630c1e90ea5d998f09a65812f`, distingue lo demostrado de los
 faltantes del modelo completo; no reemplaza criterios de §7.1 ni declara cumplidos
 gates T12/T13/operación. T11-B y etapa 3 siguen abiertos: P01–P06 de T11-C
-requieren preparación persistente/ensayo antes de T12. No son autorización externa.
+requerían preparación persistente/ensayo antes de T12. P01 queda implementado en
+[T11-B6](11b6-docencia-delegaciones.md); P02–P06 permanecen abiertos. No son autorización externa.
 
 | Criterio | Preparación del modelo / ensayo | T12/T13 y operación pendientes |
 | --- | --- | --- |
 | A01 coincidencias | Demostrado en fixtures para códigos/reservas F05 exactos A/B, clases/períodos B2 y binding PREPARED global sin conflicto; colisiones conservadas | Ciclo persistente de aliases aún incompleto (P02); adopción de login nuevo T12 y verificación/recuperación T14; no regla F05 para correo |
 | A02 membresías/roles | Cumplido para B1 + PlatformRoleGrant independiente con procedencia explícita; consulta de episodios B5 | T12 compone vigencias/contexto y combinación F04; grants nuevos reales e importación operativa F08 pendientes |
-| A03 integridad | Parcial del modelo completo: FKs/guards/ventanas y carreras de relaciones existentes demostrados; CO_DOCENTE rechazado y ResourceManagerGrant ausente | Soporte persistente de relaciones/facultades y revisiones P01/P03 sigue en T11-B; autorización bilateral T12 y flujo de co-docencia T13 |
+| A03 integridad | Parcial del modelo completo: B1–B5 conservados; P01 añade co-docencia y grants tipados con FKs, vigencias, procedencia administrativa, historia y exclusiones PostgreSQL entre funciones/facultades, según B6 | P01 persistente implementado; contrato de nuevas revisiones P03 sigue en T11-B; autorización bilateral T12 y flujos T13 pendientes |
 | A04 cuenta | Cumplido en fixtures: mismos IDs/hash/username/password/versiones/sesiones; código separado sin renombrado | Conciliación real F08 y corte de writers pendientes; no fusión de personas |
 | A05 evidencia | Cumplido para fuentes cubiertas y restauración ficticia B5; referencias/historia original intactas | Exhaustividad/inventario real, históricos desconocidos y certificación operativa pendientes |
-| A06 reemplazo | Parcial: relaciones/episodios B2 preservados | Permisos reales del saliente/reemplazo T12/T13 pendientes |
+| A06 reemplazo | Parte persistente demostrada B2/B6: responsable sustituido conservando co-docentes independientes, classId, matrículas, cuentas, autoría/evidencia y rollback conjunto | Permisos reales del saliente/reemplazo T12/T13 pendientes |
 | A07 traslado/simultaneidad | Parcial: cuentas/membresías A/B y reservas por institución independientes; sin mover hechos previos | Traslado con intento abierto, continuidad/revocación y acceso individual F03 son T13 bajo T05 |
 | A08 mapa/ambigüedad | Parcial: mapas explícitos de fixture y conflictos conservados; firma de un dump no demuestra conciliación de cada PK | Inventario ficticio exhaustivo y corrección aditiva P05 en T11-B; F08 responsables/mapas reales y resolución operativa pendientes |
 | A09 repetición/recuperación | Parcial: cadena, mismo ID/reintentos, rollback programático y dump/restore de manifiesto estático demostrados | Lotes/checkpoint durable, caída/commit desconocido y conservación de escrituras posteriores del ensayo P06 en T11-B; ventana/capacidad/RPO/RTO reales en operación |
-| A10 cuotas/auditoría | Parcial: cuotas de copias ACCOUNT/SYSTEM y límites técnicos B5, rollback conjunto T08 y guards anteriores intactos | Preparación de contadores/deltas institucionales y doble conteo P04 en T11-B; máximos aprobados, crecimiento/retención, permisos/TLS/reloj y SEC-13 en operación |
+| A10 cuotas/auditoría | Parcial: cuotas de copias ACCOUNT/SYSTEM y límites técnicos B5/B6 e historia/reservas P01, rollback conjunto T08 y guards anteriores intactos | Preparación de contadores/deltas institucionales y doble conteo P04 en T11-B; máximos aprobados, crecimiento/retención, permisos/TLS/reloj y SEC-13 en operación |
 | A11 compatibilidad cerrada | Parcial: no endpoints/paneles/registro ni nuevas autoridades; login T02/T04 conservado | Ambigüedad y ámbito único de clientes legacy requieren gate integral T12; no activación multiinstitucional |
-| A12 regresión/revisión | Parcial: selección B5 y suite/empaquetado nuevos según evidencia de la nota | Revisión de entrega, Linux/JDK17/PostgreSQL Linux, nueva SCA y operación VER-01 pendientes |
+| A12 regresión/revisión | Parcial: B1–B5 conservados; verificación de P01 y suite/empaquetado atribuidos al SHA probado en la nota B6 | Revisión de entrega, Linux/JDK17/PostgreSQL Linux, nueva SCA y operación VER-01 pendientes |
 | A13 máximo agotado | Demostrado acotado en ensayo B3 con writer legacy; regresión conserva T05, sin nueva raíz por B5 | Corte de writers y admisión/exposición institucional T12 pendientes |
 | A14 entregas/raíz/carrera | Demostrado acotado en ensayo B3, presupuesto/cierre original y última oportunidad legacy conservados; deriva invalida snapshot | Contrato persistente de revisión académica P03; sincronización/corte T12; F09 solo evaluaciones realmente nuevas |
 | A15 activo previo | Demostrado acotado en ensayo B3; B5 conserva intento/consumo; no certifica todos los flujos de finalización/baja | Continuidad/baja T13 y resolución real F08 pendientes |
-| A16 readmisión/clases | Demostrado acotado B3/B5 para unicidad, reserva/cuenta/episodios; no escenario integral con sustituto/carrera institucional | Soporte persistente delegado P01; gate bilateral T12 y continuidad T13 pendientes |
+| A16 readmisión/clases | Demostrado acotado B3/B5 para unicidad, reserva/cuenta/episodios; no escenario integral con sustituto/carrera institucional | P01 persistente implementado; gate bilateral T12 y continuidad T13 pendientes |
 | A17 cierre/conciliación | Demostrado acotado en ensayo B3; B5 no cambia T05 ni habilita exposición | Autorización F03 T12/T13, corte y resolución real F08 pendientes |
 
 Preparación de aliases sigue parcial: candidatos, conflictos y binding PREPARED
 disponibles; falta contrato persistente del ciclo ACTIVE/REVOKED (P02), separado
 del resolver T12 y los flujos T14. Persistencia inmutable no confirma reserva
-perpetua de correo. P01–P06, decisiones dependientes y demás pendientes se detallan
+perpetua de correo. P01 queda implementado solo como persistencia en B6; P02–P06, decisiones dependientes y demás pendientes se detallan
 en T11-C §4–7 sin reasignar autorización/continuidad/operación a T11-B.
 SEC-13 y VER-01 siguen abiertos. La operación no está certificada.
 
