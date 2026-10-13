@@ -103,6 +103,8 @@ sin mutex JVM ni validación basada únicamente en un SELECT susceptible a carre
 SQL arbitrario que invierta locks puede sufrir deadlock; no se certifica ausencia
 universal de deadlocks ni capacidad productiva. El ensayo exige conflicto 23P01
 en la restricción concreta, sin aceptar timeout/deadlock como éxito.
+SQL directo de ensayo comprueba integridad; no sustituye un flujo de negocio
+auditado por los mantenedores internos.
 
 ## Instalación, repetición, divergencia y recuperación
 
@@ -153,7 +155,7 @@ ALTER/DROP/TRUNCATE ni escritura de ledgers/contadores; permisos reales no certi
 ## Verificación y límites
 
 La evidencia definitiva con SHA probado, suite/empaquetado, carrera y restore se
-registra al final de esta nota después de verificar el commit. Las selecciones de
+registra al final de esta nota. Las selecciones de
 desarrollo no se suman a la ejecución definitiva ni certifican un HEAD posterior.
 Prueba reproducible: Windows/JDK17/PostgreSQL18, DB desechable loopback
 `chemicallab_t01_test`, esquema propio `t03_<32 hex>`, perfil test:
@@ -166,8 +168,66 @@ Prueba reproducible: Windows/JDK17/PostgreSQL18, DB desechable loopback
 
 Se preservan auditoría original, B1–B5/cierres/documentos históricos, frontend
 institucional y 16 archivos E2E. Solo se actualizan decisiones confirmadas y matrices
-vigentes T11-A/T11-C. **Se cierra únicamente P01 persistente**, sujeto a la evidencia
-definitiva de esta entrega. P02–P06 permanecen abiertos; T11-B y etapa 3 no cierran.
+vigentes T11-A/T11-C. **Se cierra únicamente el alcance implementado de P01
+persistente**, con la evidencia definitiva siguiente. P02–P06 permanecen abiertos;
+T11-B y etapa 3 no cierran. La PR permanece en borrador para revisión, sin integración.
 T12/T13 conservan autorización y flujos externos; no se inician. SEC-13/VER-01,
 Linux/SCA/operación siguen pendientes. Sin merge, despliegue, DDL/backfill real,
 activación multiinstitucional, paneles ni endpoints públicos.
+
+## Evidencia definitiva atribuida al commit
+
+**SHA probado:** `b99a3be4b230c14095e6429ffea42557477c9142`.
+`clean package` terminó el **13 de octubre de 2026, 09:01:50 America/Lima**, en
+12 min 25 s: **60 suites, 765 pruebas, 0 fallos, 0 errores, 0 omitidas;
+BUILD SUCCESS y JAR generado**. Incluye los **26 casos P01** y las 739 regresiones
+preexistentes recién ejecutadas; no se suman selecciones, carrera ni restore otra vez.
+El commit posterior modifica exclusivamente documentación/evidencia y aclaraciones
+de matrices; fuentes, SQL, pruebas y POM coinciden con este SHA.
+
+Entorno: Windows, JDK 17.0.12, PostgreSQL 18.4 desechable propio en
+127.0.0.1:55436, DB `chemicallab_t01_test`, rol ficticio `t11b6_fixture`, perfil
+test, locale C, 300 conexiones. DB TimeZone America/Bogota; fechas de entrega
+America/Lima y ventanas nuevas UTC, sin reinterpretación de timestamps legacy.
+No es certificación Linux, capacidad, TLS, permisos ni base escolar.
+
+JAR SHA-256:
+`05d6cb159ac3c1500555075e5fa3dba67968c81eef70243b01bf1d760d744e33`.
+Los **nueve SQL** del JAR coinciden con sus fuentes, normalizando solo CRLF/LF.
+SQL B6 UTF-8/LF SHA-256:
+`a3a02cbe0a921a04353d29319faccee7ee7527bcc67898ba10b629740e0cd75d`.
+
+| Verificación sobre el SHA probado | Resultado / evidencia en `DelegationPersistenceDbTest` |
+| --- | --- |
+| Instituciones semejantes | Clases con mismo código/grupo y recursos con mismo título en A/B; cruces de clase, recurso, destinatario y administrador rechazados por PostgreSQL |
+| Co-docencia | Varios CO_DOCENTE y un RESPONSABLE; duplicados y contradicción entre funciones rechazados, también por SQL. Pendiente/suspendido/alumno/admin sin DOCENTE y grants futuros/vencidos/revocados no activan |
+| Temporalidad/historia | Concesión, activación, cancelación y fin conservados; episodios adyacentes permitidos y terminales inmutables. Ventanas inválidas/fuera del período rechazadas |
+| Biblioteca | Tres facultades independientes para ConceptContent y Evaluation; otorgante autenticado de colegio distinto, no administrador, cuenta que no corresponde a la membresía y destinatario sin DOCENTE rechazados. Futuro/vencido/revocado no acredita procedencia válida |
+| Revocación | Snapshot nuevo sin borrar otorgamiento/ventana; otras facultades/autoría intactas. Revocación antes del inicio deja intervalo vacío; historia efectiva bloquea solapamiento retroactivo. Admin vigente puede revocar a destinatario ya salido |
+| Reemplazo | Co-docentes, clase, matrículas/cuentas, recursos y autorías iguales; reemplazar por co-docente solapado falla y revierte fin/eventos del anterior |
+| Atomicidad | Fallos de auditoría y cuota revierten operaciones compuestas, reemplazo, historia, reservas, contadores y SUCCESS. Rollback explícito no deja cambios |
+| Compatibilidad | Nuevas relaciones no cambian cuentas/perfiles/intentos/recursos ni permiten al docente ajeno leer/modificar evaluación legacy; respuesta 400 de rechazo por autoría conservada. Regresiones T02/T03/T05/T06/T07/T08/T10 y B1–B5 incluidas |
+| Cadena | Expansión sobre B5 poblado con RESPONSABLE activo, rollback de instalación, repetición y ledgers precedentes intactos. Deshabilitar trigger sucesor o guard predecesor produce divergencia sin reparación |
+| Carrera concreta | Dos JVM OS **32820/16864**, dos PID PostgreSQL **29092/18116** observados bloqueados antes de liberar barrera. Un RESPONSABLE y un CO_DOCENTE compiten por la misma persona/clase: **COMMITTED / REJECTED:23P01**, una reserva efectiva; sin timeout/deadlock aceptado |
+| Recuperación | pg_dump -Fc / pg_restore --single-transaction --exit-on-error conservó firmas completas de **85 tablas**, incluidos IDs, credenciales/sesiones, historia, cuotas y todos los ledgers. B6 revalida cadena; UPDATE/DELETE/TRUNCATE de logs rechazados; trigger sucesor deshabilitado detectado y revalida al recuperarlo |
+
+Carrera y restore forman parte de las 26 pruebas P01. SQL directo prueba la
+restricción de persistencia, no autorización ni evidencia T08 de un flujo externo.
+Los logs de selecciones durante edición se conservan como diagnóstico de worktree
+sin commit; no se atribuyen como ejecución de este SHA ni reemplazan la suite final.
+No se repitió una suite completa para cambios documentales posteriores.
+
+Evidencia local `.codex-work/t11b6-evidence`, fuera de la PR y solo ficticia:
+`tested-sha.txt`, `full-package.log`, `verified-results.json`, `verified-suites.json`,
+`verified-reports.zip`, `verified-backend.jar`, `verified-packaged-sql.json`,
+`verified/t11b6-native` (dump/manifiesto de 85 tablas), `verified/t11b6-processes`
+(PID/barrera/resultados), manifiestos de conservación y scripts de colección/limpieza.
+
+Conservación final: **40/40 hashes protegidos**, cero discrepancias, incluidos
+auditoría original, cierres B1–B5 y los **16 archivos E2E**. Los ocho SQL históricos
+y 57 documentos backend anteriores quedan intactos; solo las matrices T11-A/T11-C
+reciben las actualizaciones solicitadas. Auditoría original SHA-256:
+`1eff5d59f7a114dfee91cb557a0405c2f7247e43cd2926d2542172c0255e499b`.
+Frontend permanece en `feature/validaciones-datos-institucionales`,
+`e88589635a8269c50ee0f53fccf157f0d0985034`, con su `?? e2e-selenium/` previo.
+Fetch de entrega reconfirmó develop en `8d9aaf5a8b82cea59b9c7783f19d42a78252ae33`.

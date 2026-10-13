@@ -135,7 +135,7 @@ pendiente no se resuelve eligiendo una política por conveniencia.
 | P12 — Cuotas definitivas, medición sostenida planes/índices/latencia/memoria/backfill, crecimiento/alertas, permisos DB/TLS/reloj, retención y recuperación real, gobierno y broker distribuido antes de escalar | **Operación/T15–T17**, SEC-13; preparación técnica P04/P06 sigue en T11-B | No | No | Sí conforme alcance operativo; retención sigue apagada |
 | P13 — Linux/JDK17/PostgreSQL nativo Linux, SCA/runtime mantenido y revisión/certificación de entrega; VER-01 sigue abierto | **Validación/operación** heredada T09/T10, sin atribuirla a T12 ni declarar aceptación de riesgo | No para persistencia ficticia Windows; A12 parcial | No por sí sola | Sí para certificar el entorno de servicio |
 
-En el balance histórico P01–P06 eran faltantes de **preparación**; actualmente P01 está implementado en B6 y P02–P06 permanecen abiertos. Esos bloques, no propuestas de mejora opcional. Se derivan
+En el balance histórico P01–P06 eran faltantes de **preparación**; actualmente P01 está implementado en B6 y P02–P06 permanecen abiertos. Son requisitos de preparación, no propuestas de mejora opcional. Se derivan
 de entidades/relaciones, cuotas y transición exigidas por T11-A. Sus decisiones
 dependientes deben delimitarse antes de implementar. No se pide ahora un panel,
 registro, reset, traslado completo o autorización de co-docente para cerrar B.
