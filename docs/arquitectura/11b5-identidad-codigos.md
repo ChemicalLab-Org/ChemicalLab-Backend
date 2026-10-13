@@ -42,6 +42,9 @@ la comparación del login ni el valor registrado. No se afirma normalización
 Unicode/NFKC/IDNA, política universal de correo o inventario de una base real.
 El contrato legacy incluye confirmación Java exacta de la identidad; futuras
 collations/comparaciones requieren revisión de colisiones y decisión explícita.
+La igualdad de consultas SQL depende de la collation de las columnas legacy;
+no se certifica la de una base real. El ensayo usa locale C y la comprobación
+Java final sigue siendo exacta. Se conserva ese contrato, sin imponer C a legacy.
 
 ## Persistencia y procedencia
 
@@ -173,10 +176,103 @@ catálogo no queda cubierto. Privilegios, TLS, capacidad/reloj y operación pend
 
 ## Verificación y atribución
 
-La evidencia definitiva se registra después del empaquetado en esta sección.
-Las 714 pruebas históricas de B4 pertenecen al SHA `9c60faaa4dd50aa9c34e65a7c44da1f5b5cd0f58`;
-no se presentan como ejecución B5. Selecciones e intentos fallidos quedan separados
-en `.codex-work/t11b5-evidence`, sin sumar sus conteos a la suite completa.
+**SHA probado:** `f3f633766ece835e0bd37cc018505f7dc89e3e50`.
+`clean package` terminó el 13 de octubre de 2026 a las **06:47:54 America/Lima**,
+en 12 min 31 s: **59 suites, 739 pruebas, 0 fallos, 0 errores, 0 omitidas;
+BUILD SUCCESS y JAR generado**. Incluye los 25 casos B5 y las 714 regresiones
+preexistentes recién ejecutadas, incluidas T02/T04/T08 y B1–B4. Las selecciones
+no se suman a ese total. El commit posterior añade exclusivamente evidencia
+a esta nota; código, SQL, pruebas y POM coinciden con el SHA probado.
+
+Entorno de ejecución: Windows, JDK 17.0.12, Maven 3.9.15 offline, PostgreSQL 18.4
+propio desechable en 127.0.0.1:55435, DB `chemicallab_t01_test`, rol ficticio
+`t11b5_fixture`, perfil test, 300 conexiones, locale C, DB TimeZone America/Bogota.
+El tiempo de entrega se expresa en America/Lima; no se reinterpretan timestamps
+legacy ni se certifica restauración entre zonas distintas.
+
+JAR SHA-256: `94ebc80918e39545d9f7a8a9cb7a98f17ef2ba9efc1307e3ee3ff9c3a17308fa`.
+Los **ocho SQL de expansión** dentro del JAR coinciden con las fuentes probadas,
+normalizando solo CRLF/LF. SQL B5 UTF-8/LF SHA-256:
+`44eaf40b695846f295c5d643e0beafb53095386d66d1d8ea9b992ff5ec51e2df`.
+
+| Verificación nueva sobre el SHA probado | Resultado |
+| --- | --- |
+| DEMO-A/DEMO-B y F05 | EST0001 para cuentas diferentes en dos colegios; cuenta común con códigos independientes; reasignación rechazada por servicio y SQL también tras ENDED; readmisión conserva ID/reserva |
+| Conservación | Firmas completas de cuentas/sesiones/perfiles/participantes/intentos y cuota legacy iguales al registrar códigos; referencias originales no se mueven |
+| Privilegio global | ADMIN_INSTITUCION y autor docente no pueden preparar ADMINISTRADOR; SQL rechaza rol escolar/proof ausente/derivado. Checksum/evidencia explícitos, fuente actual y vigencia no retroactiva; solapamiento rechazado, revocación inmutable y grants adyacentes |
+| Identificadores | Colisión username/email y vista previa ASCII entre cuentas conservadas, sin fusión/renombre ni email verificado; SQL y servicio bloquean binding. Misma cuenta con dos tipos iguales válida. Alias/candidato desactualizado se conserva y bloquea; prioridad T02/T04 legacy intacta |
+| Historia/atomicidad | Episodios, ROLE_CHANGED, suspensión/reactivación y readmisión sobre eventos B1 originales. Fallo de evidencia temprano/tardío revierte privilegio/prueba, alias, reserva, pertenencia, historia, cuotas y SUCCESS; reintentos idempotentes |
+| Carrera concreta de reserva | Dos JVM OS 30656/31176 y dos PID PostgreSQL 21140/21276 observados esperando locks; resultados COMMITTED / REJECTED:23505. Una reserva y dueño permanente; SQL directo, no flujo auditado de negocio |
+| Expansión/certificación | Instalación rollback/repetición, ledgers previos intactos; deriva de trigger rechazada sin reparación; CHECK y vistas reconstituidos por restore conservan catálogo |
+| Restauración | pg_dump/pg_restore transaccional preservó firmas completas de **78 tablas del schema de ensayo**, incluidos IDs, credenciales/sesiones, relaciones, historia, ledgers y cuotas. B5 valida cadena; UPDATE/DELETE/TRUNCATE de logs siguen rechazados; conciliación fuera de DB fixture bloqueada |
+
+Comando definitivo desde el checkout, con JAVA_HOME de JDK17 y PostgreSQL18 en PATH:
+
+```powershell
+# Se usó el mvn.cmd 3.9.15 cacheado por el wrapper; estos argumentos son los ejecutados.
+mvn -o '-Dspring.profiles.active=test' '-Dspring.datasource.url=jdbc:postgresql://127.0.0.1:55435/chemicallab_t01_test' '-Dspring.datasource.username=t11b5_fixture' '-Dspring.datasource.password=fictitious' clean package
+# Selección B5: los mismos argumentos y '-Dtest=IdentityPreparationDbTest' test.
+# El test reproduce pg_dump -Fc / pg_restore --single-transaction --exit-on-error,
+# certificación SQL y disputa de reserva en dos procesos independientes.
+```
+
+Preparación reproducible, únicamente en un directorio nuevo y puerto libre:
+
+```powershell
+initdb -D ../t11b5-repro-postgres -U t11b5_fixture -A trust --encoding=UTF8 --locale=C
+pg_ctl -D ../t11b5-repro-postgres -l ../t11b5-repro-postgres.log -o '-h 127.0.0.1 -p 55435 -c max_connections=300' -w start
+createdb -h 127.0.0.1 -p 55435 -U t11b5_fixture chemicallab_t01_test
+# Ejecutar la suite, verificar evidencia y retirar únicamente la base ficticia propia.
+dropdb -h 127.0.0.1 -p 55435 -U t11b5_fixture chemicallab_t01_test
+pg_ctl -D ../t11b5-repro-postgres -m fast -w stop
+```
+
+Trust solo en el clúster loopback de ensayo; no configuración operativa.
+El arnés inicial crea el esquema legacy mediante Hibernate antes de aplicar
+la cadena explícita; después ninguna divergencia se repara con Hibernate.
+Restore y procesos B5 no arrancan instaladores JPA. Perfil test obligatorio;
+las guardas de los arneses rechazan destinos ajenos. Los errores deliberados
+SECURITY_AUDIT_EVIDENCE_UNAVAILABLE/guardas de arranque no son fallos Surefire.
+
+| Intentos/selecciones anteriores, sin sumarlos a la suite definitiva | Resultado y atribución |
+| --- | --- |
+| Maven inicial dentro de sandbox | Interrumpido sin suite; bloqueo de procesos/runtime. Un intento psql de lectura en sandbox fue bloqueado y se repitió fuera de sandbox sobre el mismo clúster ficticio |
+| focused-01 / focused-02 | Errores de compilación del arnés (API HTTP/principal y throws); ninguna aceptación funcional |
+| focused-03 | 1 error de inicialización por CASE PL/pgSQL sin paréntesis; corregido antes del commit |
+| focused-04 | 22 errores de fixture por membresía B ya creada en B4; se reutilizó su ID, sin cambiar unicidad |
+| focused-05 / restore-diagnosis | 22 casos con 1 error de restore, y diagnóstico 1 caso fallido. Se detectó representación de BETWEEN/AND y aliases de UNION; definición explícita corregida sin sobrescribir firmas ni debilitar guardas |
+| focused-06 | 22/0/0/0, iteración anterior a control de procedencia temporal y tres controles finales |
+| focused-07 | 25/0/0/0 antes del commit, mismos código/SQL/tests que el SHA probado; selección, no suite completa |
+| full-package.log | Única suite completa de entrega: 739/0/0/0 sobre SHA f3f6337 |
+
+Las **714 pruebas históricas** de B4 pertenecen exclusivamente a
+`9c60faaa4dd50aa9c34e65a7c44da1f5b5cd0f58`; sus notas/cierres/evidencias no se
+reescriben ni se atribuyen a B5. El total nuevo se obtiene de XML Surefire de
+una ejecución completa, no de sumar selectores o evidencia nativa adicional.
+Carrera y restauración B5 forman parte de sus 25 pruebas, no casos extra.
+
+Evidencia local conservada en `.codex-work/t11b5-evidence`, fuera de la PR:
+`tested-sha.txt`, `full-package.log`, `verified-results.json`, `verified-suites.json`,
+`verified-reports.zip`, `verified-backend.jar`, `verified-packaged-sql.json`,
+`verified/t11b5-native` y `verified/t11b5-processes`, dumps/catálogos/firmas,
+logs focused-* y restore-diagnosis separados, manifiestos de conservación y
+`collect.ps1`, `cleanup.ps1`, `cleanup.log`. No incluye datos escolares reales.
+
+Conservación: **30/30 archivos protegidos**, incluidos catorce documentos locales
+anteriores y los **16 E2E**, sin discrepancias; siete SQL anteriores intactos y
+56 documentos backend anteriores (excluida la actualización solicitada T11-A)
+sin cambios. Auditoría original SHA-256
+`1eff5d59f7a114dfee91cb557a0405c2f7247e43cd2926d2542172c0255e499b`.
+Frontend conserva `feature/validaciones-datos-institucionales`,
+`e88589635a8269c50ee0f53fccf157f0d0985034`, con `?? e2e-selenium/` previo.
+Checkout backend original limpio en develop/base 4e04545. Fetch final reconfirmó
+el mismo develop. La base ficticia se retiró y el servidor propio se detuvo,
+verificando primero ruta/instancia, cero schemas de ensayo y cero conexiones.
+
+No suite Linux, nueva SCA, dimensionamiento sostenido o validación operativa.
+No se certifican permisos reales, recuperación entre zonas distintas ni consumo
+de secuencias. SEC-13 y VER-01, ciclos operativos de aliases y todos los gates
+T12/T13 siguen pendientes. Esta entrega termina en PR borrador hacia develop.
 
 ## Matriz T11-A vigente
 
