@@ -172,6 +172,32 @@ class BoardActivityReconciliationDbTest {
         assertThat(f.sql().queryForMap("select * from t11b4_audit_contexts where event_id=?",a)).containsEntry("institution_id",null).containsEntry("account_id",null);
         assertThat(count("select used from storage_usage where scope='SYSTEM' and owner_id=0 and resource='REVISION_BYTES'")).isGreaterThan(0);
     }
+    @Test void legacyGlobalAccountManagementCannotBeInstitutionalized() throws Exception {
+        for(LogEventType event:List.of(LogEventType.USER_CREATED,LogEventType.USER_UPDATED,LogEventType.USER_DEACTIVATED,LogEventType.USER_REACTIVATED,LogEventType.PERMISSIONS_CHANGED)) {
+            audit(event,"UserAccount",f.student.getId());long original=count("select max(id) from system_logs where event_type=? and target_id=?",event.name(),f.student.getId());
+            assertThat(service.apply(approved(AUDIT,original,Map.of("scope","INSTITUTION","institutionId",base.institution,"evidence","FIXTURE-GLOBAL-ACCOUNT")))).isEqualTo("CONFLICT");
+            assertThat(service.apply(approved(AUDIT,original,Map.of("scope","GLOBAL","evidence","FIXTURE-GLOBAL-ACCOUNT")))).isEqualTo("APPLIED");
+        }
+    }
+    @Test void disappearingSourceMarksApprovedSnapshotStaleWithoutInventingANewOrigin() throws Exception {
+        long empty=f.board(f.teacher,"3","A");var map=mapping();map.put("participants",List.of());long id=approved(BOARD,empty,map);
+        f.sql().update("delete from whiteboard_sessions where id=?",empty);assertThat(service.apply(id)).isEqualTo("STALE");
+        var before=rehearsal();assertThat(service.apply(id)).isEqualTo("STALE");assertThat(rehearsal()).isEqualTo(before);
+        assertThatThrownBy(()->proposed(BOARD,empty,map)).isInstanceOf(DataAccessException.class);assertThat(rehearsal()).isEqualTo(before);
+    }
+    @Test void auditCannotContradictTheInstitutionAndClassOfItsTypedParent() throws Exception {
+        long event=audit(LogEventType.ACADEMIC_CLASS_CREATED,"AcademicClass",base.classId);
+        assertThat(service.apply(approved(AUDIT,event,Map.of("scope","INSTITUTION","institutionId",base.foreign,"classId",base.foreignClass,"evidence","FIXTURE-CROSS-PARENT")))).isEqualTo("CONFLICT");
+        assertThat(service.apply(approved(AUDIT,event,Map.of("scope","INSTITUTION","institutionId",base.institution,"classId",base.classId,"evidence","FIXTURE-CLASS-PARENT")))).isEqualTo("APPLIED");
+    }
+    @Test void resourceActivityChecksTheB3ParentAndDetectsReferenceDrift() throws Exception {
+        long resource=base.approved(ResourceReconciliationService.SourceKind.EVALUATION,base.evaluation,base.standardMap());assertThat(base.service.apply(resource)).isEqualTo("APPLIED");
+        long event=f.sql().queryForObject("insert into usage_events(user_id,username,user_role,module,event_type,resource_type,resource_id,occurred_at) values(?,?,'ESTUDIANTE','EVALUATIONS','EVALUATION_OPENED','Evaluation',?,localtimestamp) returning id",Long.class,f.student.getId(),f.student.getUsername(),""+base.evaluation);
+        assertThat(service.apply(approved(USAGE,event,Map.of("scope","INSTITUTION","institutionId",base.foreign,"evidence","FIXTURE-RESOURCE-PARENT")))).isEqualTo("CONFLICT");
+        var map=Map.of("scope","INSTITUTION","institutionId",base.institution,"evidence","FIXTURE-RESOURCE-PARENT");
+        long id=approved(USAGE,event,map);assertThat(service.apply(id)).isEqualTo("APPLIED");
+        f.sql().update("update evaluations set title='Changed fictitious parent' where id=?",base.evaluation);assertThat(service.apply(id)).isEqualTo("STALE");
+    }
     @Test void boardEventCrossInstitutionAndStaleParentAreRejected() throws Exception {
         long id=appliedBoard();var cross=factMap();cross.put("institutionId",base.foreign);cross.put("classId",base.foreignClass);
         assertThat(service.apply(approved(USAGE,usage(),cross))).isEqualTo("CONFLICT");

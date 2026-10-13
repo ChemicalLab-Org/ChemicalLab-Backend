@@ -67,6 +67,11 @@ Las relaciones verifican también procedencia APPROVED y fotografía vigente al
 insertar, incluso por SQL directo. El mapa no puede contradecir el autor del
 origen, la cuenta del perfil/participante ni el target del evento de pizarra.
 Las FKs rechazan cruce de institución/clase/matrícula aunque se omita el servicio.
+Actividad/auditoría con padre tipado B1/B2 o recurso ConceptContent/Evaluation B3
+comprueba también la institución y clase que ese padre demuestra. Una clase
+requiere su classId; un recurso de biblioteca demuestra institución sin fabricar
+clase de evento. Recursos B3 requieren conciliación APPLIED vigente. La fotografía
+incluye la referencia y su vigencia; modificaciones posteriores producen deriva.
 No se transfiere teacher_id, owner_user_id, IDs ni claves de padres legacy.
 
 ## Conciliación interna, aprobación y ambigüedad
@@ -112,7 +117,8 @@ La evidencia FIXTURE-* es una convención cerrada de ensayo, no identificación 
 responsables reales F08. No se aplica el mapa por grupo, docente, username o
 primera membresía. GLOBAL exige `{ "scope": "GLOBAL", "evidence": "FIXTURE-GLOBAL" }`
 y un hecho global demostrado por vocabulario conservador: auditoría de login,
-logout, cambio/reset de password, revocación global, salud o retención técnica;
+logout, cambio/reset de password, revocación global, gestión global legacy de
+cuentas/permisos, salud o retención técnica;
 uso SYSTEM_STATUS. Estos eventos rechazan toda institución. Los demás hechos
 sin resolución se proponen con `{}`; no se clasifica arbitrariamente un evento
 genérico de navegación como global o escolar. Otros tipos globales requieren
@@ -123,6 +129,8 @@ Sin mapa, UNRESOLVED conserva la incertidumbre de contexto. CONFLICT conserva
 una contradicción demostrada; toda asociación provisional se revierte mediante
 subtransacción. APPLIED/UNRESOLVED/CONFLICT pueden pasar a STALE al detectar
 deriva; STALE es terminal. Los snapshots/mapas/aprobaciones no se reescriben.
+La desaparición externa de una fuente produce STALE conservando la fotografía;
+no admite proponer una PK ausente.
 Otro mapa/fotografía genera otro ID; no reemplaza automáticamente contexto ya
 insertado. Una PK ya asociada produce conflicto para el nuevo mapa, conservando
 la asociación histórica anterior. Resolver/cortar writers reales sigue pendiente.
