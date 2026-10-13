@@ -250,3 +250,56 @@ público. SEC-13 y VER-01 siguen abiertos. No se inicia T11-B4, T12 o T13.
   autocalificación corresponden a T12/T13; sustituciones y traslados no están implementados.
 
 La entrega termina en PR backend borrador hacia develop para revisión.
+
+
+## Resultados definitivos
+
+SHA probado: `fca56471250538cb1adc770baee90aa8cd664bbe`. `clean package` completo: **56 suites, 671 pruebas,
+0 fallos, 0 errores, 0 omitidas; JAR generado**. Incluye 27 pruebas nuevas B3;
+no se acumulan las selecciones ni la ejecución parcial interrumpida de `73e7b0a`.
+Los 644 resultados históricos de B2 conservan su atribución original; esta cifra
+de 671 corresponde a la ejecución nueva del SHA indicado. El commit posterior
+de evidencia modifica únicamente esta nota, sin cambiar código/SQL/pruebas/POM.
+
+Entorno: Windows, JDK 17.0.12, PostgreSQL 18.4 desechable,
+Maven offline, perfil test, loopback `127.0.0.1:55433`. Todas las cuentas,
+instituciones, mapas, materiales y respuestas son ficticios.
+
+SHA-256 JAR: `20b82d94ff80a46ad07c9658908741e1b3a86201e6e51e971ddc2ff3dd4a888b`.
+SHA-256 SQL UTF-8/LF: `9fb63b81d399c1cf12d3f824cbacc6d8706f01680d792b4b43956de2728215f7`.
+Se comprobó que el JAR contiene exactamente el SQL probado.
+
+Restauración nativa: **60 tablas del esquema** conservan firmas
+idénticas de datos, incluyendo IDs, snapshots/checksums, historia y contadores.
+`pg_dump -Fc`/`pg_restore --exit-on-error` en DB separada; revalidación B1 v1/B3 v1,
+UPDATE/DELETE/TRUNCATE de T08 rechazados y divergencia de trigger detectada sin
+reparar ni sobrescribir firmas. La DB de restauración fue retirada por el arnés.
+
+Dos procesos JVM por carrera, `ddl-auto=none` y sin instaladores T07-B/T08:
+aplicación concurrente devuelve APPLIED/APPLIED, **un consumo y un SUCCESS**;
+última oportunidad legacy devuelve **STARTED:3/REJECTED**, tres intentos originales
+totales y un activo. La observación preparada detecta la escritura como
+`source_current=false`, sin convertirse en una segunda autoridad.
+
+Las 27/27 firmas de archivos protegidos, incluidos los 16 E2E, son idénticas.
+Auditoría original: `1eff5d59f7a114dfee91cb557a0405c2f7247e43cd2926d2542172c0255e499b`.
+Frontend conserva rama `feature/validaciones-datos-institucionales`, HEAD
+`e88589635a8269c50ee0f53fccf157f0d0985034` y estado previo `?? e2e-selenium/`.
+
+Evidencias locales fuera de la PR: `.codex-work/t11b3-evidence/full-package.log`,
+`verified-results.json`, `native-signatures.json`, `process-results.json` y
+`preservation-before.json`/`preservation-after.json`; los artefactos nativos y
+logs de procesos están también en `target/t11b3-native`/`target/t11b3-processes`.
+Las iteraciones fallidas/parcial permanecen separadas. No se certifican Linux,
+capacidad/carga productiva, datos/mapas reales ni aislamiento institucional REST/STOMP.
+
+Ensayo suplementario sobre las clases compiladas del mismo SHA, separado del
+conteo de 671: recursos y entregas asociados efectivamente a A y B, con la misma
+cuenta global y membresías explícitas en ambas instituciones. Raíces distintas,
+consumo reservado A=1/B=0, referencias SQL cruzadas rechazadas y ningún tenant
+inferido del perfil legacy. Evidencia: `two-institutions.json` y
+`two-institutions.log`, con arnés local `VerifyTwoInstitutions.java`.
+
+La base ficticia de la suite fue retirada y el cluster propio quedó detenido
+después de comprobar su data_directory exacto; `cleanup.log` conserva el resultado.
+El JAR, los dumps ficticios y las evidencias permanecen locales para revisión.
