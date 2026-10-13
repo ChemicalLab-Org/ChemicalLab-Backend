@@ -184,4 +184,94 @@ La entrega termina con PR borrador para revisión.
 
 ## Verificación
 
-Resultados definitivos y SHA probado se incorporan después de las verificaciones.
+**SHA de código probado:** `9d4c573d457d8f3efd6f03d51b503290514146bd`.
+Entorno: Windows, JDK 17.0.12, PostgreSQL 18.4 desechable,
+`127.0.0.1:55432/chemicallab_t01_test`, perfil test, 300 conexiones,
+rol ficticio t11b2_fixture. No DB real, instalación global ni medición productiva.
+
+`clean package` definitivo finalizó el 2026-10-12 a las 22:49:43 America/Lima:
+**55 suites, 640 pruebas, cero fallos, errores u omisiones; JAR generado**.
+Incluye las 29 pruebas académicas; no se suman nuevamente. El commit posterior
+de cierre cambia exclusivamente esta nota; fuentes, SQL, tests y POM conservan
+el contenido del SHA probado. SHA-256 del JAR conservado:
+`061924edbceea5279ceb4db0ffdd17ef6d2151745cfde988f6d46642911c096d`.
+
+| Ejecución | Alcance y resultado |
+| --- | --- |
+| Selección inicial en sandbox | Falló al construir el arnés por bloqueo de loopback: 1 error de inicialización, sin aceptación funcional |
+| Selección fuera de sandbox antes de transición CHECK explícita | 28 casos, 0 fallos/errores/omisiones; iteración previa, sin atribuirle el código final |
+| Selección actualizada previa al commit | 29 casos, 0 fallos/errores/omisiones; incluye transición audit enum sin Hibernate y round-trip de constraint |
+| Suite completa / empaquetado sobre SHA probado | 640/0/0/0; 55 suites, JAR generado, regresiones T01–T10 y B1 incluidas |
+| Ensayo nativo definitivo sobre SHA probado | Expansión/repetición sobre B1 poblada y legacy; B1 revalida; dos carreras con dos procesos psql; dump/restore y 19 firmas idénticas; divergencia/revalidación |
+
+La suite incluye las selecciones; no se suman conteos entre ejecuciones. Se registran
+las iteraciones y ensayos separados de JUnit. El primer ensayo nativo se detuvo
+por esperar exit code 3 para psql -c: el SQLSTATE real ya era 23P01 con exit 1.
+Se conservó y repitió íntegro en bases ficticias nuevas con expectativa correcta,
+sin cambiar código ni esquema para ocultar ese resultado. El rechazo de expansión
+por psql -f sí devolvió 3. La preparación inicial de initdb dentro del sandbox no
+fue válida; el cluster definitivo se creó fuera de él y únicamente en loopback.
+
+| Invariante | Evidencia |
+| --- | --- |
+| Ámbitos y FKs | Códigos iguales A/B y otro período permitidos; duplicados locales y padres ajenos por SQL rechazados |
+| Cuenta compartida | Dos clases A y una B con la misma cuenta; terminar A1 conserva A2/B |
+| Activación | Membresía pendiente/suspendida/terminada/ausente, grant ausente/futuro/vencido/revocado/equivocado y rol global sin grant rechazados |
+| Estados/fechas | Intervalos vacíos/invertidos/infinitos/fuera del período y transiciones inválidas rechazadas; expiración natural no amplía acceso |
+| Episodios | Suspensión/reanudación conserva activación; readmisión crea episodio siguiente; terminales históricos bloquean solapamiento; adyacencia permitida |
+| Reemplazo | Nuevo responsable en el mismo instante del fin previo, con classId/cuentas/matrículas idénticos; CO_DOCENTE rechazado |
+| Historia y atomicidad | Identidad/ventanas/episodios/eventos protegidos; rollback, sucesor inválido y fallo de evidencia tras terminar predecesor revierten versiones/historia/SUCCESS |
+| Auditoría | Actor autenticado, objetivo/ID, institutionId y correlación seguros; transición de CHECK legacy explícita y repetible sin alterar filas anteriores |
+| Concurrencia | Dos conexiones JDBC y dos procesos OS psql por carrera; un commit/un 23P01 y una fila efectiva |
+| Compatibilidad | Mapas completos de cuentas/sesiones idénticos; /auth/me conserva ESTUDIANTE, rutas admin/docente 403 y tópico STOMP ajeno rechazado |
+| Recuperación | pg_dump -Fc/pg_restore transaccional; B1 y B2 revalidan; 19 firmas de datos idénticas; trigger deshabilitado detectado sin reparación |
+
+En las carreras nativas se retuvo la fila de clase desde una conexión control,
+se observaron dos PID PostgreSQL bloqueados antes de liberar la barrera y se
+exigió SQLSTATE 23P01, sin aceptar timeout/deadlock como éxito:
+responsables PID OS 35916/36700; matrículas 33876/26468; resultados 0/1.
+Los procesos son psql independientes, no dos tareas sobre una conexión compartida.
+SQL directo verifica integridad, no sustituye la evidencia de servicio T08.
+No se afirma ausencia universal de carreras ni capacidad productiva.
+
+Bases definitivas nativas: chemicallab_t11b2_expansion_verified y
+chemicallab_t11b2_restore_verified. La expansión dejó intactas las ocho firmas
+B1/legacy iniciales; restore conservó diecinueve tablas incluyendo eventos,
+ledgers B1/B2 y guarda/presupuesto T08. Datos, dumps y logs son exclusivamente
+ficticios, conservados localmente en `.codex-work/t11b2-evidence`, fuera de la PR.
+Checksum SHA-256 del SQL UTF-8/LF:
+`85c9a06bc9fa7a974d5ea2534d3040c2e9bcbaa38134ff67d106a3eeeb7e6e4f`.
+Un checkout CRLF puede tener otro checksum físico: contrastar normalización
+y contenido Git antes de concluir divergencia de fuente.
+
+Comando reproducible desde backend, con JDK 17 y PostgreSQL 18 en PATH:
+
+```powershell
+# Inicializar un directorio nuevo de ensayo y comprobar el puerto libre:
+initdb -D ../t11b2-repro-postgres -U t11b2_fixture -A trust --encoding=UTF8 --locale=C
+pg_ctl -D ../t11b2-repro-postgres -l ../t11b2-repro-postgres.log -o '-h 127.0.0.1 -p 55432 -c max_connections=300' -w start
+createdb -h 127.0.0.1 -p 55432 -U t11b2_fixture chemicallab_t01_test
+./mvnw.cmd '-Dspring.profiles.active=test' '-Dspring.datasource.url=jdbc:postgresql://127.0.0.1:55432/chemicallab_t01_test' '-Dspring.datasource.username=t11b2_fixture' '-Dspring.datasource.password=fictitious' clean package
+# Selección parcial: añadir '-Dtest=AcademicPersistenceDbTest' y usar test.
+# Tras terminar y retirar exclusivamente fixtures:
+pg_ctl -D ../t11b2-repro-postgres -m fast -w stop
+```
+
+Trust sólo para cluster desechable loopback. El arnés exige DB loopback ficticia,
+crea esquemas aleatorios y los elimina. Perfil test imprescindible para suites
+legacy. No se modifican configuración, cuotas, guardas ni POM para hacerlas pasar.
+Conservación comprobada: 27/27 archivos previos (11 documentos de seguridad y
+16 E2E), cero discrepancias SHA-256; auditoría original conserva
+`1eff5d59f7a114dfee91cb557a0405c2f7247e43cd2926d2542172c0255e499b`.
+Frontend permanece en feature/validaciones-datos-institucionales,
+`e88589635a8269c50ee0f53fccf157f0d0985034`, con su e2e-selenium previo.
+Diff revisado: once archivos exclusivos del bloque, sin secretos/datos reales;
+fuente B1, documentos previos y superficies legacy protegidas sin cambios.
+
+Limpieza final: cinco bases ficticias retiradas (incluido el ensayo incompleto),
+cero bases chemicallab% en el cluster propio y servidor detenido. Dump y evidencia
+se conservan fuera de la PR. La recuperación confirmó también audit_append_only
+habilitado, versión T08=1 y fila de presupuesto intacta. Los mensajes deliberados
+de SECURITY_AUDIT_EVIDENCE_UNAVAILABLE no son fallos JUnit; XML y resumen Maven
+confirman los resultados anteriores. No se ejecutó suite Linux, nueva SCA ni
+medición sostenida/operativa; SEC-13 y VER-01 continúan abiertos.
