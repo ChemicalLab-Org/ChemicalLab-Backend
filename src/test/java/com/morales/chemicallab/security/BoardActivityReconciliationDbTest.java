@@ -20,19 +20,21 @@ class BoardActivityReconciliationDbTest {
     final ResourceReconciliationDbTest base=new ResourceReconciliationDbTest();
     final WhiteboardSecurityTransportDbTest f=base.f;
     BoardActivityReconciliationService service;
-    String expansion;
+    String expansion, predecessor;
     long participant;
     @BeforeAll void start() throws Exception {
-        base.start(); service=f.app.getBean(BoardActivityReconciliationService.class); expansion=base.script("t11b4-v1");
+        base.start(); service=f.app.getBean(BoardActivityReconciliationService.class); predecessor=base.script("t11b4-v1"); expansion=base.script("t11b4-v2");
+        assertThatThrownBy(()->f.sql().execute(expansion)).isInstanceOf(DataAccessException.class).hasMessageContaining("requires certified B4 v1");
+        f.sql().execute(predecessor);
         Map<String,String> before=versions();
         tx().executeWithoutResult(s->{f.sql().execute(expansion);s.setRollbackOnly();});
-        assertThat(f.sql().queryForObject("select to_regclass(current_schema()||'.t11b4_schema_version') is null",Boolean.class)).isTrue();
+        assertThat(f.sql().queryForObject("select to_regclass(current_schema()||'.t11b4_apply_version') is null",Boolean.class)).isTrue();
         f.sql().execute(expansion);f.sql().execute(expansion);
         assertThat(versions()).isEqualTo(before);
     }
     Map<String,String> versions() {
         Map<String,String> result=new TreeMap<>();
-        for(String t:List.of("t11b1_schema_version","t11b2_schema_version","t11b2_audit_version","t11b3_schema_version","t11b3_apply_version","audit_schema_version","storage_schema_version")) result.put(t,f.sql().queryForObject(base.signature(t),String.class));
+        for(String t:List.of("t11b1_schema_version","t11b2_schema_version","t11b2_audit_version","t11b3_schema_version","t11b3_apply_version","t11b4_schema_version","audit_schema_version","storage_schema_version")) result.put(t,f.sql().queryForObject(base.signature(t),String.class));
         return result;
     }
     @BeforeEach void fixture() {
@@ -158,6 +160,114 @@ class BoardActivityReconciliationDbTest {
     Map<String,Object> factMap(){return new HashMap<>(Map.of("scope","INSTITUTION","institutionId",base.institution,"classId",base.classId,"boardId",f.board,"evidence","FIXTURE-SERVER-RELATION"));}
     long usage(){return f.sql().queryForObject("select min(id) from usage_events where resource_type='WhiteboardSession' and resource_id=?",Long.class,""+f.board);}
     long audit(LogEventType event,String target,Long targetId){tx().executeWithoutResult(s->f.app.getBean(AuditLogService.class).recordInfo(event,target,targetId,null,null,null,null));return count("select max(id) from system_logs");}
+    Map<String,Object> typedBoardMap(){var m=factMap();m.remove("boardId");return m;}
+    String applyAudit(boolean direct,long id){return direct?f.sql().queryForObject("select t11b4_apply(?)",String.class,id):service.apply(id);}
+    void directAuditContext(long entry){f.sql().update("""
+        insert into t11b4_audit_contexts(event_id,scope,institution_id,class_id,board_id,account_id,evidence,reconciliation_id)
+        select source_pk,proposed->>'scope',(proposed->>'institutionId')::bigint,(proposed->>'classId')::bigint,
+        (proposed->>'boardId')::bigint,(source_snapshot->'author'->>'user_id')::bigint,proposed->>'evidence',id
+        from t11b4_reconciliations where id=?
+        """,entry);}
+    @Test void adminBoardTargetRejectsForeignInstitutionAndClassWithOrWithoutBoardId() throws Exception {
+        appliedBoard();
+        for(boolean direct:List.of(false,true)) for(boolean explicit:List.of(false,true)) for(boolean foreign:List.of(false,true)) {
+            long event=audit(LogEventType.ADMIN_ACTION,"WhiteboardSession",f.board);
+            var map=explicit?factMap():typedBoardMap();map.put("classId",foreign?base.foreignClass:base.otherClass);
+            if(foreign)map.put("institutionId",base.foreign);
+            long id=approved(AUDIT,event,map);var before=rehearsal();
+            assertThatThrownBy(()->directAuditContext(id)).isInstanceOf(DataAccessException.class);
+            assertThat(rehearsal()).isEqualTo(before);
+            assertThat(applyAudit(direct,id)).isEqualTo("CONFLICT");
+            assertThat(count("select count(*) from t11b4_audit_contexts where event_id=?",event)).isZero();
+            var after=rehearsal();assertThat(applyAudit(direct,id)).isEqualTo("CONFLICT");assertThat(rehearsal()).isEqualTo(after);
+        }
+    }
+    @Test void adminBoardTargetValidWithoutBoardIdKeepsOriginalLogAndDetectsParentDrift() throws Exception {
+        appliedBoard();List<Long> entries=new ArrayList<>();
+        for(boolean direct:List.of(false,true)) for(boolean explicit:List.of(false,true)) {
+            long event=audit(LogEventType.ADMIN_ACTION,"WhiteboardSession",f.board);
+            String original=f.sql().queryForObject("select to_jsonb(s)::text from system_logs s where id=?",String.class,event);
+            long id=approved(AUDIT,event,explicit?factMap():typedBoardMap());entries.add(id);
+            assertThat(applyAudit(direct,id)).isEqualTo("APPLIED");var after=rehearsal();
+            assertThat(applyAudit(direct,id)).isEqualTo("APPLIED");assertThat(rehearsal()).isEqualTo(after);
+            assertThat(f.sql().queryForObject("select board_id from t11b4_audit_contexts where event_id=?",Long.class,event)).isEqualTo(explicit?f.board:null);
+            assertThat(f.sql().queryForObject("select to_jsonb(s)::text from system_logs s where id=?",String.class,event)).isEqualTo(original);
+        }
+        f.sql().update("update whiteboard_sessions set state_revision=state_revision+1 where id=?",f.board);
+        for(long id:entries) {
+            assertThat(f.sql().queryForObject("select source_current from t11b4_fact_observations where reconciliation_id=?",Boolean.class,id)).isFalse();
+            assertThat(service.apply(id)).isEqualTo("STALE");
+            var after=rehearsal();assertThat(f.sql().queryForObject("select t11b4_apply(?)",String.class,id)).isEqualTo("STALE");assertThat(rehearsal()).isEqualTo(after);
+        }
+    }
+    @Test void adminBoardTargetMissingOrUnreconciledParentCannotReceiveInstitution() throws Exception {
+        for(boolean direct:List.of(false,true)) for(Long board:Arrays.asList(f.otherBoard,999999999L,null)) {
+            long event=audit(LogEventType.ADMIN_ACTION,"WhiteboardSession",board);
+            long id=approved(AUDIT,event,typedBoardMap());var before=rehearsal();
+            assertThatThrownBy(()->directAuditContext(id)).isInstanceOf(DataAccessException.class);assertThat(rehearsal()).isEqualTo(before);
+            assertThat(applyAudit(direct,id)).isEqualTo("CONFLICT");
+            assertThat(count("select count(*) from t11b4_audit_contexts where event_id=?",event)).isZero();
+        }
+    }
+    @Test void adminBoardTargetStaleParentAtProposalConflictsAndDriftAfterApprovalIsStale() throws Exception {
+        appliedBoard();List<Long> entries=new ArrayList<>();
+        for(boolean direct:List.of(false,true)) entries.add(approved(AUDIT,audit(LogEventType.ADMIN_ACTION,"WhiteboardSession",f.board),typedBoardMap()));
+        f.sql().update("update whiteboard_sessions set state_revision=state_revision+1 where id=?",f.board);
+        for(int i=0;i<2;i++) {
+            long id=entries.get(i);assertThatThrownBy(()->directAuditContext(id)).isInstanceOf(DataAccessException.class);
+            assertThat(applyAudit(i==1,id)).isEqualTo("STALE");
+            long stale=approved(AUDIT,audit(LogEventType.ADMIN_ACTION,"WhiteboardSession",f.board),typedBoardMap());
+            assertThatThrownBy(()->directAuditContext(stale)).isInstanceOf(DataAccessException.class);
+            assertThat(applyAudit(i==1,stale)).isEqualTo("CONFLICT");
+        }
+        assertThat(count("select count(*) from t11b4_audit_contexts c join system_logs s on s.id=c.event_id where s.target_type='WhiteboardSession' and s.target_id=?",f.board)).isZero();
+    }
+    @Test void adminBoardTargetWithoutResolutionRemainsUnresolved() throws Exception {
+        for(boolean direct:List.of(false,true)) {
+            long event=audit(LogEventType.ADMIN_ACTION,"WhiteboardSession",f.board);long id=approved(AUDIT,event,Map.of());
+            assertThat(applyAudit(direct,id)).isEqualTo("UNRESOLVED");var after=rehearsal();
+            assertThat(applyAudit(direct,id)).isEqualTo("UNRESOLVED");assertThat(rehearsal()).isEqualTo(after);
+        }
+        assertThat(count("select count(*) from t11b4_audit_contexts c join system_logs s on s.id=c.event_id where s.target_type='WhiteboardSession' and s.target_id=?",f.board)).isZero();
+    }
+    @Test void adminBoardTargetRollbackRestoresContextHistoryAuditAndQuotas() throws Exception {
+        appliedBoard();long id=approved(AUDIT,audit(LogEventType.ADMIN_ACTION,"WhiteboardSession",f.board),typedBoardMap());var before=rehearsal();
+        f.sql().update("update storage_limits set maximum=1 where resource='REVISION_BYTES'");
+        try {for(boolean direct:List.of(false,true))assertThatThrownBy(()->applyAudit(direct,id)).isInstanceOf(DataAccessException.class);}
+        finally{f.sql().update("update storage_limits set maximum=268435456 where resource='REVISION_BYTES'");}
+        assertThat(rehearsal()).isEqualTo(before);
+        failAudit();try{assertThatThrownBy(()->service.apply(id)).isInstanceOf(AuditUnavailableException.class);}finally{recoverAudit();}
+        assertThat(rehearsal()).isEqualTo(before);assertThat(status(id)).isEqualTo("APPROVED");
+        for(boolean direct:List.of(false,true)) {tx().executeWithoutResult(s->{assertThat(applyAudit(direct,id)).isEqualTo("APPLIED");s.setRollbackOnly();});assertThat(rehearsal()).isEqualTo(before);}
+        assertThat(service.apply(id)).isEqualTo("APPLIED");var after=rehearsal();assertThat(service.apply(id)).isEqualTo("APPLIED");assertThat(rehearsal()).isEqualTo(after);
+        assertThat(count("select count(*) from system_logs where target_type='BoardActivityReconciliation' and target_id=? and event_type='RESOURCE_RECONCILIATION_APPLIED'",id)).isEqualTo(1);
+        var wrong=typedBoardMap();wrong.put("classId",base.otherClass);
+        long conflict=approved(AUDIT,audit(LogEventType.ADMIN_ACTION,"WhiteboardSession",f.board),wrong);var pending=rehearsal();
+        failAudit();try{assertThatThrownBy(()->service.apply(conflict)).isInstanceOf(AuditUnavailableException.class);}finally{recoverAudit();}
+        assertThat(rehearsal()).isEqualTo(pending);assertThat(status(conflict)).isEqualTo("APPROVED");
+        tx().executeWithoutResult(s->{assertThat(applyAudit(true,conflict)).isEqualTo("CONFLICT");s.setRollbackOnly();});assertThat(rehearsal()).isEqualTo(pending);
+        assertThat(service.apply(conflict)).isEqualTo("CONFLICT");
+        assertThat(count("select count(*) from system_logs where target_type='BoardActivityReconciliation' and target_id=? and event_type='RESOURCE_RECONCILIATION_APPLIED'",conflict)).isZero();
+    }
+    @Test void typedBoardAuditChargesEveryAdditionalSnapshotCopyIncludingCapture() throws Exception {
+        f.sql().update("update whiteboard_sessions set final_snapshot_data=decode('010203040506','hex') where id=?",f.board);appliedBoard();
+        long event=audit(LogEventType.ADMIN_ACTION,"WhiteboardSession",f.board);
+        long before=count("select coalesce(sum(used),0) from storage_usage where scope='SYSTEM' and owner_id=0 and resource='REVISION_BYTES'");
+        long id=approved(AUDIT,event,typedBoardMap());assertThat(service.apply(id)).isEqualTo("APPLIED");
+        long bytes=0;
+        for(String table:List.of("t11b4_reconciliations","t11b4_reconciliation_events","t11b4_audit_contexts"))
+            bytes+=count("select coalesce(sum(octet_length(to_jsonb(t)::text)),0) from "+table+" t where "+(table.equals("t11b4_reconciliations")?"id":"reconciliation_id")+"=?",id);
+        assertThat(count("select used from storage_usage where scope='SYSTEM' and owner_id=0 and resource='REVISION_BYTES'")-before).isEqualTo(bytes);
+        assertThat(f.sql().queryForObject("select source_snapshot->'event_parent'->'reconciliation'->'source'->'source'->>'final_snapshot_data' from t11b4_reconciliations where id=?",String.class,id)).isEqualTo("\\x010203040506");
+    }
+    @Test void demonstratedGlobalAuditWithBoardTargetRetainsGlobalProvenance() throws Exception {
+        appliedBoard();long event=audit(LogEventType.SYSTEM_HEALTH_CHECK,"WhiteboardSession",f.board);
+        long id=approved(AUDIT,event,Map.of("scope","GLOBAL","evidence","FIXTURE-GLOBAL-TYPED"));
+        assertThat(service.apply(id)).isEqualTo("APPLIED");f.sql().update("update whiteboard_sessions set state_revision=state_revision+1 where id=?",f.board);
+        assertThat(f.sql().queryForObject("select source_current from t11b4_audit_observations where event_id=?",Boolean.class,event)).isTrue();
+        assertThat(service.apply(id)).isEqualTo("APPLIED");
+        assertThat(service.apply(approved(AUDIT,event,typedBoardMap()))).isEqualTo("CONFLICT");
+    }
     @Test void usageAndAuditAreLinkedAdditivelyWithOriginalActorAndExactBoard() throws Exception {
         appliedBoard();long u=usage(),a=audit(LogEventType.WHITEBOARD_SESSION_CREATED,"WhiteboardSession",f.board);
         String original=f.sql().queryForObject("select to_jsonb(s)::text from system_logs s where id=?",String.class,a);

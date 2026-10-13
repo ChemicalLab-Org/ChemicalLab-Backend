@@ -28,7 +28,7 @@ políticas complementarias de históricos compartidos, co-docencia o biblioteca.
 | current_state_json, state_revision/state_updated_at; draw, snapshot GET/PUT y difusión STOMP | Evidencia T03 conservada sin reinterpretar JSON histórico como autoría. Snapshot B4 guarda incluso texto no interpretable. Writers T03/T10 mantienen su lock, permisos, revisión y afterCommit |
 | `usage_events`: cuenta/rol/module/event_type, resource_type/resource_id, metadata y occurredAt; `UsageMetricService`, `UsageEventRepository`, `UsagePanelService` | Cuenta es actor global. Los identificadores de recurso de telemetría general no prueban por sí mismos participación. Cada evento requiere mapa/evidencia aprobados; relación a pizarra exige padre conciliado vigente y recurso/módulo coincidentes |
 | Métrica WHITEBOARD_SESSION_JOINED | Writer servidor T10 registra después de commit; un rejoin puede producir otro evento con el mismo participante. Un evento no crea participante ni matrícula; contar eventos y contar participantes son magnitudes diferentes. Fallo opcional conserva el contrato legacy de join |
-| `system_logs`: actor global nullable, tipo/category/target, outcome/correlation, timestamps y metadata; `AuditLogService`, repositorio y trazabilidad | Resolución aditiva por logId. Para hechos de pizarra se verifica target_type/target_id/category y pizarra conciliada; resto usa mapa explícito, sin reinterpretar username/metadata como prueba. Los logs originales no se actualizan |
+| `system_logs`: actor global nullable, tipo/category/target, outcome/correlation, timestamps y metadata; `AuditLogService`, repositorio y trazabilidad | Resolución aditiva por logId. En B4 v2 el destino tipado WhiteboardSession exige pizarra conciliada vigente, institución y clase coherentes, incluso con category=ADMIN y boardId omitido; resto usa mapa explícito, sin reinterpretar username/metadata como prueba. Los logs originales no se actualizan |
 | `StudentUsageRecordService`, panel de uso y agregados admin, supervisión docente y consultas de actividad/último acceso | Combinan métricas de uso, logs, participantes y datos académicos legacy. Siguen siendo consumidores legacy; no reciben filtro institucional ni capacidades nuevas en B4. Su adaptación integral de selects, joins, count/totales y exportaciones pertenece a T12 |
 | Credenciales/sesiones/revocación global, catálogo químico, salud y retención técnica | No se convierten en hechos de un colegio por pertenencia del actor. Eventos globales demostrados conservan scope GLOBAL sin institución/clase/pizarra |
 
@@ -40,7 +40,8 @@ La conservación del vínculo no decide acceso a captura compartida tras la baja
 
 ## Persistencia aditiva
 
-Fuente `src/main/resources/db/expansion/t11b4-v1.sql`. JDBC, sin nuevas entidades
+Fuentes `src/main/resources/db/expansion/t11b4-v1.sql` y su transición explícita
+`t11b4-v2.sql`. JDBC, sin nuevas entidades
 JPA, migrador de arranque, bootstrap, controlador, listener, job o endpoint.
 
 | Objeto nuevo, prefijo `t11b4_` | Contrato |
@@ -221,7 +222,7 @@ esas asociaciones. Resolverlo antes de un corte real, sin CASCADE destructivo.
 ## Transición, repetición, certificación y recuperación
 
 Cadena: legacy T07-B/T08 con CHECK cerrado → B1 v1 → B2 v1 → B2 v2 → B3 v1 →
-B3 v2 → **B4 v1**. No usar Hibernate update como reparación o instalador.
+B3 v2 → B4 v1 → **B4 v2**. No usar Hibernate update como reparación o instalador.
 Solo ensayos ficticios autorizados en esta entrega. Procedimiento futuro real
 requiere autorización operativa propia, writers detenidos, backup probado,
 search_path/DB explícitos, checksum de fuente y permisos revisados.
@@ -234,8 +235,9 @@ psql --single-transaction --set ON_ERROR_STOP=1 --file src/main/resources/db/exp
 psql --single-transaction --set ON_ERROR_STOP=1 --file src/main/resources/db/expansion/t11b3-v1.sql
 psql --single-transaction --set ON_ERROR_STOP=1 --file src/main/resources/db/expansion/t11b3-v2.sql
 psql --single-transaction --set ON_ERROR_STOP=1 --file src/main/resources/db/expansion/t11b4-v1.sql
-# Desde B3 v2 certificado: aplicar solo B4 v1.
-# Certificar el esquema actual: B1 v1, B3 v2, B4 v1.
+psql --single-transaction --set ON_ERROR_STOP=1 --file src/main/resources/db/expansion/t11b4-v2.sql
+# Desde B4 v1 certificado: aplicar únicamente B4 v2.
+# Certificar el esquema actual: B1 v1, B3 v2, B4 v2.
 ```
 
 Los cinco archivos SQL anteriores y sus ledgers/fingerprints quedan intactos.
@@ -265,12 +267,87 @@ El DO es atómico y usa el advisory lock de la cadena. Fallo/interrupción antes
 de commit revierte objetos y versión; se puede certificar B3 v2 y repetir B4.
 Commit desconocido se resuelve por ledger/correlación y reintento del mismo ID,
 sin recrear pizarra/participantes. Restaurar dump completo a DB ficticia separada
-con el mismo schema; certificar B1/B3 v2/B4 v1 y comparar todas las firmas de
+con el mismo schema; certificar B1/B3 v2/B4 v2 y comparar todas las firmas de
 datos, IDs, autores, tombstones, bytes, checksums, historia y contadores.
 Restauración carga datos antes de triggers; no deshabilitar guards en datos vivos.
 Deriva de catálogo exige detener y resolver mediante otra transición versionada;
 no recalcular firmas ni DROP/CASCADE para ocultarla. Revertir funcionalmente
 deja las tablas inertes y conserva sus relaciones/historia.
+
+## Corrección de revisión: padre WhiteboardSession, B4 v2
+
+Hallazgo de `.codex-work/t11b4-review/revision.md` y arnés
+`VerifyBoardAuditParent.java`: en B4 v1 un ADMIN_ACTION/category=ADMIN con
+target_type=WhiteboardSession conciliada en A aceptaba un mapa de B sin boardId.
+El padre no formaba parte de su fotografía y cambiar state_revision no invalidaba
+source_current. La aprobación no legitima contradicciones del origen.
+
+Antes de cambiar el SQL se repitió el arnés sobre los servicios compilados de
+`3531ff445c22ba057703be7974cf7c848eb50a31`, checkout documental
+`dcbd7ab7416da666b10fe5a4e86e670e04c426ad`. La nueva reproducción obtuvo
+APPLIED, boardId omitido, institución de auditoría B frente a pizarra A,
+source_current=true tras deriva y log original idéntico. Exit 0. El error
+deliberado de auditoría corresponde al escenario de rollback. Se conserva en
+`.codex-work/t11b4-fix-evidence/board-audit-parent-results.json` y
+`board-audit-parent.log`, separados de los resultados de revisión y de las 705
+pruebas de la entrega anterior. El intento inicial sin permiso de loopback no
+completó la reproducción; retiró su servidor y no constituye evidencia positiva.
+
+B4 v2 reemplaza únicamente event_parent y reference_guard mediante DDL explícito.
+El destino tipado original WhiteboardSession se resuelve por su target_id/resource_id,
+independientemente de boardId en el mapa. Incluye contexto de pizarra, estado de
+conciliación y fotografía completa del padre, con su checksum/vigencia. La
+institución y clase deben coincidir exactamente, y el padre debe estar APPLIED y
+vigente. ADMIN_ACTION con destino tipado comprobado puede conservar un contexto
+válido aunque la categoría sea ADMIN; esto demuestra destino, no participación,
+asistencia, rol efectivo ni permisos. boardId omitido sigue NULL: no se modifica
+el mapa aprobado ni se inventa una columna del vínculo.
+
+Mapa institucional contrario, ID inválido, padre ausente, no conciliado o ya
+desactualizado al proponer: CONFLICT sin nueva fila institucional. Mapa vacío:
+UNRESOLVED sin institución. Deriva entre propuesta/aprobación y aplicación:
+STALE antes de insertar. Asociación válida seguida de deriva: source_current=false
+y el reintento explícito pasa a STALE una vez. La categoría WHITEBOARD sin destino
+WhiteboardSession comprobable continúa rechazada. La relación de uso con boardId
+conserva además su requisito de módulo/recurso servidor coincidentes.
+
+Los hechos GLOBAL demostrados mantienen su clasificación y fotografía previa;
+no incorporan un padre escolar aunque tengan un destino tipado atípico. Ningún
+log original se reescribe. Las copias nuevas de la fotografía de pizarra en el
+ledger de auditoría se cobran íntegramente, incluida la captura y las copias de
+historial, mediante las cuotas existentes. SQL directo conserva guards y cuotas;
+la auditoría T08 obligatoria se verifica en la transacción del servicio, como en
+B4 v1. No se atribuye un SUCCESS del servicio a una llamada SQL directa.
+
+Los seis SQL anteriores, incluido B4 v1, conservan sus bytes y fingerprints.
+V2 exige B4 v1 instalado y su cadena B3 v2 vigente; compara el catálogo contra
+el fingerprint original antes de cambiarlo. Añade t11b4_apply_version con
+predecessor_fingerprint igual a la firma de B4 v1 y fingerprint sucesor completo;
+las versiones previas no se actualizan. El sucesor cubre los mismos elementos
+que v1, además de la tabla y guards de su versión. Repetir v2 certifica sin
+reinstalar; deriva o versión desconocida se rechazan sin recalcular la firma.
+B1 v1 y B3 v2 siguen certificando. B4 v1 solo rechaza deliberadamente el catálogo
+sucesor: el certificador actual es B4 v2. No ejecutar v1 para intentar degradarlo.
+
+Instalación en fixture propio: certificar B3 v2 y B4 v1, ejecutar B4 v2 con
+search_path/DB explícitos, --single-transaction y ON_ERROR_STOP, repetir B4 v2,
+comparar las filas de versiones y las firmas de los datos. No hay backfill de
+datos ni aplicación automática. Rollback de la transición restaura funciones,
+catálogo y ausencia de versión v2, y permite certificar v1 antes de reintentar.
+Commit desconocido: consultar la versión y repetir v2; no recalcular fingerprints.
+La recuperación después de commit conserva el sucesor inerte o restaura un dump
+íntegro a otra base ficticia. Certificar B1/B3 v2/B4 v2, comparar tablas, historia,
+cuotas y logs append-only, manteniendo bloqueada la aplicación fuera de la DB de
+fixtures. No retirar guards ni borrar evidencia para volver a v1.
+
+Las fotografías v1 de eventos tipados de pizarra afectados cambian de interpretación
+verificable y quedan source_current=false; sus filas, mapas, contextos y estados
+no se reescriben en la instalación. El reintento aprobado pasa a STALE. Una
+propuesta v2 genera una fotografía nueva y exige aprobación nueva; el mapa
+contradictorio queda CONFLICT. Una asociación errónea v1 ya persistida se conserva
+como evidencia histórica desactualizada, nunca se reasigna a otro colegio.
+Resolver/corregir esa fila histórica mediante otra política aditiva permanece
+pendiente: v2 no borra el vínculo ni elude su PK para crear un reemplazo automático.
 
 ## Matriz T11-A, antes de T12 y tareas posteriores
 
