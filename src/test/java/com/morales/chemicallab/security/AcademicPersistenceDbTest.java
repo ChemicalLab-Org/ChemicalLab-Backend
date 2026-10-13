@@ -36,7 +36,7 @@ class AcademicPersistenceDbTest {
         // Hibernate has finished startup. Install a genuinely pre-B1 closed CHECK;
         // no application restart or Hibernate schema update occurs after this point.
         var legacy=Arrays.stream(com.morales.chemicallab.entity.LogEventType.values())
-            .map(Enum::name).filter(e->!newEvents().contains(e)).map(e->"'"+e+"'")
+            .map(Enum::name).filter(e->!newEvents().contains(e)&&!e.startsWith("RESOURCE_")).map(e->"'"+e+"'")
             .collect(java.util.stream.Collectors.joining(","));
         for(String name:sql().queryForList("select c.conname from pg_constraint c join pg_attribute a on a.attrelid=c.conrelid and a.attname='event_type' and a.attnum=any(c.conkey) where c.conrelid='system_logs'::regclass and c.contype='c'",String.class))
             sql().execute("alter table system_logs drop constraint "+name);
