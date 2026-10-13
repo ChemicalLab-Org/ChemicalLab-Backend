@@ -390,38 +390,42 @@ T12 exige probar en ambos sentidos A→B y B→A: cuentas sin membresía, membre
 
 T13 exige sustitución durante actividad, baja de docente/alumno, traslado con intento abierto, readmisión y acceso propio histórico: nuevo responsable tiene solo sus clases, saliente pierde facultades actuales, autor sigue intacto, ninguna nota/captura cruza colegio y las ventanas/cierres T05 siguen válidos. F03 exige que con membresía ENDED y sesión global válida el alumno lea resultados individuales anteriores permitidos por T05; clases activas, compañeros y capturas compartidas indiscriminadas se rechazan; salir no revela corrección bloqueada. T14 exige aceptación concurrente única, expiración/revocación/cupo, cuenta existente conservada, recuperación y roles no escalables. Ningún gate se da por cumplido en T11-A.
 
-### 7.3 Matriz de preparación actualizada por T11-B5 (13 de octubre de 2026)
+### 7.3 Matriz vigente de preparación, revisada por T11-C (13 de octubre de 2026)
 
-Esta actualización registra F05 confirmada y preparación B1–B5. No reemplaza los
-criterios de §7.1 ni declara cumplidos gates T12/T13/operación. Evidencia nueva,
-SHA y límites se documentan en [B5](11b5-identidad-codigos.md); notas/cierres previos
-conservan su atribución histórica. T11-B y etapa 3 permanecen abiertos.
+Esta matriz conserva F05 confirmada y la evidencia de preparación B1–B5,
+atribuida a sus SHA en las notas originales. La revisión documental
+[T11-C](11c-balance-cierre-modelo.md), sobre develop
+`e2bcc1afe347ba9630c1e90ea5d998f09a65812f`, distingue lo demostrado de los
+faltantes del modelo completo; no reemplaza criterios de §7.1 ni declara cumplidos
+gates T12/T13/operación. T11-B y etapa 3 siguen abiertos: P01–P06 de T11-C
+requieren preparación persistente/ensayo antes de T12. No son autorización externa.
 
 | Criterio | Preparación del modelo / ensayo | T12/T13 y operación pendientes |
 | --- | --- | --- |
-| A01 coincidencias | Cumplido para códigos/reservas F05 exactos A/B, clases/períodos B2 y binding global sin conflicto; colisiones conservadas | Activación de login nuevo, verificación/ciclo de aliases y política de normalización pendientes; no regla F05 para correo |
+| A01 coincidencias | Demostrado en fixtures para códigos/reservas F05 exactos A/B, clases/períodos B2 y binding PREPARED global sin conflicto; colisiones conservadas | Ciclo persistente de aliases aún incompleto (P02); adopción de login nuevo T12 y verificación/recuperación T14; no regla F05 para correo |
 | A02 membresías/roles | Cumplido para B1 + PlatformRoleGrant independiente con procedencia explícita; consulta de episodios B5 | T12 compone vigencias/contexto y combinación F04; grants nuevos reales e importación operativa F08 pendientes |
-| A03 integridad | Cumplido para FKs/guards/ventanas y reservas concurrentes cubiertas B1–B5 | Relaciones aplazadas/co-docencia y capacidades futuras requieren evolución; gate bilateral T12 pendiente |
+| A03 integridad | Parcial del modelo completo: FKs/guards/ventanas y carreras de relaciones existentes demostrados; CO_DOCENTE rechazado y ResourceManagerGrant ausente | Soporte persistente de relaciones/facultades y revisiones P01/P03 sigue en T11-B; autorización bilateral T12 y flujo de co-docencia T13 |
 | A04 cuenta | Cumplido en fixtures: mismos IDs/hash/username/password/versiones/sesiones; código separado sin renombrado | Conciliación real F08 y corte de writers pendientes; no fusión de personas |
 | A05 evidencia | Cumplido para fuentes cubiertas y restauración ficticia B5; referencias/historia original intactas | Exhaustividad/inventario real, históricos desconocidos y certificación operativa pendientes |
 | A06 reemplazo | Parcial: relaciones/episodios B2 preservados | Permisos reales del saliente/reemplazo T12/T13 pendientes |
 | A07 traslado/simultaneidad | Parcial: cuentas/membresías A/B y reservas por institución independientes; sin mover hechos previos | Traslado con intento abierto, continuidad/revocación y acceso individual F03 son T13 bajo T05 |
-| A08 mapa/ambigüedad | Parcial: mapas explícitos de fixture; colisiones exactas/entre tipos/vista previa conservadas y bloqueadas | F08 responsables/mapas reales, Unicode/comparación futura, resolución de conflictos y todas las PK pendientes |
-| A09 repetición/recuperación | Cumplido en cadena/fixtures: reintentos, rollback y pg_dump/restore con firmas | Checkpoints/lotes/capacidad, caída abrupta y corte operativo de writers pendientes |
-| A10 cuotas/auditoría | Cumplido en ensayo: historia/reservas/privilegios y cuotas pertinentes revierten con T08; ledgers/guards previos intactos | Cuotas institucionales aprobadas, crecimiento/retención, permisos/TLS/reloj y SEC-13 pendientes |
+| A08 mapa/ambigüedad | Parcial: mapas explícitos de fixture y conflictos conservados; firma de un dump no demuestra conciliación de cada PK | Inventario ficticio exhaustivo y corrección aditiva P05 en T11-B; F08 responsables/mapas reales y resolución operativa pendientes |
+| A09 repetición/recuperación | Parcial: cadena, mismo ID/reintentos, rollback programático y dump/restore de manifiesto estático demostrados | Lotes/checkpoint durable, caída/commit desconocido y conservación de escrituras posteriores del ensayo P06 en T11-B; ventana/capacidad/RPO/RTO reales en operación |
+| A10 cuotas/auditoría | Parcial: cuotas de copias ACCOUNT/SYSTEM y límites técnicos B5, rollback conjunto T08 y guards anteriores intactos | Preparación de contadores/deltas institucionales y doble conteo P04 en T11-B; máximos aprobados, crecimiento/retención, permisos/TLS/reloj y SEC-13 en operación |
 | A11 compatibilidad cerrada | Parcial: no endpoints/paneles/registro ni nuevas autoridades; login T02/T04 conservado | Ambigüedad y ámbito único de clientes legacy requieren gate integral T12; no activación multiinstitucional |
 | A12 regresión/revisión | Parcial: selección B5 y suite/empaquetado nuevos según evidencia de la nota | Revisión de entrega, Linux/JDK17/PostgreSQL Linux, nueva SCA y operación VER-01 pendientes |
-| A13 máximo agotado | Cumplido en ensayo B3; regresión conserva T05, sin nueva raíz por B5 | Corte de writers y admisión/exposición institucional T12 pendientes |
-| A14 entregas/raíz/carrera | Cumplido en ensayo B3, presupuesto/cierre original conservados | Sincronización/corte T12; F09 sigue pendiente para evaluaciones realmente nuevas |
-| A15 activo previo | Cumplido en ensayo B3; B5 conserva intento/consumo | Continuidad/baja T13 y resolución real F08 pendientes |
-| A16 readmisión/clases | Cumplido en ensayo B3 y reserva/cuenta/episodios B5; readmisión no recicla código | Gate de acceso bilateral T12 y continuidad T13 pendientes |
-| A17 cierre/conciliación | Cumplido en ensayo B3; preparación B5 no cambia T05 ni exposición | Autorización F03 T12/T13, corte y resolución real F08 pendientes |
+| A13 máximo agotado | Demostrado acotado en ensayo B3 con writer legacy; regresión conserva T05, sin nueva raíz por B5 | Corte de writers y admisión/exposición institucional T12 pendientes |
+| A14 entregas/raíz/carrera | Demostrado acotado en ensayo B3, presupuesto/cierre original y última oportunidad legacy conservados; deriva invalida snapshot | Contrato persistente de revisión académica P03; sincronización/corte T12; F09 solo evaluaciones realmente nuevas |
+| A15 activo previo | Demostrado acotado en ensayo B3; B5 conserva intento/consumo; no certifica todos los flujos de finalización/baja | Continuidad/baja T13 y resolución real F08 pendientes |
+| A16 readmisión/clases | Demostrado acotado B3/B5 para unicidad, reserva/cuenta/episodios; no escenario integral con sustituto/carrera institucional | Soporte persistente delegado P01; gate bilateral T12 y continuidad T13 pendientes |
+| A17 cierre/conciliación | Demostrado acotado en ensayo B3; B5 no cambia T05 ni habilita exposición | Autorización F03 T12/T13, corte y resolución real F08 pendientes |
 
-Preparación de aliases sigue parcial: candidatos, evidencia de conflictos y binding
-PREPARED disponibles; ciclo operativo ACTIVE/REVOKED, verificación, corrección y
-reutilización no se implementan sin decisión/flujo posterior. Persistencia inmutable
-no confirma política perpetua de reserva para correo. Pendientes B2/B3/B4, restantes
-decisiones funcionales, SEC-13 y VER-01 siguen abiertos. La operación no está certificada.
+Preparación de aliases sigue parcial: candidatos, conflictos y binding PREPARED
+disponibles; falta contrato persistente del ciclo ACTIVE/REVOKED (P02), separado
+del resolver T12 y los flujos T14. Persistencia inmutable no confirma reserva
+perpetua de correo. P01–P06, decisiones dependientes y demás pendientes se detallan
+en T11-C §4–7 sin reasignar autorización/continuidad/operación a T11-B.
+SEC-13 y VER-01 siguen abiertos. La operación no está certificada.
 
 ## 8. Garantías y pendientes que permanecen abiertos
 
