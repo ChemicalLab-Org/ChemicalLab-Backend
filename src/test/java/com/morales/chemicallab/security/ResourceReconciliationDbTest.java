@@ -25,13 +25,13 @@ class ResourceReconciliationDbTest {
     ResourceReconciliationService service;
     AcademicMaintenanceService academic;
     InstitutionMaintenanceService institutions;
-    String expansion,b1,b2,b2v2,oldB2,oldAudit;
+    String expansion,predecessorExpansion,b1,b2,b2v2,oldB2,oldAudit,oldB3;
     final Instant from=Instant.parse("2026-01-01T00:00:00Z"),until=Instant.parse("2027-01-01T00:00:00Z");
     long institution,foreign,period,classId,otherClass,foreignClass,member,authorMember,episode,otherEpisode,evaluation,assignment,secondAssignment,thirdAssignment;
     int sequence;
     @BeforeAll void start() throws Exception {
         f.start();service=f.app.getBean(ResourceReconciliationService.class);academic=f.app.getBean(AcademicMaintenanceService.class);institutions=f.app.getBean(InstitutionMaintenanceService.class);
-        b1=script("t11b1-v1");b2=script("t11b2-v1");b2v2=script("t11b2-v2");expansion=script("t11b3-v1");
+        b1=script("t11b1-v1");b2=script("t11b2-v1");b2v2=script("t11b2-v2");predecessorExpansion=script("t11b3-v1");expansion=script("t11b3-v2");
         // Genuinely closed CHECK from before B1. Hibernate never runs after this preparation.
         for(String n:f.sql().queryForList("select conname from pg_constraint where conrelid='system_logs'::regclass and contype='c' and pg_get_constraintdef(oid) like '%event_type%'",String.class))f.sql().execute("alter table system_logs drop constraint "+n);
         String legacy=Arrays.stream(LogEventType.values()).map(Enum::name).filter(n->!n.startsWith("RESOURCE_")&&!n.startsWith("INSTITUTION_")&&!n.startsWith("MEMBERSHIP_")&&!n.startsWith("ACADEMIC_")&&!n.startsWith("TEACHING_ASSIGNMENT_")&&!n.startsWith("ENROLLMENT_")).map(n->"'"+n+"'").collect(java.util.stream.Collectors.joining(","));
@@ -42,11 +42,26 @@ class ResourceReconciliationDbTest {
         var tx=new TransactionTemplate(f.app.getBean(PlatformTransactionManager.class));
         tx.executeWithoutResult(s->{
             f.sql().execute("alter table academic_classes disable trigger t11b2_guard");
-            assertThatThrownBy(()->f.sql().execute(expansion)).isInstanceOf(DataAccessException.class);
+            assertThatThrownBy(()->f.sql().execute(predecessorExpansion)).isInstanceOf(DataAccessException.class);
             s.setRollbackOnly();
         });
         assertThat(f.sql().queryForObject("select to_regclass(current_schema()||'.t11b3_schema_version') is null",Boolean.class)).isTrue();
-        f.sql().execute(expansion);
+        assertThatThrownBy(()->f.sql().execute(expansion)).isInstanceOf(DataAccessException.class);
+        f.sql().execute(predecessorExpansion);f.sql().execute(predecessorExpansion);
+        oldB3=f.sql().queryForObject("select fingerprint from t11b3_schema_version",String.class);
+        String rows= f.sql().queryForObject(signature("t11b3_schema_version"),String.class);
+        tx.executeWithoutResult(s->{
+            f.sql().execute("alter table t11b3_attempt_consumptions disable trigger t11b3_immutable");
+            assertThatThrownBy(()->f.sql().execute(expansion)).isInstanceOf(DataAccessException.class);
+            s.setRollbackOnly();
+        });
+        assertThat(f.sql().queryForObject("select to_regclass(current_schema()||'.t11b3_apply_version') is null",Boolean.class)).isTrue();
+        // A failed/unknown commit can safely retry v2; its predecessor row is never rewritten.
+        tx.executeWithoutResult(s->{f.sql().execute(expansion);s.setRollbackOnly();});
+        f.sql().execute(predecessorExpansion);
+        f.sql().execute(expansion);f.sql().execute(expansion);
+        assertThat(f.sql().queryForObject(signature("t11b3_schema_version"),String.class)).isEqualTo(rows);
+        assertThat(f.sql().queryForObject("select predecessor_fingerprint from t11b3_apply_version",String.class)).isEqualTo(oldB3);
     }
     String script(String name) throws Exception {return new ClassPathResource("db/expansion/"+name+".sql").getContentAsString(StandardCharsets.UTF_8);}
     @BeforeEach void fixture() {
@@ -165,7 +180,57 @@ class ResourceReconciliationDbTest {
         long entry=approved(EVALUATION,evaluation,standardMap());
         attempt(1,AttemptStatus.GRADED,null,false);
         assertThat(service.apply(entry)).isEqualTo("STALE");assertThat(count("select count(*) from t11b3_opportunity_groups where evaluation_id=?",evaluation)).isZero();
-        assertThat(f.sql().queryForObject("select status from t11b3_reconciliations where id=?",String.class,entry)).isEqualTo("STALE");
+        assertThat(persisted(entry)).isEqualTo("STALE");
+        assertThat(service.apply(entry)).isEqualTo(persisted(entry));
+        assertThat(count("select count(*) from t11b3_reconciliation_events where reconciliation_id=? and status='STALE'",entry)).isEqualTo(1);
+        assertThat(count("select count(*) from system_logs where target_id=? and event_type='RESOURCE_RECONCILIATION_STALE' and outcome='SUCCESS'",entry)).isEqualTo(1);
+    }
+    String persisted(long entry){return f.sql().queryForObject("select status from t11b3_reconciliations where id=?",String.class,entry);}
+    Map<String,String> reconciliationData() {
+        Map<String,String> result=new LinkedHashMap<>();
+        for(String table:f.sql().queryForList("select relname from pg_class where relnamespace=current_schema()::regnamespace and relkind='r' and (relname like 't11b3_%' or relname in ('system_logs','storage_usage')) order by relname",String.class))
+            result.put(table,f.sql().queryForObject(signature(table),String.class));
+        return result;
+    }
+    void rejectPending(boolean changed) throws Exception {
+        long entry=service.propose(EVALUATION,evaluation,standardMap());
+        if(changed)f.sql().update("update evaluations set title='Changed fictitious source' where id=?",evaluation);
+        var before=reconciliationData();
+        for(int retry=0;retry<2;retry++) {
+            assertThatThrownBy(()->service.apply(entry)).isInstanceOf(DataAccessException.class).hasMessageContaining("Explicit fixture approval required");
+            assertThat(persisted(entry)).isEqualTo("PROPOSED");assertThat(reconciliationData()).isEqualTo(before);
+            // The SQL contract also rejects callers that bypass the Java service.
+            assertThatThrownBy(()->f.sql().queryForObject("select t11b3_apply(?,null)",String.class,entry)).isInstanceOf(DataAccessException.class).hasMessageContaining("Explicit fixture approval required");
+            assertThat(reconciliationData()).isEqualTo(before);
+        }
+        assertThat(count("select count(*) from system_logs where target_id=? and event_type in ('RESOURCE_RECONCILIATION_STALE','RESOURCE_RECONCILIATION_APPLIED','RESOURCE_RECONCILIATION_CONFLICT')",entry)).isZero();
+    }
+    @Test void proposedIntactSourceRejectsApplyAndRetriesWithoutMutation() throws Exception {rejectPending(false);}
+    @Test void proposedChangedSourceRejectsApplyAndRetriesWithoutMutation() throws Exception {rejectPending(true);}
+    @Test void staleAuditFailureRollsBackStatusHistoryAndQuotaThenRetryCommitsOnce() throws Exception {
+        long entry=approved(EVALUATION,evaluation,standardMap());
+        f.sql().update("update evaluations set title='Changed fictitious source' where id=?",evaluation);
+        var before=reconciliationData();
+        f.sql().execute("alter table system_logs rename to temporarily_unavailable_logs");
+        try {assertThatThrownBy(()->service.apply(entry)).isInstanceOf(com.morales.chemicallab.security.audit.AuditUnavailableException.class);}
+        finally {f.sql().execute("alter table temporarily_unavailable_logs rename to system_logs");}
+        assertThat(persisted(entry)).isEqualTo("APPROVED");assertThat(reconciliationData()).isEqualTo(before);
+        assertThat(service.apply(entry)).isEqualTo(persisted(entry));assertThat(persisted(entry)).isEqualTo("STALE");
+        var committed=reconciliationData();assertThat(service.apply(entry)).isEqualTo("STALE");assertThat(reconciliationData()).isEqualTo(committed);
+        assertThat(count("select count(*) from t11b3_reconciliation_events where reconciliation_id=? and status='STALE'",entry)).isEqualTo(1);
+        assertThat(count("select count(*) from system_logs where target_id=? and event_type='RESOURCE_RECONCILIATION_STALE' and outcome='SUCCESS'",entry)).isEqualTo(1);
+        assertThat(count("select count(*) from t11b3_opportunity_groups where evaluation_id=?",evaluation)).isZero();
+    }
+    @Test void inconsistentSqlReturnIsRejectedWithoutFictitiousAudit() throws Exception {
+        long entry=approved(EVALUATION,evaluation,standardMap());var before=reconciliationData();
+        var tx=new TransactionTemplate(f.app.getBean(PlatformTransactionManager.class));
+        tx.executeWithoutResult(s->{
+            f.sql().execute("create or replace function t11b3_apply(entry bigint,actor bigint default null) returns text language sql as $$ select 'STALE'::text $$");
+            assertThatThrownBy(()->service.apply(entry)).isInstanceOf(IllegalStateException.class).hasMessageContaining("persisted status");
+            s.setRollbackOnly();
+        });
+        assertThat(persisted(entry)).isEqualTo("APPROVED");assertThat(reconciliationData()).isEqualTo(before);
+        f.sql().execute(expansion);
     }
     @Test void failedQuotaAndRequiredAuditRollBackBudgetLedgerHistoryTogether() throws Exception {
         attempt(1,AttemptStatus.GRADED,assignment,true);long entry=approved(EVALUATION,evaluation,standardMap());
@@ -214,9 +279,19 @@ class ResourceReconciliationDbTest {
         f.sql().execute(b1);f.sql().execute(expansion);
         assertThat(f.sql().queryForObject("select fingerprint from t11b2_schema_version",String.class)).isEqualTo(oldB2);
         assertThat(f.sql().queryForObject("select fingerprint from t11b2_audit_version",String.class)).isEqualTo(oldAudit);
+        assertThat(f.sql().queryForObject("select fingerprint from t11b3_schema_version",String.class)).isEqualTo(oldB3);
+        assertThatThrownBy(()->f.sql().execute(predecessorExpansion)).isInstanceOf(DataAccessException.class);
         assertThatThrownBy(()->f.sql().execute(b2v2)).isInstanceOf(DataAccessException.class);
         f.sql().execute("alter table t11b3_attempt_consumptions disable trigger t11b3_immutable");
         try {assertThatThrownBy(()->f.sql().execute(expansion)).isInstanceOf(DataAccessException.class);} finally {f.sql().execute("alter table t11b3_attempt_consumptions enable trigger t11b3_immutable");}
+        f.sql().execute(expansion);
+        var tx=new TransactionTemplate(f.app.getBean(PlatformTransactionManager.class));
+        tx.executeWithoutResult(s->{
+            String definition=f.sql().queryForObject("select pg_get_functiondef('t11b3_apply(bigint,bigint)'::regprocedure)",String.class);
+            f.sql().execute(definition.replace("Explicit fixture approval required","Altered fixture approval required"));
+            assertThatThrownBy(()->f.sql().execute(expansion)).isInstanceOf(DataAccessException.class).hasMessageContaining("divergence");
+            s.setRollbackOnly();
+        });
         f.sql().execute(expansion);
     }
     @Test void approvalChecksumIsExactAndPendingCannotApply() throws Exception {
@@ -360,7 +435,7 @@ class ResourceReconciliationDbTest {
                 sql.execute("alter table t11b3_attempt_consumptions disable trigger t11b3_immutable");
                 assertThatThrownBy(()->sql.execute(expansion)).isInstanceOf(SQLException.class).hasMessageContaining("divergence");
                 sql.execute("alter table t11b3_attempt_consumptions enable trigger t11b3_immutable");sql.execute(expansion);
-                Files.writeString(directory.resolve("signatures.json"),f.json.writerWithDefaultPrettyPrinter().writeValueAsString(Map.of("source",original,"restored",recovered,"schema",f.schema,"guards","UPDATE/DELETE/TRUNCATE denied","certifier","B1 v1 + B3 v1")));
+                Files.writeString(directory.resolve("signatures.json"),f.json.writerWithDefaultPrettyPrinter().writeValueAsString(Map.of("source",original,"restored",recovered,"schema",f.schema,"guards","UPDATE/DELETE/TRUNCATE denied","certifier","B1 v1 + B3 v2")));
             }
         } finally {if(created)nativeTool("dropdb",base,List.of(db),directory);}
     }

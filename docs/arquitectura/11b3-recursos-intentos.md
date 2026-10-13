@@ -90,6 +90,15 @@ El servicio y la función de aplicación rechazan bases fuera de
 Estos límites evitan usar el mantenedor para backfill real; no son autorización
 ni un sustituto de permisos operativos. Crear el esquema en sí no aplica datos.
 
+Desde B3 v2, aplicar PROPOSED siempre exige aprobación antes de comprobar
+frescura: tanto fuente intacta como modificada provocan rechazo sin mutaciones,
+historia nueva ni SUCCESS de transición. APPROVED con deriva persiste STALE;
+el trigger registra historia/cuota y el servicio exige SUCCESS T08 en la misma
+transacción. Si falla auditoría, todo vuelve a APPROVED y el reintento puede
+confirmar una sola transición. STALE es terminal y sus reintentos no duplican
+historia, cuota ni auditoría. El servicio relee el estado bajo el lock original
+y rechaza cualquier discrepancia con el retorno SQL antes de auditar.
+
 Estados: PROPOSED → APPROVED → APPLIED/CONFLICT/STALE. APPLIED/CONFLICT puede
 registrar STALE al detectar deriva; snapshots, mapas y firmas no se sobrescriben.
 El checksum MD5 es un detector de diferencias del JSONB canónico, no una firma
@@ -172,7 +181,7 @@ Contadores, filas, historia y AuditLogWriter MANDATORY usan la misma transacció
 ## Expansión, certificación y recuperación
 
 Cadena explícita, con writers detenidos en una futura operación autorizada:
-legacy T07-B/T08 y CHECK cerrado → B1 v1 → B2 v1 → B2 v2 → B3 v1.
+legacy T07-B/T08 y CHECK cerrado → B1 v1 → B2 v1 → B2 v2 → B3 v1 → B3 v2.
 No ejecutar Hibernate update como reparación ni instalar B3 al arrancar.
 
 ```powershell
@@ -180,24 +189,41 @@ psql --single-transaction --set ON_ERROR_STOP=1 --file src/main/resources/db/exp
 psql --single-transaction --set ON_ERROR_STOP=1 --file src/main/resources/db/expansion/t11b2-v1.sql
 psql --single-transaction --set ON_ERROR_STOP=1 --file src/main/resources/db/expansion/t11b2-v2.sql
 psql --single-transaction --set ON_ERROR_STOP=1 --file src/main/resources/db/expansion/t11b3-v1.sql
-# Sobre B2 v2 ya certificado: aplicar sólo B3 v1.
-# Tras B3: certificar con B1 v1 y B3 v1.
+psql --single-transaction --set ON_ERROR_STOP=1 --file src/main/resources/db/expansion/t11b3-v2.sql
+# Sobre B2 v2 certificado: aplicar B3 v1 y después B3 v2.
+# Sobre B3 v1 certificado: aplicar sólo B3 v2.
+# Tras B3 v2: certificar con B1 v1 y B3 v2.
 ```
 
 B3 valida catálogo B1 y predecesor B2 v2 antes de evolucionar los CHECKs T08.
 Conserva los predicados anteriores y añade exclusivamente seis eventos B3.
 Las firmas B1/B2 v1/B2 v2 y fuentes originales permanecen intactas; registra
-predecesor y firma sucesora B2 separadas. **B1 v1 + B3 v1 certifican el esquema
+predecesor y firma sucesora B2 separadas. **B1 v1 + B3 v2 certifican el esquema
 actual**. B2 v1/v2 rechazan deliberadamente el CHECK sucesor; no deben usarse
 para reparar ni sobrescribir firmas. B3 valida columnas/defaults, constraints,
 validación/estado de índices, triggers, funciones, vistas, secuencias y categorías
 de cuota; incluye las funciones storage de las que depende.
 
+B3 v2 valida de nuevo el catálogo completo B1, el sucesor B2 registrado por B3
+y el catálogo íntegro B3 v1 antes de sustituir exclusivamente `t11b3_apply`.
+Conserva sin cambios el archivo B3 v1 y su fila `t11b3_schema_version`; registra
+predecesor y fingerprint actual en una fila separada `t11b3_apply_version`
+(version=2). Incluye esa tabla en la firma sucesora, además de todos los objetos
+y cuotas previamente certificados. No cambia CHECKs T08, guardas ni límites.
+La repetición de v2 verifica el sucesor y no vuelve a instalar ni reparar.
+Después de v2, B3 v1 también rechaza deliberadamente el catálogo sucesor.
+No usar certificadores de predecesores para reparar el esquema actual.
+
+Una restauración de B3 v1 debe certificarse con B1 v1/B3 v1 antes de instalar
+v2. Una restauración de B3 v2 se certifica con B1 v1/B3 v2; no necesita volver
+a aplicar v1. La instalación fallida de v2 revierte función y fila de versión,
+dejando B3 v1 certificable; el arnés prueba rollback, reintento y restauración.
+
 Un fallo del DO o de transacción revierte su trabajo. Interrupción/commit desconocido
 se investiga por ledger/correlación y se reanuda por ID; no recrear raíz ni consumo.
 Ante deriva de catálogo, detener y comparar con fuente/backup; otra transición
 versionada debe resolverla. Restaurar dump completo a DB separada, mismo nombre
-de esquema, y revalidar B1 v1/B3 v1, IDs/checksums, contadores, historia y guards T08.
+de esquema, y revalidar B1 v1/B3 v2, IDs/checksums, contadores, historia y guards T08.
 Restore carga datos antes de triggers; no deshabilitar guards sobre datos vivos.
 Revertir aplicación conserva tablas inertes: DROP/CASCADE perdería historia.
 Las cuentas runtime productivas, permisos reales y capacidad de locks no se certifican.
@@ -252,7 +278,28 @@ público. SEC-13 y VER-01 siguen abiertos. No se inicia T11-B4, T12 o T13.
 La entrega termina en PR backend borrador hacia develop para revisión.
 
 
-## Resultados definitivos
+## Corrección del hallazgo de revisión de PR #69
+
+Se reprodujo primero el defecto sobre las clases compiladas del SHA anterior
+`fca56471250538cb1adc770baee90aa8cd664bbe`, correspondientes al código de HEAD
+`483b517dc0a7bd3fb4279c5126bb8ca8cdbccb1f`: dos apply sin aprobación devolvían
+STALE, la fila conservaba PROPOSED y aparecían dos SUCCESS ficticios.
+Registro separado: `.codex-work/t11b3-correction/reproduced-old-head.log` y
+`reproduced-old-head.json`; no cuenta como validación de la corrección.
+
+Las regresiones nuevas verifican ambos PROPOSED por servicio y SQL directo,
+dos rechazos sin cambios en tablas B3, cuotas e historial/auditoría; comprueban
+APPROVED→STALE persistido con un historial y un SUCCESS; comparan todas esas
+tablas antes/después de un fallo T08 y prueban reintento sin eventos repetidos.
+Una función ficticia incompatible comprueba que el servicio rechaza retorno
+distinto del estado persistido sin emitir SUCCESS. La cadena desde CHECK pre-B1,
+validación de deriva, interrupción/reanudación, carreras JVM y dump/restore siguen
+habilitados. La selección de desarrollo se registra separada de `clean package`.
+
+Los resultados del nuevo SHA se incorporarán después de su ejecución completa.
+
+## Evidencia anterior a la corrección (no atribuible al nuevo SHA)
+
 
 SHA probado: `fca56471250538cb1adc770baee90aa8cd664bbe`. `clean package` completo: **56 suites, 671 pruebas,
 0 fallos, 0 errores, 0 omitidas; JAR generado**. Incluye 27 pruebas nuevas B3;

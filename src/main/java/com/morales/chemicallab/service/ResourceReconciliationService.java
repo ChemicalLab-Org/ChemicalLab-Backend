@@ -66,13 +66,16 @@ public class ResourceReconciliationService {
             """);
         String previous=jdbc.queryForObject("select status from t11b3_reconciliations where id=? for update",String.class,id);
         String result=jdbc.queryForObject("select t11b3_apply(?,?)",String.class,id,actor());
-        if(!result.equals(previous))evidence(switch(result) {
+        String persisted=jdbc.queryForObject("select status from t11b3_reconciliations where id=?",String.class,id);
+        if(!java.util.Objects.equals(result,persisted))
+            throw new IllegalStateException("Reconciliation result does not match persisted status");
+        if(!persisted.equals(previous))evidence(switch(persisted) {
             case "APPLIED" -> LogEventType.RESOURCE_RECONCILIATION_APPLIED;
             case "CONFLICT" -> LogEventType.RESOURCE_RECONCILIATION_CONFLICT;
             case "STALE" -> LogEventType.RESOURCE_RECONCILIATION_STALE;
             default -> throw new IllegalStateException("Unexpected reconciliation status");
         },id);
-        return result;
+        return persisted;
     }
 
     public long technicalRevision(SourceKind kind,long revisionId) {
