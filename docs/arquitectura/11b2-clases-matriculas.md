@@ -330,3 +330,40 @@ La primera selección de esta corrección tuvo 33 pruebas, 0 fallos y 1 error:
 un nuevo fixture SQL usaba nombres de columnas incorrectos. Se conservó el log,
 se corrigió el fixture y se repitió; ese intento no se presenta como aceptación.
 Los resultados definitivos se registran a continuación tras las verificaciones.
+
+### Resultados definitivos de la corrección
+
+**SHA probado:** `827bb8c9554718efb799ac6edd4811a93cad73f1`. Se repitió `clean package` completo:
+**55 suites, 644 pruebas, 0 fallos, 0 errores, 0 omitidas; JAR generado**.
+Incluye las 33 pruebas académicas (29 previas y cuatro nuevas); las selecciones
+no se suman al total. Las 640 pruebas anteriores se conservan como evidencia
+histórica de su propio SHA, no se atribuyen a éste sin ejecución.
+Entorno: Windows, JDK 17.0.12, PostgreSQL 18.4 desechable, perfil test,
+loopback 127.0.0.1:55432 y datos exclusivamente ficticios.
+
+SHA-256 JAR: `6ba16f3b8e61d7151124b18795860cabdb63383d259bc9fcb48c492fafa68fcf`.
+Se comprobó que incluye el SQL v2 idéntico al probado.
+SHA-256 de t11b2-v2.sql UTF-8/LF: `997eded3ed9488a14c1cc8c1a3e643b8b1a3e5687b7b02d35c9cbb8685ab3358`.
+El posterior commit de evidencia modifica sólo esta nota; la PR y la evidencia
+local identifican su HEAD final por separado del SHA probado.
+
+Ensayo nativo sobre el mismo SHA: catorce eventos aceptados y UNKNOWN rechazado,
+datos legacy/B1 y fingerprint original intactos, repetición v2, divergencia del
+predecesor rechazada antes de evolucionar y divergencia del sucesor rechazada
+después de restore. pg_dump -Fc/pg_restore conserva veinte firmas de datos,
+incluidos los dos ledgers B2 y presupuesto/versión T08. En restauración se
+comprobaron audit_append_only habilitado y UPDATE/DELETE/TRUNCATE rechazados
+con P7508, sin cambios en presupuesto o versión. Dos procesos psql por carrera
+observados bloqueados: responsables 31452/36800 y matrículas 34504/34340,
+un commit y un 23P01 en cada caso. No se suman estos ensayos a JUnit.
+
+La base de reproducción anterior recibió v2 y admitió los catorce eventos,
+preservando ambas filas iniciales y el ledger B2 v1 completo. Los logs, dump,
+firmas y scripts se conservan en `.codex-work/t11b2-correction`, separados de
+los documentos y evidencia anteriores. Se verificaron 32/32 hashes protegidos
+sin discrepancias, incluidos los 16 E2E y artefactos previos de revisión;
+frontend conserva su branch, HEAD y e2e-selenium anteriores. B1 v1, B2 v1 y
+T08 originales tienen diff vacío frente al HEAD revisado.
+
+No merge, despliegue, DDL real ni avance a T11-B3/T12/T13. PR #68 permanece
+en borrador y el trabajo se detiene para revisión.
