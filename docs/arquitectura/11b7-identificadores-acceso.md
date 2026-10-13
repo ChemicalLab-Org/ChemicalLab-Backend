@@ -164,7 +164,7 @@ revisión explícita y stale, reutilización con nueva prueba, evidencia de otro
 propietario/operación, rechazo de pruebas inválidas/vencidas/revocadas/consumidas,
 historia/sesiones conservadas, actor propio, reintentos, rollback auditoría/cuota,
 SQL directo, expansión/repetición/divergencia, dos procesos y dump/restore.
-La evidencia definitiva y el SHA probado se añaden después del empaquetado.
+La evidencia definitiva y el SHA probado se registran a continuación.
 
 Se cierra únicamente el alcance implementado **P02 persistente** con esa evidencia.
 P01 sigue preparado en B6; **P03–P06 y etapa 3 permanecen abiertos**. T12/T13/T14
@@ -173,3 +173,76 @@ Documentos históricos, auditoría original, frontend institucional y 16 E2E
 conservados; solo se actualizan decisiones/matrices vigentes T11-A/T11-C.
 PR borrador hacia develop, sin merge, despliegue, DDL/backfill real ni activación
 multiinstitucional. No se inicia T12 ni P03–P06.
+
+## Evidencia definitiva atribuida al commit
+
+**SHA probado:** `edc8bc3a9adf8665f2881952f1215a3eb614d884`.
+`clean package` terminó el **13 de octubre de 2026, 11:14:16 America/Lima**,
+en **14 min 06 s**: **61 suites, 795 pruebas, 0 fallos, 0 errores, 0 omitidas;
+BUILD SUCCESS y JAR generado**. Incluye los 30 casos P02 y las regresiones
+T02/T03/T04/T05/T06/T07/T08/T10 y B1–B6 ejecutadas en esa misma suite.
+Selecciones de desarrollo, carrera y restore no se suman nuevamente al total.
+El commit de cierre posterior agrega exclusivamente documentación/evidencia;
+código, SQL, pruebas y POM coinciden con este SHA.
+
+Entorno: Windows, JDK 17, Maven 3.9.15 offline, PostgreSQL 18 desechable propio
+en 127.0.0.1:55437, DB `chemicallab_t01_test`, rol ficticio `t11b7_fixture`,
+perfil test, locale C y 300 conexiones. DB TimeZone America/Bogota; entrega en
+America/Lima, sin reinterpretar timestamps legacy. No certificación Linux,
+capacidad, SCA nueva, TLS/permisos, control real de correo ni operación escolar.
+
+JAR SHA-256: `6f38a8e86b48d19a307da8905f44789bc5b3ff9bb8e26c9637ec6d3209ae37cc`.
+Los **diez SQL** del JAR coinciden con sus fuentes, normalizando solo CRLF/LF.
+SQL B7 UTF-8/LF SHA-256:
+`9c76ee9c27b8f7517980fd36f76a87a7b63658b8d9c923e05812d501937f3ccb`.
+
+| Verificación sobre el SHA probado | Resultado / evidencia |
+| --- | --- |
+| Cuenta sin correo y estados | USERNAME activo con correo null; EMAIL preparado sin prueba no activa; UPDATE libre de VERIFIED rechazado |
+| Cambio de username | Una transacción reserva anterior/activa sucesor, un principal al commit; SQL rechaza dos activos o dejar cero. ID/versión del reemplazado persistidos. Reintento de otra pareja rechazado; dueño original puede preparar de nuevo su reserva |
+| Clave global y conflictos | Colisiones USERNAME/EMAIL entre cuentas bloqueadas; misma cuenta con dos tipos iguales válida. Candidatos ambiguos no producen dueño automático. Conflictos B5/B7 originales conservados incluso después de resolución explícita |
+| Reutilización de correo | Antes de revocar se rechaza nuevo dueño; después exige prueba nueva y revisión explícita. Evidencia del dueño/operación anteriores rechazada; link anterior permanece REVOKED con su prueba/historia originales |
+| Evidencia y revisiones | Digest inválido, prueba ausente/ISSUED/vencida/revocada/de otro identificador o consumida no activa; constancia vinculada y consumo único. Cambio del inventario exige otra revisión y conserva la anterior; origen legacy stale no activa |
+| Comparación | Case, whitespace y Unicode compuesto/descompuesto permanecen distintos; sin cambio de equivalencias ni login legacy |
+| Cuenta, sesiones e historia | Firmas de cuentas, credenciales, sesiones, perfiles, matrículas, reservas académicas, intentos, evaluaciones y participantes intactas durante renombrado/reutilización. Login legacy continúa por el username original |
+| Atomicidad/reintentos | Auditoría ausente temprana/tardía y cuota revierten estados, claims, pruebas/consumo, revisión, historia y SUCCESS. Reintentos exactos no duplican evidencia/cuota/logs. Revocación fallida conserva propietario |
+| Actor/logs | SessionPrincipal propio capturado en estado/historia/SUCCESS; admin institucional ajeno y contexto público para emitir/revisar evidencia rechazados. SQL también rechaza actor de otra cuenta; logs solo con target/ID/correlación seguros |
+| Cadena | Instalación con rollback, expansión sobre B6 poblado y repetición sin cambio de ledgers anteriores. Guard B7 o trigger sucesor B6 deshabilitados producen divergencia sin reparación |
+| Carrera relevante | Dos JVM OS **33788/32780**, dos PID PostgreSQL **3740/31424** observados bloqueados. Activaciones EMAIL de propietarios distintos: **REJECTED:23505 / COMMITTED**, un claim/identificador activo y una prueba consumida; timeout/deadlock no aceptados |
+| Restauración | pg_dump -Fc / pg_restore transaccional conservó firmas completas de **94 tablas**. B7 certificó toda la cadena; logs/historia inmutables y mantenimiento fuera de la DB ficticia bloqueados; deriva de guard detectada y recertificada al recuperarlo |
+
+Carrera SQL y restore forman parte de las 30 pruebas B7. La carrera comprueba
+integridad de persistencia; el servicio ensaya además atomicidad obligatoria T08.
+Pruebas de desarrollo anteriores fueron selecciones sobre worktree sin commit:
+se corrigieron declaración de excepción, aliases PL/pgSQL y expectativas de
+rechazo/reintento. Sus logs son diagnóstico; no se atribuyen a este SHA ni se
+suman. Solo una suite completa final, sin repetirla por el cierre documental.
+
+Reproducción sobre un clúster **nuevo, ficticio, loopback y puerto libre**:
+
+```powershell
+initdb -D ../t11b7-repro-postgres -U t11b7_fixture -A trust --encoding=UTF8 --locale=C
+pg_ctl -D ../t11b7-repro-postgres -l ../t11b7-repro-postgres.log -o '-h 127.0.0.1 -p 55437 -c max_connections=300' -w start
+createdb -h 127.0.0.1 -p 55437 -U t11b7_fixture chemicallab_t01_test
+# JDK17 en JAVA_HOME; PostgreSQL18 en PATH. Se usó Maven 3.9.15 cacheado por wrapper.
+mvn -o '-Dspring.profiles.active=test' '-Dspring.datasource.url=jdbc:postgresql://127.0.0.1:55437/chemicallab_t01_test' '-Dspring.datasource.username=t11b7_fixture' '-Dspring.datasource.password=fictitious' clean package
+# Selección durante desarrollo: mismos argumentos + '-Dtest=GlobalAccessIdentifierDbTest' test.
+dropdb -h 127.0.0.1 -p 55437 -U t11b7_fixture chemicallab_t01_test
+pg_ctl -D ../t11b7-repro-postgres -m fast -w stop
+```
+
+Trust exclusivamente en el clúster propio de ensayo. Evidencia local fuera de PR:
+`.codex-work/t11b7-evidence/tested-sha.txt`, `full-package.log`,
+`verified-results.json`, `verified-suites.json`, `verified-reports.zip`,
+`verified-backend.jar`, `verified-packaged-sql.json`,
+`verified/t11b7-processes` (barrera/PID/resultados), `verified/t11b7-native`
+(dump y manifiesto de 94 tablas), `preservation.json` y scripts de colección/limpieza.
+
+Conservación: **42/42 hashes protegidos** sin discrepancias, incluidos auditoría,
+cierres anteriores y **16/16 archivos E2E**. Nueve SQL históricos byte a byte
+intactos; de 60 documentos backend previos, 58 intactos y solo matrices T11-A/T11-C
+actualizadas. Auditoría original SHA-256:
+`1eff5d59f7a114dfee91cb557a0405c2f7247e43cd2926d2542172c0255e499b`.
+Frontend permanece en `feature/validaciones-datos-institucionales`,
+`e88589635a8269c50ee0f53fccf157f0d0985034`, con su `?? e2e-selenium/` previo.
+Los E2E se preservaron; no se atribuye una ejecución frontend a esta entrega backend.
