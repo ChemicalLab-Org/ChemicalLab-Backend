@@ -226,6 +226,13 @@ class ResourceReconciliationDbTest {
         assertThatThrownBy(()->approveWithInvalidEvidence(entry)).isInstanceOf(DataAccessException.class);
         approve(entry);assertThat(service.apply(entry)).isEqualTo("APPLIED");
     }
+    @Test void sqlCannotApproveNullEvidenceOrDigest() throws Exception {
+        long entry=service.propose(EVALUATION,evaluation,standardMap());
+        assertThatThrownBy(()->f.sql().update("update t11b3_reconciliations set status='APPROVED' where id=?",entry)).isInstanceOf(DataAccessException.class);
+        assertThatThrownBy(()->f.sql().update("update t11b3_reconciliations set status='APPROVED',approval_evidence='FIXTURE-REVIEW' where id=?",entry)).isInstanceOf(DataAccessException.class);
+        assertThat(f.sql().queryForObject("select status from t11b3_reconciliations where id=?",String.class,entry)).isEqualTo("PROPOSED");
+        approve(entry);assertThat(service.apply(entry)).isEqualTo("APPLIED");
+    }
     void approveWithInvalidEvidence(long entry){service.approve(entry,f.sql().queryForObject("select md5(source_checksum||proposal_checksum) from t11b3_reconciliations where id=?",String.class,entry),"real approval not authorized");}
 
     @Test void unassignedActiveAndGappedNumberArePreserved() throws Exception {

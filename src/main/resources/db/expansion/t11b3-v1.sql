@@ -85,7 +85,7 @@ BEGIN
           status text NOT NULL DEFAULT 'PROPOSED' CHECK(status IN ('PROPOSED','APPROVED','APPLIED','CONFLICT','STALE')),
           approval_evidence text,approved_checksum text,approved_by bigint REFERENCES user_accounts(id),
           changed_by bigint REFERENCES user_accounts(id),recorded_at timestamptz NOT NULL DEFAULT statement_timestamp(),
-          CHECK(status='PROPOSED' OR (approval_evidence ~ '^FIXTURE-[A-Z0-9_-]{1,80}$'
+          CHECK(status='PROPOSED' OR (approval_evidence IS NOT NULL AND approved_checksum IS NOT NULL AND approval_evidence ~ '^FIXTURE-[A-Z0-9_-]{1,80}$'
             AND approved_checksum=md5(source_checksum||proposal_checksum))),
           UNIQUE(origin,source_kind,source_pk,source_checksum,proposal_checksum));
         CREATE TABLE t11b3_reconciliation_events(
@@ -283,10 +283,10 @@ BEGIN
                  HAVING count(DISTINCT attempt_number)<>count(*) OR min(attempt_number)<>1 OR max(attempt_number)<>count(*) OR count(*) FILTER(WHERE status='IN_PROGRESS')>1 OR count(*)>g.max_attempts)
                 OR NEW.active_attempt_id IS DISTINCT FROM (SELECT min(a.id) FROM evaluation_attempts a JOIN student_profiles p ON p.id=a.student_id WHERE a.evaluation_id=g.evaluation_id AND p.user_id=NEW.account_id AND a.status='IN_PROGRESS'))) THEN RAISE EXCEPTION 'Budget must reserve complete original consumption'; END IF;
           ELSIF TG_TABLE_NAME IN ('t11b3_concept_revisions' ,'t11b3_evaluation_revisions') THEN
-            SELECT source_snapshot INTO STRICT s FROM t11b3_reconciliations WHERE id=NEW.reconciliation_id AND status IN ('APPROVED','APPLIED');
+            SELECT source_snapshot INTO STRICT s FROM t11b3_reconciliations WHERE id=NEW.reconciliation_id AND status IN ('APPROVED','APPLIED') AND source_kind=CASE WHEN TG_TABLE_NAME='t11b3_concept_revisions' THEN 'CONCEPT' ELSE 'EVALUATION' END AND source_pk=coalesce((to_jsonb(NEW)->>'concept_id')::bigint,(to_jsonb(NEW)->>'evaluation_id')::bigint) AND (proposed->>'institutionId')::bigint=NEW.institution_id;
             IF NEW.payload IS DISTINCT FROM (s-ARRAY['attempts','profiles','answers','adjustments','events','map_context']) THEN RAISE EXCEPTION 'Revision must freeze approved source content'; END IF;
           ELSIF TG_TABLE_NAME IN ('t11b3_concept_deliveries' ,'t11b3_evaluation_deliveries') THEN
-            SELECT proposed INTO STRICT m FROM t11b3_reconciliations WHERE id=NEW.reconciliation_id;
+            SELECT proposed INTO STRICT m FROM t11b3_reconciliations WHERE id=NEW.reconciliation_id AND status IN ('APPROVED','APPLIED') AND source_kind=CASE WHEN TG_TABLE_NAME='t11b3_concept_deliveries' THEN 'CONCEPT' ELSE 'EVALUATION' END AND source_pk=coalesce((to_jsonb(NEW)->>'concept_id')::bigint,(to_jsonb(NEW)->>'evaluation_id')::bigint);
             IF NOT EXISTS(SELECT 1 FROM jsonb_array_elements(m->'deliveries') x WHERE (x->>'assignmentId')::bigint=NEW.legacy_assignment_id AND (x->>'classId')::bigint=NEW.class_id) THEN RAISE EXCEPTION 'Delivery requires approved explicit class map'; END IF;
             IF TG_TABLE_NAME='t11b3_evaluation_deliveries' THEN
               IF NOT EXISTS(SELECT 1 FROM evaluation_assignments WHERE id=NEW.legacy_assignment_id AND evaluation_id=NEW.evaluation_id AND to_jsonb(evaluation_assignments)=NEW.assignment_snapshot) THEN RAISE EXCEPTION 'Wrong evaluation assignment'; END IF;
@@ -294,6 +294,10 @@ BEGIN
               IF NOT EXISTS(SELECT 1 FROM concept_assignments WHERE id=NEW.legacy_assignment_id AND concept_content_id=NEW.concept_id AND to_jsonb(concept_assignments)=NEW.assignment_snapshot) THEN RAISE EXCEPTION 'Wrong concept assignment'; END IF;
             END IF;
           ELSIF TG_TABLE_NAME IN ('t11b3_concept_recipients','t11b3_evaluation_recipients') THEN
+            EXECUTE format('SELECT r.proposed,d.legacy_assignment_id FROM %I d JOIN t11b3_reconciliations r ON r.id=d.reconciliation_id WHERE d.id=$1',replace(TG_TABLE_NAME,'recipients','deliveries')) INTO STRICT rec USING NEW.delivery_id;
+            IF NOT EXISTS(SELECT 1 FROM jsonb_array_elements(rec.proposed->'deliveries') x CROSS JOIN LATERAL jsonb_array_elements(x->'recipients') y
+              WHERE (x->>'assignmentId')::bigint=rec.legacy_assignment_id AND (x->>'classId')::bigint=NEW.class_id AND (y->>'accountId')::bigint=NEW.account_id
+              AND (y->>'enrollmentId')::bigint IS NOT DISTINCT FROM NEW.enrollment_id AND y->>'evidence'=NEW.evidence) THEN RAISE EXCEPTION 'Recipient requires approved explicit roster'; END IF;
             IF NEW.enrollment_id IS NOT NULL THEN
               SELECT * INTO STRICT e FROM enrollments WHERE id=NEW.enrollment_id;
               IF e.class_id<>NEW.class_id OR e.institution_id<>NEW.institution_id OR NOT EXISTS
@@ -302,9 +306,11 @@ BEGIN
           ELSIF TG_TABLE_NAME='t11b3_attempt_consumptions' THEN
             SELECT * INTO STRICT a FROM evaluation_attempts WHERE id=NEW.attempt_id;
             SELECT * INTO STRICT g FROM t11b3_opportunity_groups WHERE id=NEW.group_id;
-            IF a.evaluation_id<>g.evaluation_id OR to_jsonb(a)<>NEW.source_snapshot OR a.attempt_number<>NEW.attempt_number OR a.status<>NEW.status_at_reconciliation
+            IF NEW.verified IS DISTINCT FROM (SELECT status='RECONCILED' FROM t11b3_account_attempt_budgets WHERE id=NEW.budget_id) OR NEW.reconciliation_id<>g.reconciliation_id OR a.evaluation_id<>g.evaluation_id OR to_jsonb(a)<>NEW.source_snapshot OR a.attempt_number<>NEW.attempt_number OR a.status<>NEW.status_at_reconciliation
               OR NOT EXISTS(SELECT 1 FROM student_profiles WHERE id=a.student_id AND user_id=NEW.account_id) THEN RAISE EXCEPTION 'Wrong original attempt consumption'; END IF;
           ELSIF TG_TABLE_NAME='t11b3_attempt_contexts' THEN
+            SELECT r.proposed INTO STRICT m FROM t11b3_reconciliations r JOIN t11b3_attempt_consumptions c ON c.reconciliation_id=r.id WHERE c.attempt_id=NEW.attempt_id;
+            IF NOT EXISTS(SELECT 1 FROM jsonb_array_elements(m->'contexts') x WHERE (x->>'attemptId')::bigint=NEW.attempt_id AND (x->>'accountId')::bigint=NEW.account_id AND (x->>'enrollmentId')::bigint=NEW.enrollment_id AND x->>'evidence'=NEW.evidence AND x->>'sourceTimezone'=NEW.source_timezone) THEN RAISE EXCEPTION 'Context requires approved historical proof'; END IF;
             SELECT * INTO STRICT a FROM evaluation_attempts WHERE id=NEW.attempt_id;
             SELECT r.*,d.legacy_assignment_id INTO STRICT rec FROM t11b3_evaluation_recipients r JOIN t11b3_evaluation_deliveries d ON d.id=r.delivery_id WHERE r.id=NEW.recipient_id;
             SELECT * INTO STRICT e FROM enrollments WHERE id=NEW.enrollment_id;
