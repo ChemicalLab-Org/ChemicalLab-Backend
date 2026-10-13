@@ -332,4 +332,3 @@ BEGIN
         INSERT INTO t11b2_schema_version(version,revision,fingerprint) VALUES(1,'t11b2-v1',actual);
     END IF;
 END $migration$;
-
