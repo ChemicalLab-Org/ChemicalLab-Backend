@@ -388,7 +388,7 @@ T05. Registro/invitaciones/recuperación y paneles pertenecen a tareas posterior
 SEC-13, VER-01 y certificación operativa permanecen abiertos. No hay merge,
 despliegue, bases reales, activación institucional ni implementación T12/T13.
 
-## Ejecuciones nuevas y evidencia previa
+## Evidencia de primera entrega, anterior a la corrección B4 v2
 
 Evidencia heredada: cierre B3 registra 675 pruebas sobre
 `e02c7acfe5dd796f93d33825492a2208169adc03`, restauración de 61 tablas y carreras
@@ -428,7 +428,7 @@ APPLIED. No se crean carreras artificiales para lecturas sin conflicto.
 El dump/restore nativo compara todas las tablas y vuelve a certificar; no es
 restauración productiva ni prueba de capacidad/carga sostenida.
 
-### Resultado definitivo nuevo
+### Resultado de primera entrega B4 v1 (evidencia anterior)
 
 **SHA probado:** `3531ff445c22ba057703be7974cf7c848eb50a31`. `clean package` completo:
 **57 suites, 705 pruebas, cero fallos, errores u omisiones; JAR generado**.
@@ -493,3 +493,77 @@ La nota de resultados se confirma después del SHA probado; no cambia producció
 SQL, pruebas ni POM. El HEAD completo final se entrega con la PR en borrador,
 separado del SHA probado. T11-B y etapa 3 siguen abiertos; sin merge, despliegue,
 bases reales, activación multiinstitucional o implementación T12/T13.
+
+
+## Resultados nuevos de la corrección B4 v2
+
+Esta sección corresponde exclusivamente a la corrección de revisión del PR #70;
+no suma ejecuciones focalizadas, reproducción ni evidencia anterior B4 v1/B3.
+
+**SHA probado:** `9c60faaa4dd50aa9c34e65a7c44da1f5b5cd0f58`. `clean package` completo offline: **58 suites,
+714 pruebas, cero fallos, errores u omisiones; BUILD SUCCESS y JAR generado**.
+
+Incluye 38 casos BoardActivityReconciliationDbTest y un caso de transición
+BoardAuditParentTransitionDbTest, frente a los 30 casos B4 de la primera entrega.
+Las 675 pruebas preexistentes se ejecutan nuevamente sobre este SHA, incluidas
+las regresiones T03/T07-B/T08/T10 y B1–B3. El empaquetado y sus resultados nuevos
+no se atribuyen a los SHAs anteriores.
+
+Comando nuevo, checkout `.codex-work/t11b4-backend`, Windows/JDK 17.0.12 y
+PostgreSQL 18.4, DB ficticia propia en loopback, TimeZone America/Bogota:
+
+```powershell
+$env:JAVA_HOME='C:/Program Files/Java/jdk-17'
+./mvnw.cmd -o '-Dspring.profiles.active=test' '-Dspring.datasource.url=jdbc:postgresql://127.0.0.1:55434/chemicallab_t01_test' '-Dspring.datasource.username=t11b4_fixture' '-Dspring.datasource.password=fictitious' clean package
+```
+
+Ejecuciones nuevas separadas:
+
+| Ejecución | Resultado / límite |
+| --- | --- |
+| Reproducción v1, antes de editar código | Caso adverso confirmado y cinco controles existentes positivos; exit 0. Servicios compilados del SHA previo, no corrección |
+| Selección inicial B4 | 37 pruebas, 2 fallos de aserción, 0 errores: dos contadores nuevos miraban todas las fixtures acumuladas; se corrigieron a los eventos de su pizarra. No se ocultan ni se suman a la ejecución final |
+| Selección corregida B4 + transición | 39 pruebas, 0 fallos/errores/omisiones. SQL directo y servicio, padre/deriva, idempotencia, cuotas, rollback T08, transición/recuperación y GLOBAL |
+| Empaquetado completo del SHA indicado | 58 suites, 714 pruebas, 0 fallos/errores/omisiones |
+
+Restauración nueva: **69 firmas de tablas idénticas**, incluida
+t11b4_apply_version. Catálogos original/restaurado coinciden; B1/B3 v2/B4 v2
+certifican, UPDATE/DELETE/TRUNCATE CASCADE del log siguen rechazados, la aplicación
+en DB restaurada separada continúa bloqueada, y alterar un guard hace fallar la
+certificación. La misma carrera concreta de aplicación duplicada se repitió con
+dos JVM, PIDs OS `[34276, 21064]`, dos esperas de PostgreSQL
+`[35160, 2920]` y resultados APPLIED/APPLIED,
+una asociación y un SUCCESS. No se agregaron carreras hipotéticas.
+
+JAR SHA-256: `3447a5e41b96363e43000553eefdd7fce3e6ec7f59d4daa44828991ddccfaa5c`.
+SQL B4 v2 UTF-8/LF SHA-256: `96adca19b81028eda16eda7efad8b69ae74a50beb74d2149678b2f2f11e2115d`.
+
+El JAR contiene los siete SQL idénticos al SHA probado. Los seis anteriores
+mantienen sus blobs y hashes, incluida B4 v1; las filas y fingerprints anteriores
+se comparan antes/después de la transición y tras restauración.
+
+Evidencia nueva en `.codex-work/t11b4-fix-evidence/`: reproducción Java/PowerShell,
+board-audit-parent-results.json, board-audit-parent.log, focused.log,
+focused-first.xml, focused-corrected.log, focused-corrected.xml,
+focused-transition.xml, full-package.log, verified-results.json,
+verified-reports.zip, verified-native-signatures.json, verified-native/,
+verified-processes/, predecessors.json, preservation.json, cleanup.log y estado
+del PR. La evidencia `.codex-work/t11b4-evidence/` y la revisión independiente
+`.codex-work/t11b4-review/` no se sobrescribieron.
+
+Preservación nueva: 29/29 hashes protegidos idénticos, incluidos auditoría original,
+13 documentos de seguridad locales y 16 archivos E2E. Los demás documentos backend
+anteriores no cambian; únicamente se actualiza esta nota. Frontend mantiene HEAD
+e88589635a8269c50ee0f53fccf157f0d0985034 y el estado previo `?? e2e-selenium/`.
+El checkout backend original sigue limpio en develop de la base integrada.
+El clúster dedicado queda sin fixtures/restauraciones propias y detenido.
+
+El commit posterior al SHA probado únicamente completa esta nota, sin cambiar
+SQL, código, pruebas ni POM. Se publica sobre la misma rama y PR #70 en borrador.
+Quedan pendientes revisión de esta corrección, Linux/JDK17/PostgreSQL nativo
+Linux, SCA nueva y certificación operativa/SEC-13/VER-01. No se certifican roles,
+TLS, capacidad ni datos reales; no se prueba restauración entre timezones distintas
+ni consumo dinámico de secuencias. La corrección no resuelve la política funcional
+de reemplazo de un contexto erróneo histórico: lo conserva desactualizado. La matriz
+A01–A17 mantiene su alcance y pendientes antes de T12 y posteriores; T11-B y etapa
+3 permanecen abiertos. Sin merge, despliegue, activación multiinstitucional ni T12/T13.
