@@ -1,6 +1,6 @@
 # T11-A — Propuesta del modelo institucional de ChemicalLab
 
-**Versión:** 1.1 · **Fecha:** 12 de octubre de 2026, America/Lima.
+**Versión:** 1.2 · **Fecha:** 13 de octubre de 2026, America/Lima.
 
 **Estado:** propuesta completa para revisión; no autoriza T11-B ni apertura multiinstitucional.
 
@@ -346,7 +346,7 @@ Orden: revisar T11-A → autorizar T11-B → revisar persistencia/ensayo → T12
 
 ## 7. Decisiones funcionales confirmadas y cuestiones pendientes
 
-F02, F03 y F04 fueron confirmadas por el usuario en esta revisión. El cuadro delimita lo confirmado y sus cuestiones complementarias aún pendientes; estas últimas no condicionan ni vuelven a someter a aprobación las decisiones ya tomadas. Las demás recomendaciones siguen siendo propuesta para revisión antes de implementar lo que dependa de ellas. Ningún punto se resuelve creando datos reales ficticios.
+F02, F03 y F04 fueron confirmadas por el usuario en la revisión T11-A. F05 fue confirmada expresamente al encargar T11-B5, con el alcance acotado del cuadro. El cuadro delimita lo confirmado y sus cuestiones complementarias aún pendientes; estas últimas no condicionan ni vuelven a someter a aprobación las decisiones ya tomadas. Las demás recomendaciones siguen siendo propuesta para revisión antes de implementar lo que dependa de ellas. Ningún punto se resuelve creando datos reales ficticios.
 
 | ID | Estado y cuestión funcional | Decisión / propuesta e impacto |
 | --- | --- | --- |
@@ -354,7 +354,7 @@ F02, F03 y F04 fueron confirmadas por el usuario en esta revisión. El cuadro de
 | F02 | **Confirmada:** pertenencia simultánea a varias instituciones | Una misma cuenta puede pertenecer a varias instituciones, con pertenencias y permisos separados. Pendientes complementarios: combinaciones adicionales de roles, reglas de múltiples clases y co-docencia; se propone RESPONSABLE único y co-docentes con facultades explícitas. La combinación administrativa/docente y no autocalificación están confirmadas en F04 |
 | F03 | **Confirmada:** lectura individual después de dejar el colegio | Conserva lectura de resultados individuales anteriores con las restricciones de exposición y cierre T05; no accede por ello a clases activas, compañeros ni capturas compartidas indiscriminadamente. Pendientes complementarios: excepciones de capturas compartidas, tratamiento de suspensiones institucionales y mecanismo de recuperación/consulta; no se propone caducar el derecho confirmado mediante un plazo de membresía |
 | F04 | **Confirmada:** gestión/supervisión y condiciones para calificar | ADMIN_INSTITUCION gestiona y supervisa. Para calificar necesita además DOCENTE vigente y asignación a la clase correspondiente; prohibida autocalificación y sin bypass de nota cerrada. Pendientes complementarios: alcance de delegación de biblioteca, soporte global y correcciones excepcionales auditadas; no conceden calificación por el rol administrativo solo |
-| F05 | Código académico: estabilidad/reutilización y alias/login | Código estable y no reutilizable en el colegio aun con baja; login global separado. Cambios conservan alias académico histórico; normalización de aliases de acceso solo tras revisión de colisiones |
+| F05 | **Confirmada por el usuario el 13 de octubre de 2026:** reserva del código académico por cuenta y colegio | El código queda reservado para la misma cuenta dentro del colegio, incluso tras retirarse; no puede asignarse a otra persona. Puede coincidir en otro colegio y es independiente del usuario de acceso global. La readmisión conserva identidad y reserva. Esta confirmación no define reutilización de correos/aliases de acceso, normalización nueva ni renombrados académicos; sus flujos y las demás decisiones pendientes siguen pendientes |
 | F06 | Recuperación para menores sin correo y poderes de reset escolar | Ayuda del colegio inicia recuperación central verificada; no entrega credential global ni reset multiinstitucional unilateral. T14 define pruebas/recuperación y MFA administrativa; registro público de alumnos permanece apagado |
 | F07 | Clase, períodos, padrón, incorporaciones y traslados con intento abierto | Clase por curso/período; nuevas matrículas no acceden retroactivamente a todo el historial; alta a entrega explícita. Traslado deja intento en origen, se resuelve/finaliza bajo reglas originales sin reset de límite ni copia de nota |
 | F08 | Identificación de legacy y responsables de reconciliación | Mapa por origen aprobado; sin asignación por inferencia. Si falta período/asistencia, mantener incertidumbre registrada y denegar nueva publicación hasta resolver |
@@ -390,6 +390,39 @@ T12 exige probar en ambos sentidos A→B y B→A: cuentas sin membresía, membre
 
 T13 exige sustitución durante actividad, baja de docente/alumno, traslado con intento abierto, readmisión y acceso propio histórico: nuevo responsable tiene solo sus clases, saliente pierde facultades actuales, autor sigue intacto, ninguna nota/captura cruza colegio y las ventanas/cierres T05 siguen válidos. F03 exige que con membresía ENDED y sesión global válida el alumno lea resultados individuales anteriores permitidos por T05; clases activas, compañeros y capturas compartidas indiscriminadas se rechazan; salir no revela corrección bloqueada. T14 exige aceptación concurrente única, expiración/revocación/cupo, cuenta existente conservada, recuperación y roles no escalables. Ningún gate se da por cumplido en T11-A.
 
+### 7.3 Matriz de preparación actualizada por T11-B5 (13 de octubre de 2026)
+
+Esta actualización registra F05 confirmada y preparación B1–B5. No reemplaza los
+criterios de §7.1 ni declara cumplidos gates T12/T13/operación. Evidencia nueva,
+SHA y límites se documentan en [B5](11b5-identidad-codigos.md); notas/cierres previos
+conservan su atribución histórica. T11-B y etapa 3 permanecen abiertos.
+
+| Criterio | Preparación del modelo / ensayo | T12/T13 y operación pendientes |
+| --- | --- | --- |
+| A01 coincidencias | Cumplido para códigos/reservas F05 exactos A/B, clases/períodos B2 y binding global sin conflicto; colisiones conservadas | Activación de login nuevo, verificación/ciclo de aliases y política de normalización pendientes; no regla F05 para correo |
+| A02 membresías/roles | Cumplido para B1 + PlatformRoleGrant independiente con procedencia explícita; consulta de episodios B5 | T12 compone vigencias/contexto y combinación F04; grants nuevos reales e importación operativa F08 pendientes |
+| A03 integridad | Cumplido para FKs/guards/ventanas y reservas concurrentes cubiertas B1–B5 | Relaciones aplazadas/co-docencia y capacidades futuras requieren evolución; gate bilateral T12 pendiente |
+| A04 cuenta | Cumplido en fixtures: mismos IDs/hash/username/password/versiones/sesiones; código separado sin renombrado | Conciliación real F08 y corte de writers pendientes; no fusión de personas |
+| A05 evidencia | Cumplido para fuentes cubiertas y restauración ficticia B5; referencias/historia original intactas | Exhaustividad/inventario real, históricos desconocidos y certificación operativa pendientes |
+| A06 reemplazo | Parcial: relaciones/episodios B2 preservados | Permisos reales del saliente/reemplazo T12/T13 pendientes |
+| A07 traslado/simultaneidad | Parcial: cuentas/membresías A/B y reservas por institución independientes; sin mover hechos previos | Traslado con intento abierto, continuidad/revocación y acceso individual F03 son T13 bajo T05 |
+| A08 mapa/ambigüedad | Parcial: mapas explícitos de fixture; colisiones exactas/entre tipos/vista previa conservadas y bloqueadas | F08 responsables/mapas reales, Unicode/comparación futura, resolución de conflictos y todas las PK pendientes |
+| A09 repetición/recuperación | Cumplido en cadena/fixtures: reintentos, rollback y pg_dump/restore con firmas | Checkpoints/lotes/capacidad, caída abrupta y corte operativo de writers pendientes |
+| A10 cuotas/auditoría | Cumplido en ensayo: historia/reservas/privilegios y cuotas pertinentes revierten con T08; ledgers/guards previos intactos | Cuotas institucionales aprobadas, crecimiento/retención, permisos/TLS/reloj y SEC-13 pendientes |
+| A11 compatibilidad cerrada | Parcial: no endpoints/paneles/registro ni nuevas autoridades; login T02/T04 conservado | Ambigüedad y ámbito único de clientes legacy requieren gate integral T12; no activación multiinstitucional |
+| A12 regresión/revisión | Parcial: selección B5 y suite/empaquetado nuevos según evidencia de la nota | Revisión de entrega, Linux/JDK17/PostgreSQL Linux, nueva SCA y operación VER-01 pendientes |
+| A13 máximo agotado | Cumplido en ensayo B3; regresión conserva T05, sin nueva raíz por B5 | Corte de writers y admisión/exposición institucional T12 pendientes |
+| A14 entregas/raíz/carrera | Cumplido en ensayo B3, presupuesto/cierre original conservados | Sincronización/corte T12; F09 sigue pendiente para evaluaciones realmente nuevas |
+| A15 activo previo | Cumplido en ensayo B3; B5 conserva intento/consumo | Continuidad/baja T13 y resolución real F08 pendientes |
+| A16 readmisión/clases | Cumplido en ensayo B3 y reserva/cuenta/episodios B5; readmisión no recicla código | Gate de acceso bilateral T12 y continuidad T13 pendientes |
+| A17 cierre/conciliación | Cumplido en ensayo B3; preparación B5 no cambia T05 ni exposición | Autorización F03 T12/T13, corte y resolución real F08 pendientes |
+
+Preparación de aliases sigue parcial: candidatos, evidencia de conflictos y binding
+PREPARED disponibles; ciclo operativo ACTIVE/REVOKED, verificación, corrección y
+reutilización no se implementan sin decisión/flujo posterior. Persistencia inmutable
+no confirma política perpetua de reserva para correo. Pendientes B2/B3/B4, restantes
+decisiones funcionales, SEC-13 y VER-01 siguen abiertos. La operación no está certificada.
+
 ## 8. Garantías y pendientes que permanecen abiertos
 
 | Etapa / fuente versionada | Garantía que debe conservarse | Pendiente que no cierra T11-A |
@@ -405,4 +438,4 @@ T13 exige sustitución durante actividad, baja de docente/alumno, traslado con i
 | [T09](../seguridad/02-09-dependencias.md) / **VER-01 abierto, parcialmente corregido** | Dependencias corregidas y evidencia SBOM/SCA heredada | Jetty Site findings/aviso; no `site:run`. JDK/Node mantenidos pendientes; imagen real/digest/OS/JRE y PostgreSQL/TLS productivo no verificados. No aceptación de riesgo implícita |
 | [T10](../seguridad/02-10-concurrencia.md) / VER-02 | Locks entre procesos y afterCommit; preservación conservadora de duplicados | Matriz acotada no certifica toda carrera/carga; suite Linux completa, Java 17/Linux y PostgreSQL nativo Linux siguen pendientes |
 
-No se ejecutaron pruebas ni builds durante esta revisión T11-A: el único cambio entregado es documental. La verificación corresponde a lectura de fuentes/bases, consistencia del diseño, referencias, diff y conservación del trabajo previo. No se declara corregida toda la seguridad ni preparada la plataforma para varias instituciones. Las confirmaciones F02/F03/F04 se conservan y las cuestiones restantes de §7 quedan para revisión antes de autorizar T11-B; no se hace merge ni se inicia implementación.
+Evidencia histórica de la revisión original T11-A (no de B5): no se ejecutaron pruebas ni builds durante aquella revisión T11-A: el único cambio entregado es documental. La verificación corresponde a lectura de fuentes/bases, consistencia del diseño, referencias, diff y conservación del trabajo previo. No se declara corregida toda la seguridad ni preparada la plataforma para varias instituciones. Las confirmaciones F02/F03/F04 se conservan y las cuestiones restantes de §7 quedan para revisión antes de autorizar T11-B; no se hace merge ni se inicia implementación.
