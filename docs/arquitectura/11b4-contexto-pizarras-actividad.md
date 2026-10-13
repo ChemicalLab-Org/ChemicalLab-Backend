@@ -248,8 +248,10 @@ sucesores conforme a B3; no se usan para reparar un catálogo posterior.
 La firma B4 cubre columnas/defaults/identity, constraints/validación, índices y
 su estado, triggers habilitados, funciones, vistas y secuencias B4; también
 columnas/constraints de fuentes y cuotas/auditoría, triggers legacy pertinentes,
-funciones storage/T08 y máximos de cuotas. Excluye valores dinámicos de contadores,
-secuencias y datos; el manifiesto de recuperación compara estos por separado.
+funciones storage/T08 y máximos de cuotas. Excluye consumo dinámico de secuencias y datos; el manifiesto compara filas y
+contadores por separado. pg_dump restaura posiciones de secuencia, pero el arnés
+no compara su consumo dinámico. nextval puede dejar huecos tras rollback;
+no es un contador de negocio ni cambia IDs ya existentes.
 Cuatro CHECK legacy de enum (rol de auditoría/uso, categoría y severidad) se
 normalizan en la firma solo para casts text/varchar sin longitud y distribución
 de esos casts en ARRAY, equivalentes tras dump/restore PostgreSQL. No se altera
@@ -274,7 +276,7 @@ deja las tablas inertes y conserva sus relaciones/historia.
 
 “Cumplido” se limita a persistencia/ensayo ficticio del criterio indicado; no
 certifica autorización, operación real ni datos escolares conciliados. La
-evidencia definitiva nueva y su SHA se registran al finalizar las ejecuciones.
+evidencia definitiva nueva y su SHA se registran abajo.
 
 | Criterio | Estado del ensayo T11-B | Antes de T12 / posterior |
 | --- | --- | --- |
@@ -289,7 +291,7 @@ evidencia definitiva nueva y su SHA se registran al finalizar las ejecuciones.
 | A09 repetición/recuperación | Cumplido para cadena y fixtures cubiertos: rollback, reintento, dump/restore | Lotes/checkpoints/capacidad e interrupción real de writers requieren procedimiento posterior autorizado |
 | A10 cuotas/auditoría | Cumplido en ensayo cubierto, copias cobradas y logs append-only | Política/cuotas institucionales, retención de telemetría conciliada, privilegios y operación SEC-13/T15–T17 pendientes |
 | A11 compatibilidad cerrada | Parcial; no nuevos endpoints/roles/UI/registro ni activación multiinstitucional | Legacy aún no implementa filtro/contexto institucional: su gate completo y cierre de superficies ambiguas son T12 |
-| A12 regresión/revisión | Parcial hasta ejecución nueva registrada abajo; no reutilizar totales anteriores | Suite Linux/JDK17 y PostgreSQL nativo Linux, SCA/operación VER-01 y revisión de entrega siguen separados |
+| A12 regresión/revisión | Parcial; suite nueva completa registrada abajo; Linux/operación aún pendientes | Suite Linux/JDK17 y PostgreSQL nativo Linux, SCA/operación VER-01 y revisión de entrega siguen separados |
 | A13 máximo agotado | Cumplido en ensayo B3; B4 no modifica autoridad legacy | Corte/sincronización de writers y exposición/admisión institucional T12 conservando T05 |
 | A14 entregas/raíz/carrera | Cumplido en ensayo B3, autoridad/cierre original conservados | Mismo pendiente de corte T12; F09 sigue pendiente para evaluaciones realmente nuevas |
 | A15 activo previo | Cumplido en ensayo B3; sin reset de activo/consumo por B4 | Continuidad/baja y resolución de conflictos reales T13/procedimiento F08 |
@@ -349,4 +351,68 @@ APPLIED. No se crean carreras artificiales para lecturas sin conflicto.
 El dump/restore nativo compara todas las tablas y vuelve a certificar; no es
 restauración productiva ni prueba de capacidad/carga sostenida.
 
-Resultados definitivos, SHA probado, HEAD y hashes se completan tras la ejecución.
+### Resultado definitivo nuevo
+
+**SHA probado:** `3531ff445c22ba057703be7974cf7c848eb50a31`. `clean package` completo:
+**57 suites, 705 pruebas, cero fallos, errores u omisiones; JAR generado**.
+Incluye 30 escenarios B4 y las regresiones T03/T07-B/T08/T10, B1/B2/B3,
+cuentas/sesiones, intentos/ventanas/materiales y demás suites existentes.
+Los mensajes deliberados SECURITY_AUDIT_EVIDENCE_UNAVAILABLE y arranques rechazados
+pertenecen a controles negativos; los XML Surefire confirman los totales.
+
+Entorno: Windows, JDK 17.0.12, PostgreSQL 18.4 desechable, Maven offline,
+perfil test, loopback 127.0.0.1:55434. Los comandos reproducibles figuran arriba.
+No se ejecutó Linux, SCA nueva, base/roles/TLS reales ni carga sostenida.
+La restauración mantiene el mismo clúster y TimeZone de sesión; para un futuro
+procedimiento verificar también `SHOW TimeZone` y conservar la representación
+de origen de las fotografías. No se certifica aquí recuperación entre zonas
+distintas ni se convierte una marca local histórica por suposición.
+
+JAR SHA-256: `0a27686766a1f01035bf7b3f5b2e249aba6b8621eeb1bdce9ca5c654633f108e`.
+SQL B4 v1 UTF-8/LF SHA-256: `1c28b9e95889e03cc1f0feb3b6aa32f2487ee684b4d535ae6f63a21efc9a21b9`.
+El JAR contiene los seis SQL idénticos al SHA probado. Los cinco hashes SQL
+anteriores coinciden con la evidencia B3, y sus fuentes/fingerprints no cambian.
+CRLF del checkout puede cambiar el hash físico; contrastar contenido Git/LF.
+
+Recuperación nueva dentro de esta suite: **68 tablas del esquema propio**, con
+firmas iguales antes/después, IDs, autores, tombstones, bytes, snapshots/checksums,
+historia y contadores. Certifica B1 v1/B3 v2/B4 v1. UPDATE/DELETE/TRUNCATE CASCADE
+de auditoría rechazados; guarda de aplicación rechaza la DB restaurada separada;
+alterar un trigger B4 se detecta sin reparación. Prueba de instalación/rollback
+mantiene el predecesor certificable y admite repetición explícita.
+
+Carrera nueva B4: PID OS [35220, 2172], PID PostgreSQL bloqueados
+[23284, 36628]; ambos retornan APPLIED, con una asociación,
+un historial APPLIED y un SUCCESS. Barrera liberada solo después de observar
+las dos conexiones esperando Lock. Las carreras B3/T10 de la suite se atribuyen
+a esta ejecución; no se suman como tests adicionales.
+
+Ejecución intermedia independiente: `a2f5b6b01d749c0c6c3df2c14415b4b0b830c9eb`,
+57 suites/701 pruebas/0/0/0, anterior a los cuatro casos y ajustes finales.
+Selecciones B4 de 26 y después 30 casos aprobadas se conservan aparte.
+No se suman entre sí, a las 705 finales ni a las 675 históricas de B3.
+
+Evidencia local nueva: `.codex-work/t11b4-evidence/verified-results.json`,
+`full-package-final.log`, `verified-reports.zip`, `verified-native-signatures.json`,
+`verified-native/`, `verified-processes/`, `preservation-final.json` y `cleanup.log`.
+Los logs/XML del primer y segundo ensayo, diagnóstico de casts y resultado
+intermedio tienen nombres separados y permanecen fuera de la PR.
+
+Limpieza confirmada: cero esquemas propios pendientes y cero conexiones ajenas
+en la DB ficticia; después de retirar su base, cero bases chemicallab% en el
+clúster propio y servidor detenido. Dumps, manifiestos y logs quedan conservados.
+
+Conservación: **29/29 archivos protegidos**, incluidos los 16 E2E y trece
+documentos locales de seguridad. Los 27 de la evidencia anterior coinciden;
+se añadieron al manifiesto los dos cierres B2/B3. Auditoría original SHA-256
+`1eff5d59f7a114dfee91cb557a0405c2f7247e43cd2926d2542172c0255e499b`.
+Los 56 archivos documentales backend previos conservan sus blobs. El único documento
+backend nuevo es esta nota. Frontend sigue en
+`feature/validaciones-datos-institucionales`, HEAD
+`e88589635a8269c50ee0f53fccf157f0d0985034`, con `?? e2e-selenium/` previo.
+Backend original conserva develop limpio en la base declarada.
+
+La nota de resultados se confirma después del SHA probado; no cambia producción,
+SQL, pruebas ni POM. El HEAD completo final se entrega con la PR en borrador,
+separado del SHA probado. T11-B y etapa 3 siguen abiertos; sin merge, despliegue,
+bases reales, activación multiinstitucional o implementación T12/T13.
