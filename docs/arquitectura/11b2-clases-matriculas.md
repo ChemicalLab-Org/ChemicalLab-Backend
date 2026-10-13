@@ -155,14 +155,17 @@ $env:PGOPTIONS='-c search_path=public'
 psql --set ON_ERROR_STOP=1 --command "select current_database(),current_schema(),current_setting('search_path');"
 psql --single-transaction --set ON_ERROR_STOP=1 --file src/main/resources/db/expansion/t11b1-v1.sql
 psql --single-transaction --set ON_ERROR_STOP=1 --file src/main/resources/db/expansion/t11b2-v1.sql
-# Repetir cada archivo valida su catálogo sin recrear ni cambiar datos.
+psql --single-transaction --set ON_ERROR_STOP=1 --file src/main/resources/db/expansion/t11b2-v2.sql
+# En instalaciones B2 v1 existentes: ejecutar sólo v2 después de verificar B1.
+# Después de v2: repetir B1 v1 y B2 v2 para certificar el esquema actual.
+# B2 v1 conserva la firma del predecesor: rechaza el catálogo evolucionado v2.
 ```
 
 Un fallo de expansión revierte el DO; un fallo de evidencia revierte todo el negocio.
 Después de recuperar auditoría se reintenta explícitamente; commit desconocido exige
 investigar IDs/correlación antes de repetir altas. Ante divergencia, detener mantenimiento,
 comparar fuente/backup y corregir mediante transición autorizada, sin sobrescribir firma.
-Restaurar dump completo a DB separada con mismo schema, revalidar B1/B2 y hashes/IDs/
+Restaurar dump completo a DB separada con mismo schema, revalidar B1 v1/B2 v2 y hashes/IDs/
 historia antes de habilitar escritores. Restore carga datos antes de crear triggers,
 sin deshabilitarlos sobre datos vivos. Reversión de aplicación conserva tablas inertes;
 DROP/CASCADE destruiría historia y no es procedimiento productivo de recuperación.
@@ -182,7 +185,10 @@ SEC-13 y VER-01 siguen abiertos. No merge, despliegue, DDL real, registro públi
 ni activación multiinstitucional. Este bloque no completa T11-B ni la etapa 3.
 La entrega termina con PR borrador para revisión.
 
-## Verificación
+## Verificación histórica de la entrega inicial
+
+Los resultados de esta sección corresponden exclusivamente al SHA inicial indicado.
+La corrección de revisión tiene su propia evidencia y SHA al final de la nota.
 
 **SHA de código probado:** `9d4c573d457d8f3efd6f03d51b503290514146bd`.
 Entorno: Windows, JDK 17.0.12, PostgreSQL 18.4 desechable,
@@ -275,3 +281,52 @@ habilitado, versión T08=1 y fila de presupuesto intacta. Los mensajes deliberad
 de SECURITY_AUDIT_EVIDENCE_UNAVAILABLE no son fallos JUnit; XML y resumen Maven
 confirman los resultados anteriores. No se ejecutó suite Linux, nueva SCA ni
 medición sostenida/operativa; SEC-13 y VER-01 continúan abiertos.
+
+## Corrección del hallazgo de revisión T11-B2 / PR #68
+
+El HEAD revisado `e789aac6371629d085ef722823e3217f0d503309` expandía
+el CHECK de auditoría sólo con ocho eventos B2. Sobre un CHECK anterior a B1,
+las seis operaciones B1 seguían rechazadas y su evidencia obligatoria T08
+provocaba rollback. La reproducción original y sus logs se conservan en
+`.codex-work/t11b2-review`; la reproducción de esta corrección se conserva
+en `.codex-work/t11b2-correction/reproduced-before.log`: seis rechazos B1,
+ENROLLMENT_CREATED aceptado y fila LOGIN_SUCCESS intacta.
+
+`t11b2-v2.sql` es una evolución explícita, atómica y acumulativa. Conserva
+sin cambios las fuentes B1 v1 y B2 v1 y sus filas de versión/fingerprint.
+Antes de evolucionar valida ambos catálogos firmados; requiere system_logs
+y al menos un CHECK cerrado de event_type, validado y limitado a esa columna.
+No instala auditoría ni admite un esquema staged sin CHECK; prepararlo exige
+reconciliación explícita previa. Añade por OR al predicado anterior exactamente:
+
+- INSTITUTION_CREATED, INSTITUTION_STATE_CHANGED, MEMBERSHIP_CREATED,
+  MEMBERSHIP_STATE_CHANGED, MEMBERSHIP_ROLE_GRANTED, MEMBERSHIP_ROLE_REVOKED.
+- ACADEMIC_PERIOD_CREATED, ACADEMIC_PERIOD_STATE_CHANGED, ACADEMIC_CLASS_CREATED,
+  ACADEMIC_CLASS_STATE_CHANGED, TEACHING_ASSIGNMENT_CREATED,
+  TEACHING_ASSIGNMENT_STATE_CHANGED, ENROLLMENT_CREATED, ENROLLMENT_STATE_CHANGED.
+
+El vocabulario legacy permanece admitido por su propio predicado y los eventos
+desconocidos continúan rechazados. No modifica filas de logs, guardas, presupuesto
+ni versión T08. La nueva tabla t11b2_audit_version registra versión 2,
+revision t11b2-v2, predecessor_fingerprint idéntico al B2 v1 y la nueva firma
+del catálogo (incluidos CHECK y estructura del nuevo ledger). No sobrescribe
+ninguna firma. Repetir v2 comprueba el predecesor y el catálogo actual; detecta
+alteraciones de CHECK, triggers, B1, estructura y firma del predecesor sin reparar.
+Repetir B2 v1 después de v2 rechaza deliberadamente el catálogo sucesor:
+para validación y restore actuales se usan B1 v1 y B2 v2.
+
+AcademicPersistenceDbTest instala un CHECK pre-B1 después del arranque inicial
+de Hibernate y aplica B1 v1/B2 v1. Comprueba que una creación institucional
+auditada falla y revierte antes de v2, y sólo entonces aplica la transición.
+No reinicia la aplicación ni permite un update posterior de Hibernate.
+Las regresiones académicas operan sobre el CHECK preparado y verifican evidencia
+real de los catorce tipos, operaciones de ambos servicios, CHECK idéntico después
+del negocio y rollback de B1/B2 ante indisponibilidad de auditoría, con historia
+y SUCCESS intactos. Los ensayos nativos verifican datos legacy/B1 poblados,
+repetición, rechazo desconocido, guardas append-only, dos carreras independientes
+y pg_dump/pg_restore con revalidación v2 y detección de divergencia.
+
+La primera selección de esta corrección tuvo 33 pruebas, 0 fallos y 1 error:
+un nuevo fixture SQL usaba nombres de columnas incorrectos. Se conservó el log,
+se corrigió el fixture y se repitió; ese intento no se presenta como aceptación.
+Los resultados definitivos se registran a continuación tras las verificaciones.

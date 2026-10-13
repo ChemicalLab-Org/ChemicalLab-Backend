@@ -22,7 +22,7 @@ class AcademicPersistenceDbTest {
     final Instant t=Instant.parse("2026-02-01T00:00:00Z"), end=Instant.parse("2026-07-15T00:00:00Z");
     AcademicMaintenanceService service;
     InstitutionMaintenanceService institutions;
-    String expansion,b1;
+    String expansion,b1,current,legacyFingerprint,preparedCheck;
     long a,b,p,q,c,d,student,teacher,replacement;
     int sequence;
     JdbcTemplate sql(){return f.sql();}
@@ -32,7 +32,21 @@ class AcademicPersistenceDbTest {
         f.start();service=f.app.getBean(AcademicMaintenanceService.class);institutions=f.app.getBean(InstitutionMaintenanceService.class);
         b1=new ClassPathResource("db/expansion/t11b1-v1.sql").getContentAsString(StandardCharsets.UTF_8);
         expansion=new ClassPathResource("db/expansion/t11b2-v1.sql").getContentAsString(StandardCharsets.UTF_8);
+        current=new ClassPathResource("db/expansion/t11b2-v2.sql").getContentAsString(StandardCharsets.UTF_8);
+        // Hibernate has finished startup. Install a genuinely pre-B1 closed CHECK;
+        // no application restart or Hibernate schema update occurs after this point.
+        var legacy=Arrays.stream(com.morales.chemicallab.entity.LogEventType.values())
+            .map(Enum::name).filter(e->!newEvents().contains(e)).map(e->"'"+e+"'")
+            .collect(java.util.stream.Collectors.joining(","));
+        for(String name:sql().queryForList("select c.conname from pg_constraint c join pg_attribute a on a.attrelid=c.conrelid and a.attname='event_type' and a.attnum=any(c.conkey) where c.conrelid='system_logs'::regclass and c.contype='c'",String.class))
+            sql().execute("alter table system_logs drop constraint "+name);
+        sql().execute("alter table system_logs add constraint legacy_event_check check(event_type in ("+legacy+"))");
         sql().execute(b1);sql().execute(expansion);
+        assertThatThrownBy(()->institutions.createInstitution("BEFORE-V2","Fictitious","America/Lima"))
+            .isInstanceOf(com.morales.chemicallab.security.audit.AuditUnavailableException.class);
+        assertThat(sql().queryForObject("select count(*) from institutions",Long.class)).isZero();
+        legacyFingerprint=sql().queryForObject("select fingerprint from t11b2_schema_version",String.class);
+        sql().execute(current);preparedCheck=checkDefinition();
     }
     @BeforeEach void fixture() {
         f.fixture();sequence++;
@@ -282,14 +296,14 @@ class AcademicPersistenceDbTest {
         } finally {sql().execute("drop trigger fictitious_b2_audit_failure on system_logs");sql().execute("drop function fictitious_b2_audit_failure()");}
     }
     @Test void expansionRepeatAndDivergenceValidateB1AndB2WithoutRepair() {
-        sql().execute(b1);sql().execute(expansion);sql().execute(expansion);
+        sql().execute(b1);sql().execute(current);sql().execute(current);
         sql().execute("alter table enrollments disable trigger t11b2_guard");
-        try {assertThatThrownBy(()->sql().execute(expansion)).hasStackTraceContaining("schema divergence");}
+        try {assertThatThrownBy(()->sql().execute(current)).hasStackTraceContaining("schema divergence");}
         finally {sql().execute("alter table enrollments enable trigger t11b2_guard");}
         sql().execute("alter table institutions disable trigger t11b1_institution_guard");
-        try {assertThatThrownBy(()->sql().execute(expansion)).hasStackTraceContaining("prerequisite T11-B1 divergence");}
+        try {assertThatThrownBy(()->sql().execute(current)).hasStackTraceContaining("prerequisite T11-B1 divergence");}
         finally {sql().execute("alter table institutions enable trigger t11b1_institution_guard");}
-        sql().execute(expansion);
+        sql().execute(current);
     }
     @Test void expansionOnPopulatedB1AndLegacyPreservesDataAndRecoveryRoundTrip() {
         String schema="b2_old_"+UUID.randomUUID().toString().replace("-","");
@@ -402,6 +416,59 @@ class AcademicPersistenceDbTest {
         var first=pending(c,student);var second=pending(c,student);
         race(update("enrollments",first.id()),update("enrollments",second.id()));
         assertThat(sql().queryForObject("select count(*) from enrollments where class_id=? and status='ACTIVE'",Long.class,c)).isEqualTo(1);
+    }
+    Set<String> newEvents() {
+        return Set.of("INSTITUTION_CREATED","INSTITUTION_STATE_CHANGED","MEMBERSHIP_CREATED","MEMBERSHIP_STATE_CHANGED",
+            "MEMBERSHIP_ROLE_GRANTED","MEMBERSHIP_ROLE_REVOKED","ACADEMIC_PERIOD_CREATED","ACADEMIC_PERIOD_STATE_CHANGED",
+            "ACADEMIC_CLASS_CREATED","ACADEMIC_CLASS_STATE_CHANGED","TEACHING_ASSIGNMENT_CREATED","TEACHING_ASSIGNMENT_STATE_CHANGED",
+            "ENROLLMENT_CREATED","ENROLLMENT_STATE_CHANGED");
+    }
+    String checkDefinition(){return sql().queryForObject("select pg_get_constraintdef(oid) from pg_constraint where conrelid='system_logs'::regclass and conname='legacy_event_check'",String.class);}
+    @Test void preparedAuditCheckAdmitsAllFourteenEventsAndKeepsVocabularyClosed() {
+        for(String event:newEvents())tx().executeWithoutResult(status->{
+            sql().update("insert into system_logs(event_type,action,category,severity,description,created_at,outcome,correlation_id) values(?,?,'ADMIN','INFO','Fictitious',now(),'SUCCESS','00000000-0000-4000-8000-000000000001')",event,event);
+            status.setRollbackOnly();
+        });
+        assertThatThrownBy(()->sql().execute("insert into system_logs(event_type,action,category,severity,description,created_at,outcome,correlation_id) values('UNKNOWN','UNKNOWN','ADMIN','INFO','Fictitious',now(),'SUCCESS','00000000-0000-4000-8000-000000000001')"))
+            .isInstanceOf(DataAccessException.class);
+        assertThat(checkDefinition()).isEqualTo(preparedCheck);
+        assertThat(sql().queryForObject("select fingerprint from t11b2_schema_version",String.class)).isEqualTo(legacyFingerprint);
+        assertThat(sql().queryForObject("select predecessor_fingerprint from t11b2_audit_version",String.class)).isEqualTo(legacyFingerprint);
+    }
+    @Test void auditedB1AndB2TransactionsDoNotRewriteThePreparedCheck() {
+        var g=institutions.grantRole(student,MembershipRoleGrant.InstitutionalRole.ADMIN_INSTITUCION,at(3),null);
+        institutions.revokeRole(g.id(),at(4));enrolled(c,student);responsible(teacher);
+        assertThat(sql().queryForList("select distinct event_type from system_logs where event_type in ("+
+            newEvents().stream().map(e->"'"+e+"'").collect(java.util.stream.Collectors.joining(","))+")",String.class))
+            .containsExactlyInAnyOrderElementsOf(newEvents());
+        assertThat(checkDefinition()).isEqualTo(preparedCheck);sql().execute(current);
+    }
+    @Test void auditFailureRollsBackB1AndB2TogetherWithTheirHistories() {
+        long institutionsBefore=sql().queryForObject("select count(*) from institutions",Long.class);
+        long historyBefore=sql().queryForObject("select count(*) from enrollment_events",Long.class);
+        long logsBefore=sql().queryForObject("select count(*) from system_logs",Long.class);
+        sql().execute("create function fictitious_chain_failure() returns trigger language plpgsql as $$ begin raise exception 'Fictitious audit failure'; end $$; create trigger fictitious_chain_failure before insert on system_logs for each row execute function fictitious_chain_failure()");
+        try {
+            assertThatThrownBy(()->institutions.createInstitution("ROLLBACK-V2","Fictitious","America/Lima"))
+                .isInstanceOf(com.morales.chemicallab.security.audit.AuditUnavailableException.class);
+            assertThatThrownBy(()->pending(c,student)).isInstanceOf(com.morales.chemicallab.security.audit.AuditUnavailableException.class);
+            assertThat(sql().queryForObject("select count(*) from institutions",Long.class)).isEqualTo(institutionsBefore);
+            assertThat(sql().queryForObject("select count(*) from enrollment_events",Long.class)).isEqualTo(historyBefore);
+            assertThat(sql().queryForObject("select count(*) from system_logs",Long.class)).isEqualTo(logsBefore);
+        } finally {sql().execute("drop trigger fictitious_chain_failure on system_logs; drop function fictitious_chain_failure()");}
+    }
+    @Test void transitionDetectsAuditAndPredecessorLedgerDivergenceWithoutRepair() {
+        tx().executeWithoutResult(status->{
+            sql().execute("alter table system_logs drop constraint legacy_event_check");
+            assertThatThrownBy(()->sql().execute(current)).hasStackTraceContaining("schema divergence");status.setRollbackOnly();
+        });
+        tx().executeWithoutResult(status->{
+            sql().execute("update t11b2_schema_version set fingerprint='fictitious-drift'");
+            assertThatThrownBy(()->sql().execute(current)).hasStackTraceContaining("predecessor divergence");status.setRollbackOnly();
+        });
+        assertThat(checkDefinition()).isEqualTo(preparedCheck);sql().execute(current);
+        // v1 intentionally cannot certify a different successor catalog.
+        assertThatThrownBy(()->sql().execute(expansion)).hasStackTraceContaining("schema divergence");
     }
     String update(String table,long id) {
         return "update "+table+" set status='ACTIVE',state_since='"+at(10)+"',activated_at='"+at(10)+"',change_reason='ACTIVE' where id="+id;
