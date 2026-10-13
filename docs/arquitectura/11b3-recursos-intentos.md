@@ -296,7 +296,48 @@ distinto del estado persistido sin emitir SUCCESS. La cadena desde CHECK pre-B1,
 validación de deriva, interrupción/reanudación, carreras JVM y dump/restore siguen
 habilitados. La selección de desarrollo se registra separada de `clean package`.
 
-Los resultados del nuevo SHA se incorporarán después de su ejecución completa.
+SHA probado de la corrección: `e02c7acfe5dd796f93d33825492a2208169adc03`. `clean package` completo:
+**56 suites / 675 pruebas / 0 fallos / 0 errores / 0 omitidas; JAR generado**.
+Incluye 31 pruebas B3 (cuatro regresiones nuevas); la selección focalizada de 31
+se mantiene aparte y no se suma. El commit posterior sólo incorpora esta evidencia
+documental; no cambia código, SQL, pruebas ni POM respecto al SHA probado.
+
+Entorno: Windows, JDK 17.0.12, PostgreSQL 18.4 desechable, Maven offline,
+perfil test, `127.0.0.1:55433`. Comando: `mvnw.cmd -o
+-Dspring.profiles.active=test` con propiedades del datasource ficticio y
+`clean package`. Contraseña sintética no vacía para las pruebas heredadas que
+arrancan con perfil prod; el servidor propio usa trust en loopback. Cada
+ejecución definitiva comienza con la base ficticia recién creada.
+
+SHA256 JAR: `4a4360143251db72c3a75fc6bb0daa515dc8269fbf8b9aed25b3ef847afcde67`.
+SHA256 B3 v2 UTF-8/LF: `f9801eee77dec461da3ee463b7f4e147d1888cadc2ab30c11de0d7e997ee04a9`.
+El JAR contiene exactamente los cinco SQL de la cadena; las fuentes B1/B2/B3 v1
+son idénticas a las anteriores. Sus filas/fingerprints también se conservan;
+el test rechaza deriva de triggers y de la función, sin reparación silenciosa.
+
+Restauración nueva: firmas idénticas de **61 tablas** (incluida la versión v2),
+recertificación B1 v1/B3 v2 y guards T08 UPDATE/DELETE/TRUNCATE comprobados.
+Carreras nuevas: APPLIED/APPLIED con un consumo y un SUCCESS; STARTED:3/REJECTED
+con tres intentos originales y un activo. T05 y la autoridad legacy permanecen.
+Los 27 archivos protegidos, incluidos 16 E2E, conservan sus hashes anteriores.
+
+Evidencia nueva separada en `.codex-work/t11b3-correction/`: `full-package.log`,
+`verified-results.json`, `native-signatures.json`, `process-results.json` y
+`preservation-after.json`. `focused.log` pertenece a desarrollo previo al commit;
+`reproduced-old-head.*` confirma el fallo anterior y no certifica la corrección.
+El primer intento completo omitió el perfil global test y usó contraseña ficticia
+vacía: 675 pruebas, 17 errores de arranque heredados, sin JAR.
+Se conserva como `full-package-missing-profile.log`
+y `missing-profile-reports.zip`; no se suma ni se presenta como ejecución válida.
+La repetición con perfil correcto aún conservaba la contraseña vacía: se detuvo
+tras el rechazo de los dos escenarios prod de StartupPersistenceDbTest y quedó
+como `partial-package-empty-fixture-password.log` / `empty-password-partial-reports.zip`.
+Se repitió desde base ficticia nueva con perfil y contraseña sintética correctos
+sobre el mismo SHA, sin modificar pruebas ni comprobaciones.
+La base y el clúster ficticios se retiran tras verificar resultados; su limpieza
+queda registrada en `cleanup.log`. No se certifican CI remoto, Linux, operación
+productiva ni aislamiento institucional REST/STOMP. La evidencia suplementaria
+A/B anterior conserva exclusivamente su SHA anterior; no se volvió a ejecutar.
 
 ## Evidencia anterior a la corrección (no atribuible al nuevo SHA)
 
