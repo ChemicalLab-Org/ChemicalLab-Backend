@@ -2037,6 +2037,7 @@ BEGIN
      IF source_table='teacher_profiles' AND (SELECT count(*) FROM teacher_profiles WHERE user_id=(r->>'user_id')::bigint)>1 THEN classification:='CONFLICT';reason:='MULTIPLE_PROFILES_SAME_ACCOUNT';END IF;
      IF source_table='evaluation_attempts' AND r->>'assignment_id' IS NOT NULL AND NOT EXISTS(SELECT 1 FROM evaluation_assignments WHERE id=(r->>'assignment_id')::bigint AND evaluation_id=(r->>'evaluation_id')::bigint) THEN classification:='CONFLICT';reason:='ASSIGNMENT_EVALUATION_MISMATCH';END IF;
      IF source_table='evaluation_answers' AND NOT EXISTS(SELECT 1 FROM evaluation_attempts a JOIN evaluation_questions q ON q.evaluation_id=a.evaluation_id WHERE a.id=(r->>'attempt_id')::bigint AND q.id=(r->>'question_id')::bigint) THEN classification:='CONFLICT';reason:='ANSWER_QUESTION_EVALUATION_MISMATCH';END IF;
+     IF source_table='evaluation_answers' AND r->>'selected_option_id' IS NOT NULL AND NOT EXISTS(SELECT 1 FROM evaluation_options WHERE id=(r->>'selected_option_id')::bigint AND question_id=(r->>'question_id')::bigint) THEN classification:='CONFLICT';reason:='ANSWER_OPTION_QUESTION_MISMATCH';END IF;
      IF source_table IN('system_logs','usage_events') AND t11b9_provenance(source_table,r)->>'scope'='GLOBAL' AND classification<>'CONFLICT' THEN classification:='GLOBAL';reason:='DEMONSTRATED_GLOBAL_FACT';END IF;
      IF source_table='system_logs' AND r->>'target_type'='ContextResolution' THEN classification:='CONTROL';reason:='P05_CONTROL_AUDIT';END IF;
      RETURN NEXT;
@@ -2088,7 +2089,7 @@ BEGIN
     'accounts',coalesce((SELECT jsonb_agg(jsonb_build_object('id',u.id,'checksum',md5(to_jsonb(u)::text)) ORDER BY id) FROM user_accounts u WHERE id IN(SELECT (r->>'accountId')::bigint FROM jsonb_array_elements(mapping->'resolutions') r)),'[]'))
   $fn$ $ddl$;
   EXECUTE $ddl$ CREATE FUNCTION t11p05_privilege(role_name text,account bigint,privilege bigint,institution bigint) RETURNS jsonb LANGUAGE plpgsql STABLE AS $fn$
-  DECLARE p jsonb;now_at timestamptz:=statement_timestamp();
+  DECLARE p jsonb;now_at timestamptz:=clock_timestamp();
   BEGIN
    IF role_name='PLATFORM' THEN
     SELECT jsonb_build_object('grant',to_jsonb(g),'proof',to_jsonb(proof),'accountChecksum',md5(to_jsonb(u)::text)) INTO p
@@ -2157,6 +2158,9 @@ BEGIN
     IF r->>'teacher_id' IS NOT NULL THEN SELECT user_id INTO original_account FROM teacher_profiles WHERE id=(r->>'teacher_id')::bigint;END IF;
     IF r->>'created_by_teacher_id' IS NOT NULL THEN SELECT user_id INTO original_account FROM teacher_profiles WHERE id=(r->>'created_by_teacher_id')::bigint;END IF;
     IF r->>'student_id' IS NOT NULL THEN SELECT user_id INTO original_account FROM student_profiles WHERE id=(r->>'student_id')::bigint;END IF;
+    IF s->>'source_table' IN('evaluation_answers','evaluation_attempt_events','evaluation_attempt_adjustments') THEN
+     SELECT student.user_id INTO original_account FROM evaluation_attempts attempt JOIN student_profiles student ON student.id=attempt.student_id WHERE attempt.id=(r->>'attempt_id')::bigint;
+    END IF;
     IF s->>'source_table'='t11b6_resource_grants' THEN SELECT account_id INTO original_account FROM institution_memberships WHERE id=(r->>'membership_id')::bigint AND institution_id=p.institution_id;END IF;
     IF account IS DISTINCT FROM original_account THEN RAISE EXCEPTION 'T11-B10 original account/author/owner cannot change, be invented or omitted';END IF;
     IF r->>'enrollment_id' IS NOT NULL AND x->>'enrollmentId' IS NULL THEN RAISE EXCEPTION 'T11-B10 existing episode needs explicit corrected episode or uncertainty';END IF;
@@ -2177,6 +2181,10 @@ BEGIN
      SELECT a INTO parent FROM jsonb_array_elements(p.proposed->'resolutions') a WHERE a->>'source'=CASE s->>'source_table' WHEN 't11b3_concept_deliveries' THEN 'concept_assignments' ELSE 'evaluation_assignments' END
       AND a->'pk'=jsonb_build_object('id',r->'legacy_assignment_id');
      IF parent->>'scope' IS DISTINCT FROM 'INSTITUTION' OR parent->>'classId' IS DISTINCT FROM x->>'classId' THEN RAISE EXCEPTION 'T11-B10 delivery/original assignment mismatch';END IF;
+    END IF;
+    IF s->>'source_table'='t11b8_fixture_attempts' THEN
+     SELECT a INTO parent FROM jsonb_array_elements(p.proposed->'resolutions') a WHERE a->>'source'='t11b8_recipients' AND a->'pk'=jsonb_build_object('id',r->'recipient_id');
+     IF parent->>'scope' IS DISTINCT FROM 'INSTITUTION' OR parent->>'classId' IS DISTINCT FROM x->>'classId' OR parent->>'accountId' IS DISTINCT FROM x->>'accountId' THEN RAISE EXCEPTION 'T11-B10 academic attempt/recipient mismatch';END IF;
     END IF;
     IF s->>'source_table'='evaluation_attempts' THEN
      IF r->>'assignment_id' IS NULL OR x->>'enrollmentId' IS NULL THEN RAISE EXCEPTION 'T11-B10 unassigned attempt or absent episode evidence';END IF;

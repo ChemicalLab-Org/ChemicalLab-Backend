@@ -103,6 +103,10 @@ no copia el recurso a ambos para eludir una contradicción. Clase/colegio/cuenta
 episodio y hecho original deben concordar; episodios se comprueban en la fecha
 del hecho con zona explícita. Un participante existente no se crea desde una
 matrícula; una cuenta desconocida continúa desconocida.
+Respuestas, eventos y ajustes comprueban la cuenta a través del intento original;
+el intento académico B8 comprueba su destinatario. Las fixtures conservan una
+respuesta calificada, feedback, ajuste, evento, nota cerrada y consumo F09 al
+corregir el contexto, además de rechazar opciones/preguntas de padres distintos.
 Un grant de biblioteca B6 del colegio anterior conserva su institución y
 facultades originales: debe permanecer incierto/conflictivo en esa corrección,
 sin convertirse en autorización del destino por heredar el nuevo recurso.

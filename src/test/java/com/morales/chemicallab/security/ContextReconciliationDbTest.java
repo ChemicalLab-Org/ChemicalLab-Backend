@@ -60,6 +60,7 @@ class ContextReconciliationDbTest {
             for(String field:List.of("account_id","author_account_id","owner_user_id","user_id","actor_user_id"))if(row.get("snapshot").hasNonNull(field))x.put("accountId",row.get("snapshot").get(field).asLong());
             for(String field:List.of("teacher_id","created_by_teacher_id"))if(row.get("snapshot").hasNonNull(field))x.put("accountId",count("select user_id from teacher_profiles where id=?",row.get("snapshot").get(field).asLong()));
             if(row.get("snapshot").hasNonNull("student_id"))x.put("accountId",count("select user_id from student_profiles where id=?",row.get("snapshot").get("student_id").asLong()));
+            if(Set.of("evaluation_answers","evaluation_attempt_events","evaluation_attempt_adjustments").contains(x.get("source")))x.put("accountId",count("select student.user_id from evaluation_attempts attempt join student_profiles student on student.id=attempt.student_id where attempt.id=?",row.get("snapshot").get("attempt_id").asLong()));
             if(x.get("source").equals("t11b6_resource_grants"))x.put("accountId",count("select account_id from institution_memberships where id=?",row.get("snapshot").get("membership_id").asLong()));
             if(row.get("snapshot").hasNonNull("enrollment_id")) {x.put("enrollmentId",institution==r.foreign?foreignEpisode:r.episode);x.put("sourceTimezone","America/Lima");}
             if(x.get("source").equals("evaluation_attempts")&&row.get("snapshot").hasNonNull("assignment_id")) {x.put("enrollmentId",institution==r.foreign?foreignEpisode:r.episode);x.put("sourceTimezone","America/Lima");}
@@ -82,7 +83,11 @@ class ContextReconciliationDbTest {
     void approvals(long p){approve(p,"PLATFORM",platform,platformGrant);approve(p,"INSTITUTION",school,schoolGrant);}
 
     @Test void completeIndependentPkCensusIncludesAccountsProfilesGroupsAndUnassignedAttempts() throws Exception {
-        r.attempt(1,AttemptStatus.GRADED,null,false);
+        long unassigned=r.attempt(1,AttemptStatus.GRADED,null,false);
+        long question=sql().queryForObject("insert into evaluation_questions(evaluation_id,question_text,question_type,points,order_index,required,active) values(?,'Census question','OPEN_TEXT',1,0,true,true) returning id",Long.class,r.evaluation);
+        sql().update("insert into evaluation_answers(attempt_id,question_id,answer_text,points_awarded,reviewed) values(?,?,'Census original answer',1,true)",unassigned,question);
+        sql().update("insert into evaluation_attempt_events(attempt_id,event_type,occurred_at) values(?,'ATTEMPT_SUBMITTED','2026-02-01 10:06:00')",unassigned);
+        b.b8.previous.previous.previous.base.tx().executeWithoutResult(s->{sql().execute("set local session_replication_role=replica");sql().update("insert into concept_content_examples(concept_content_id,example_order,example) values(9223372036854775000,0,'Census orphan')");sql().execute("set local session_replication_role=origin");});
         long id=service.inventory(op());var coverage=new ArrayList<Map<String,Object>>();
         var descriptor=f.json.readTree(Files.readString(Path.of("docs/arquitectura/t11b10/catalog.json")));
         // Independent SQL enumeration: no scan(), inventory manifest or B9 catalog computes expected PKs.
@@ -99,6 +104,7 @@ class ContextReconciliationDbTest {
         assertThat(count("select count(*) from t11b10_inventory where run_id=? and source_table='student_profiles' and classification='UNRESOLVED'",id)).isGreaterThan(0);
         assertThat(count("select count(*) from t11b10_inventory where run_id=? and source_table='legacy_groups' and reason='AMBIGUOUS_LABEL_WITHOUT_PERIOD_OR_INSTITUTION'",id)).isGreaterThan(0);
         assertThat(count("select count(*) from t11b10_inventory where run_id=? and reason='UNASSIGNED_ATTEMPT_NO_EPISODE_EVIDENCE'",id)).isEqualTo(1);
+        assertThat(count("select count(*) from t11b10_inventory where run_id=? and reason like 'MISSING_PARENT:%'",id)).isGreaterThan(0);
         Path out=Files.createDirectories(Path.of("target/t11b10-evidence"));Files.writeString(out.resolve("coverage.json"),f.json.writerWithDefaultPrettyPrinter().writeValueAsString(coverage));
     }
     @Test void correctionVersionsEntireAggregatePreservesRootsOriginalsAndB9() throws Exception {
@@ -185,14 +191,20 @@ class ContextReconciliationDbTest {
         var teacher=f.app.getBean(com.morales.chemicallab.repository.TeacherProfileRepository.class).findByUser(f.teacher).orElseThrow();
         r.evaluation=f.app.getBean(com.morales.chemicallab.repository.EvaluationRepository.class).saveAndFlush(Evaluation.builder().title("Budget fixture").status(EvaluationStatus.PUBLISHED).maxAttempts(2).timeLimitMinutes(30).createdByTeacher(teacher).build()).getId();
         r.assignment=r.assignment(r.evaluation,teacher,java.time.LocalDateTime.of(2026,12,1,0,0));
-        r.attempt(1,AttemptStatus.GRADED,r.assignment,true);long active=r.attempt(2,AttemptStatus.IN_PROGRESS,null,false);
+        long graded=r.attempt(1,AttemptStatus.GRADED,r.assignment,true);long active=r.attempt(2,AttemptStatus.IN_PROGRESS,null,false);
+        long question=sql().queryForObject("insert into evaluation_questions(evaluation_id,question_text,question_type,points,order_index,required,active) values(?,'Synthetic question','OPEN_TEXT',1,0,true,true) returning id",Long.class,r.evaluation);
+        sql().update("insert into evaluation_answers(attempt_id,question_id,answer_text,points_awarded,reviewed,teacher_feedback,reviewed_by,answered_at) values(?,?,'Original synthetic answer',1,true,'Original synthetic feedback',?,'2026-02-01 10:05:00')",graded,question,teacher.getId());
+        sql().update("insert into evaluation_attempt_events(attempt_id,event_type,description,occurred_at) values(?,'ATTEMPT_SUBMITTED','Original lifecycle event','2026-02-01 10:06:00')",graded);
+        sql().update("insert into evaluation_attempt_adjustments(attempt_id,amount,type,reason,created_by,created_at,active) values(?,1,'BONUS','Original synthetic adjustment',?,'2026-02-01 10:07:00',true)",graded,teacher.getId());
+        sql().update("update evaluation_attempts set score=1,max_score=1,final_score=20,grade_closed=true,grade_closed_by=?,grade_closed_at='2026-02-01 10:08:00' where id=?",teacher.getId(),graded);
         long source=r.approved(ResourceReconciliationService.SourceKind.EVALUATION,r.evaluation,r.map(List.of(r.delivery(r.assignment,r.classId,r.episode)),List.of()));
         assertThat(r.service.apply(source)).isEqualTo("APPLIED");var budget=r.budget();
         assertThat(budget).containsEntry("used_count",2L).containsEntry("active_attempt_id",active).containsEntry("reserved_remaining",0L).containsEntry("admission_enabled",false);
-        var before=b.b8.previous.previous.signatures("t11b3_opportunity_groups","t11b3_account_attempt_budgets","t11b3_attempt_consumptions","evaluation_attempts","evaluation_answers","evaluations","evaluation_assignments","t11b8_budgets","t11b8_fixture_attempts");
+        var before=b.b8.previous.previous.signatures("t11b3_opportunity_groups","t11b3_account_attempt_budgets","t11b3_attempt_consumptions","evaluation_attempts","evaluation_answers","evaluation_attempt_events","evaluation_attempt_adjustments","evaluations","evaluation_assignments","t11b8_budgets","t11b8_fixture_attempts");
         long p=proposal();approvals(p);assertThat(service.apply(p,op())).isEqualTo("APPLIED");
         assertThat(b.b8.previous.previous.signatures(before.keySet().toArray(String[]::new))).isEqualTo(before);assertThat(r.budget()).isEqualTo(budget);
         assertThat(count("select count(*) from t11b10_current where source_table='evaluation_attempts' and source_pk=jsonb_build_object('id',?::bigint) and status='UNRESOLVED'",active)).isEqualTo(1);
+        assertThat(count("select count(*) from t11b10_current where source_table in('evaluation_answers','evaluation_attempt_events','evaluation_attempt_adjustments') and context_valid and (resolution->>'accountId')::bigint=?",f.student.getId())).isEqualTo(3);
     }
     @Test void b4WrongHistoricalLinkIsPreservedWhileBoardAndParticipantsGainNewVersion() throws Exception {
         var boards=f.app.getBean(BoardActivityReconciliationService.class);
@@ -294,6 +306,16 @@ class ContextReconciliationDbTest {
         long wrongEpisode=service.propose(root("evaluations",r.evaluation),map.toString(),"FIXTURE-WRONG-EPISODE",op());approvals(wrongEpisode);
         assertThatThrownBy(()->service.apply(wrongEpisode,op())).isInstanceOf(DataAccessException.class).hasMessageContaining("episode/class/institution/account");
         assertThat(count("select count(*) from t11b10_versions where source_table='evaluation_attempts' and source_pk=jsonb_build_object('id',?::bigint)",attempt)).isZero();
+    }
+    @Test void explicitNewF09RootAndAnsweredFixtureAttemptKeepOneBudgetAfterCorrection() throws Exception {
+        long delivery=b.b8.delivered(b.published,r.classId),recipient=b.b8.admitted(delivery,r.episode);
+        long attempt=b.b8.service.reserveFixtureAttempt(recipient,op());b.b8.service.finishFixtureAttempt(attempt,1,"{\"17\":\"Original answer\"}",19,op());
+        long evaluation=count("select evaluation_id from t11b8_resources where id=?",b.resource);
+        var before=b.b8.previous.previous.signatures("t11b8_resources","t11b8_revisions","t11b8_deliveries","t11b8_recipients","t11b8_budgets","t11b8_fixture_attempts","t11b8_events","evaluations","evaluation_attempts","t11b3_opportunity_groups");
+        long p=proposal("evaluations",evaluation,r.foreign,r.foreignClass);approvals(p);assertThat(service.apply(p,op())).isEqualTo("APPLIED");
+        assertThat(b.b8.previous.previous.signatures(before.keySet().toArray(String[]::new))).isEqualTo(before);
+        assertThat(count("select count(*) from t11b8_budgets where resource_id=? and account_id=?",b.resource,f.student.getId())).isEqualTo(1);
+        assertThat(count("select count(*) from t11b10_current where source_table='t11b8_fixture_attempts' and source_pk=jsonb_build_object('id',?::bigint) and context_valid",attempt)).isEqualTo(1);
     }
     @Test void twoProcessesCompeteOnSamePredecessorAndRestoreCertifiesFullSuccessor() throws Exception {
         long one=proposal(),two=proposal();approvals(one);approvals(two);
