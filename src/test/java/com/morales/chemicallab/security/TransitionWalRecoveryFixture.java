@@ -31,9 +31,11 @@ final class TransitionWalRecoveryFixture {
             String archiveCommand,restoreCommand;
             if(windows) {
                 Path copier=dir.resolve("archive.cmd");
-                Files.writeString(copier,"@echo off\r\nif exist \"%~2\" (\r\n  fc /b \"%~1\" \"%~2\" >nul\r\n  if errorlevel 1 exit /b 1\r\n  exit /b 0\r\n)\r\ncopy /b \"%~1\" \"%~2\" >nul\r\n");
+                String paths="@echo off\r\nset \"source=%~1\"\r\nset \"destination=%~2\"\r\nset \"source=%source:/=\\%\"\r\nset \"destination=%destination:/=\\%\"\r\n";
+                Files.writeString(copier,paths+"if exist \"%destination%\" (\r\n  fc /b \"%source%\" \"%destination%\" >nul\r\n  if errorlevel 1 exit /b 1\r\n  exit /b 0\r\n)\r\ncopy /b \"%source%\" \"%destination%\" >nul\r\n");
+                Path restorer=dir.resolve("restore.cmd");Files.writeString(restorer,paths+"copy /b /Y \"%source%\" \"%destination%\" >nul\r\n");
                 archiveCommand="cmd /c \"\""+copier.toString().replace('\\','/')+"\" \"%p\" \""+archive.toString().replace('\\','/')+"/%f\"\"";
-                restoreCommand="copy /b /Y \""+archive.toString().replace('\\','/')+"/%f\" \"%p\"";
+                restoreCommand="cmd /c \"\""+restorer.toString().replace('\\','/')+"\" \""+archive.toString().replace('\\','/')+"/%f\" \"%p\"\"";
             } else {
                 archiveCommand="test ! -f '"+archive+"/%f' && cp '%p' '"+archive+"/%f' || cmp -s '%p' '"+archive+"/%f'";
                 restoreCommand="cp '"+archive+"/%f' '%p'";
@@ -88,6 +90,7 @@ final class TransitionWalRecoveryFixture {
             Files.writeString(base.resolve("postgresql.auto.conf"),"listen_addresses='127.0.0.1'\nport="+recoveryPort+"\nmax_connections=30\nshared_buffers='16MB'\narchive_mode=off\nrestore_command="+literal(restoreCommand)+"\nrecovery_target_name="+literal(target)+"\nrecovery_target_action='promote'\n");
             Files.writeString(base.resolve("recovery.signal"),"");
             start(base,"recovery");recoveryStarted=true;
+            awaitPromotion();
             Map<String,String> recovered;
             try(var c=connect(recoveryPort,true);var q=c.createStatement()) {
                 assertThat(string(q,"select pg_is_in_recovery()::text")).isEqualTo("false");
@@ -109,8 +112,19 @@ final class TransitionWalRecoveryFixture {
             evidence.put("ports",List.of(primaryPort,recoveryPort));evidence.put("unloggedRejected",true);evidence.put("retryDuplicatedEffects",false);
             t.evidence("wal-recovery",evidence);
         } finally {
-            if(recoveryStarted)stop(base,"recovery-final");if(primaryStarted)stop(primary,"primary-final");
+            try {if(recoveryStarted&&Files.exists(base.resolve("postmaster.pid")))stop(base,"recovery-final");}
+            finally {if(primaryStarted&&Files.exists(primary.resolve("postmaster.pid")))stop(primary,"primary-final");}
         }
+    }
+    void awaitPromotion() throws Exception {
+        long end=System.nanoTime()+TimeUnit.SECONDS.toNanos(40);
+        while(System.nanoTime()<end) {
+            if(!Files.exists(base.resolve("postmaster.pid")))throw new IllegalStateException("Recovery failed: "+Files.readString(dir.resolve("recovery.log")));
+            try(var c=connect(recoveryPort,true);var q=c.createStatement()){if(string(q,"select pg_is_in_recovery()::text").equals("false"))return;}
+            catch(SQLException waiting) { /* server is still starting */ }
+            Thread.sleep(100);
+        }
+        throw new IllegalStateException("Recovery did not reach archived target");
     }
     void coverage(Connection c) throws Exception {
         try(var q=c.createStatement()) {

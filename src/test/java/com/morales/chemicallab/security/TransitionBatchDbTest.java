@@ -55,9 +55,12 @@ class TransitionBatchDbTest {
         assertThat(b.b.b8.previous.previous.signatures(original.keySet().toArray(String[]::new))).isEqualTo(original);
     }
     @Test void sourceChangedBetweenBatchesPreservesStaleAndBothPriorApprovals() throws Exception {
-        long p=approved();create(p);service.pause(plan,1,op());
-        f.sql().update("update evaluations set title='Changed fixture source' where id=?",b.r.evaluation);
-        service.resume(plan,2,op());assertThat(step(1,3).get("status").asText()).isEqualTo("STALE");
+        long p=approved();long board=b.proposal("whiteboard_sessions",f.board,b.r.foreign,b.r.foreignClass);b.approvals(board);
+        create(p,board);assertThat(step(1,1).get("status").asText()).isEqualTo("APPLIED");service.pause(plan,1,op());
+        var pending=observation().get("units").get(1);p=pending.get("proposal_id").asLong();
+        var root=pending.get("proof").get("root");String table=root.get("source").asText();assertThat(table).isIn("evaluations","whiteboard_sessions");
+        f.sql().update("update "+table+" set title='Changed fixture source' where id=?",root.get("pk").get("id").asLong());
+        service.resume(plan,2,op());assertThat(step(2,3).get("status").asText()).isEqualTo("STALE");
         assertThat(count("select count(*) from t11b10_approvals where proposal_id=?",p)).isEqualTo(2);
         assertThat(count("select count(*) from t11b10_versions where proposal_id=?",p)).isZero();
         assertThat(observation().get("state").asText()).isEqualTo("PAUSED");
@@ -68,6 +71,19 @@ class TransitionBatchDbTest {
         b.r.institutions.revokeRole(b.schoolGrant,java.time.Instant.now());
         service.resume(plan,2,op());assertThat(step(1,3).get("status").asText()).isEqualTo("STALE");
         assertThat(count("select count(*) from t11b10_approvals where proposal_id=?",p)).isEqualTo(2);
+    }
+    @Test void changedPredecessorPausesUnitAndPreservesPreviousVersion() throws Exception {
+        long pending=approved();create(pending);
+        long newer=b.proposal();b.approvals(newer);assertThat(b.service.apply(newer,op())).isEqualTo("APPLIED");
+        assertThat(step(1,1).get("status").asText()).isEqualTo("STALE");
+        assertThat(count("select count(*) from t11b10_versions where proposal_id=?",pending)).isZero();
+        assertThat(count("select count(*) from t11b10_versions where proposal_id=?",newer)).isGreaterThan(0);
+    }
+    @Test void unitCannotBelongToTwoPlansAndOperationIdentityCannotChange() throws Exception {
+        long p=approved();create(p);var before=state();
+        assertThatThrownBy(()->service.create(op(),List.of(p),TransitionBatchMaintenanceService.Limits.fixture(),op())).isInstanceOf(DataAccessException.class);
+        assertThat(state()).isEqualTo(before);UUID operation=unit(1);step(1,1);before=state();
+        assertThatThrownBy(()->service.step(plan,1,2,operation)).hasMessageContaining("operation UUID reused");assertThat(state()).isEqualTo(before);
     }
     @Test void auditFailureRollsBackBusinessMeasurementCheckpointAndSuccess() throws Exception {
         create(approved());var before=state();
@@ -134,6 +150,21 @@ class TransitionBatchDbTest {
         } finally {a.process().destroyForcibly();c.process().destroyForcibly();}
     }
     @Test void physicalBackupAndWalRecoverConfirmedLaterWritesAndRetryWithoutDuplication() throws Exception {
+        // Conserved exhausted legacy root, active unassigned attempt, closed grade/answer/feedback.
+        var teacher=f.app.getBean(com.morales.chemicallab.repository.TeacherProfileRepository.class).findByUser(f.teacher).orElseThrow();
+        b.r.evaluation=f.app.getBean(com.morales.chemicallab.repository.EvaluationRepository.class).saveAndFlush(com.morales.chemicallab.entity.Evaluation.builder().title("P06 budget fixture").status(com.morales.chemicallab.entity.EvaluationStatus.PUBLISHED).maxAttempts(2).timeLimitMinutes(30).createdByTeacher(teacher).build()).getId();
+        b.r.assignment=b.r.assignment(b.r.evaluation,teacher,java.time.LocalDateTime.of(2026,12,1,0,0));
+        long graded=b.r.attempt(1,com.morales.chemicallab.entity.AttemptStatus.GRADED,b.r.assignment,true);
+        long active=b.r.attempt(2,com.morales.chemicallab.entity.AttemptStatus.IN_PROGRESS,null,false);
+        long question=count("insert into evaluation_questions(evaluation_id,question_text,question_type,points,order_index,required,active) values(?,'P06 question','OPEN_TEXT',1,0,true,true) returning id",b.r.evaluation);
+        f.sql().update("insert into evaluation_answers(attempt_id,question_id,answer_text,points_awarded,reviewed,teacher_feedback,reviewed_by) values(?,?,'P06 original answer',1,true,'P06 feedback',?)",graded,question,teacher.getId());
+        f.sql().update("update evaluation_attempts set score=1,max_score=1,final_score=20,grade_closed=true,grade_closed_by=? where id=?",teacher.getId(),graded);
+        long source=b.r.approved(com.morales.chemicallab.service.ResourceReconciliationService.SourceKind.EVALUATION,b.r.evaluation,b.r.map(List.of(b.r.delivery(b.r.assignment,b.r.classId,b.r.episode)),List.of()));
+        assertThat(b.r.service.apply(source)).isEqualTo("APPLIED");
+        assertThat(b.r.budget()).containsEntry("used_count",2L).containsEntry("active_attempt_id",active).containsEntry("reserved_remaining",0L);
+        // A new F09 academic root also retains its answered attempt and one shared budget.
+        long delivery=b.b.b8.delivered(b.b.published,b.r.classId),recipient=b.b.b8.admitted(delivery,b.r.episode);
+        long attempt=b.b.b8.service.reserveFixtureAttempt(recipient,op());b.b.b8.service.finishFixtureAttempt(attempt,1,"{\"17\":\"P06 F09 answer\"}",19,op());
         create(approved());new TransitionWalRecoveryFixture(this).exercise();
     }
     Connection connection() throws Exception {return DriverManager.getConnection(f.setting("spring.datasource.url")+"?currentSchema="+f.schema,f.setting("spring.datasource.username"),f.setting("spring.datasource.password"));}
