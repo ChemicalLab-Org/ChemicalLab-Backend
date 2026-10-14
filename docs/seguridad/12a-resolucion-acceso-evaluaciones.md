@@ -36,10 +36,15 @@ académica requiere un bloque posterior que demuestre la relación exacta.
 
 `Decision` devuelve `ALLOW`, `DENY` o `UNAVAILABLE` y la acción solicitada.
 Solo ALLOW contiene `Context`: contrato/tipo de revisión, IDs comprobados,
-versiones B10 de raíz/entrega e instante de observación del servidor. No contiene
+versiones B10 de raíz/entrega, proyección permitida e instante de observación del servidor. No contiene
 payloads, preguntas, respuestas, criterios, claves, notas, feedback, saldos,
 miembros de otras instituciones ni listados. DENY/UNAVAILABLE no identifican la
 relación que falló y no devuelven contexto. UNAVAILABLE también deniega.
+
+La proyección distingue contenido de entrega sin corrección, intento propio sin
+corrección, metadatos de supervisión, revisión docente, corrección propia y solo
+permiso de calificación. READ_DELIVERY de un supervisor devuelve la proyección
+de metadatos: no autoriza cargar un payload académico crudo con claves ocultas.
 
 La decisión **no es un token ni un permiso durable**, no tiene un plazo de gracia
 y no puede almacenarse para autorizar otro acceso. Las versiones son trazabilidad,
@@ -111,7 +116,8 @@ archivo/desactivación explícitos y vencimiento global conservan T05. Solo GRAD
 y nota cerrada pueden exponer corrección propia y nunca antes de startAt.
 
 NEW comprueba todas las entregas/revisiones de la raíz lógica, incluso vacías,
-futuras y sin vencimiento, y que no queden notas de simulación abiertas. Cerrar
+futuras y sin vencimiento, reutilizando `t11b8_closed` y los cierres explícitos de
+raíz/archivo B8, y que no queden notas de simulación abiertas. Cerrar
 solo una entrega, terminar o agotar intentos no basta. Se rechaza NEW si aparecen
 writers/consumidores legacy (assignments/intentos) en su ancla. No se interpreta
 un presupuesto B3/B8 como saldo vivo ni se consulta para conceder oportunidades.

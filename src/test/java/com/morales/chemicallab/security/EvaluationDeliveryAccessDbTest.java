@@ -60,15 +60,18 @@ class EvaluationDeliveryAccessDbTest {
     }
     Request legacy(Action action){return new Request(Contract.LEGACY,action,r.institution,r.classId,r.evaluation,legacyDelivery,legacyRevision,f.student.getId(),action==Action.READ_DELIVERY?null:legacyAttempt);}
     void resolve(Request q) throws Exception {resolve(q,null);}
-    void resolve(Request q,String uncertain) throws Exception {
+    void resolve(Request q,String uncertain) throws Exception { resolve(q, uncertain, null); }
+    void resolve(Request q,String uncertain,String uncertainSource) throws Exception {
         String map=c.mapping("evaluations",q.evaluationId(),q.institutionId(),q.classId());
         var parsed=f.json.readTree(map);
+        long episode=count("select e.id from enrollments e join institution_memberships m on m.id=e.membership_id where e.institution_id=? and e.class_id=? and m.account_id=?",q.institutionId(),q.classId(),f.student.getId());
         for(var item:parsed.get("resolutions")) {
             var row=(com.fasterxml.jackson.databind.node.ObjectNode)item;
+            if(row.has("enrollmentId"))row.put("enrollmentId",episode);
             if(row.path("source").asText().equals("t11b8_fixture_attempts")) {
-                row.put("enrollmentId",q.institutionId()==r.foreign?c.foreignEpisode:r.episode);row.put("sourceTimezone","America/Lima");
+                row.put("enrollmentId",episode);row.put("sourceTimezone","America/Lima");
             }
-            if(uncertain!=null){row.remove(List.of("institutionId","classId","accountId","enrollmentId","sourceTimezone"));row.put("scope",uncertain);}
+            if(uncertain!=null&&(uncertainSource==null||row.path("source").asText().equals(uncertainSource))){row.remove(List.of("institutionId","classId","accountId","enrollmentId","sourceTimezone"));row.put("scope",uncertain);}
         }
         long proposal=c.service.propose(c.root("evaluations",q.evaluationId()),parsed.toString(),"FIXTURE-ACCESS",op());
         c.approve(proposal,"PLATFORM",c.platform,c.platformGrant);
@@ -135,9 +138,10 @@ class EvaluationDeliveryAccessDbTest {
         var grant=f.app.getBean(DelegationMaintenanceService.class);
         long m=count("select id from institution_memberships where institution_id=? and account_id=?",r.institution,f.otherTeacher.getId());
         long adminMember=count("select id from institution_memberships where institution_id=? and account_id=?",r.institution,c.school.getId());
+        Instant granted=Instant.now().minusSeconds(2);
         c.authenticate(c.school);
         try {grant.grantResource(r.institution,ResourceManagerGrant.Kind.EVALUATION,r.evaluation,m,ResourceManagerGrant.Faculty.PUBLISH,adminMember,
-            Instant.now().plusSeconds(1),r.until,Instant.now());}finally{SecurityContextHolder.clearContext();}
+            granted.plusSeconds(1),r.until,granted);}finally{SecurityContextHolder.clearContext();}
         resolve(legacy(Action.SUPERVISE));deny(session(f.otherTeacher),legacy(Action.SUPERVISE));deny(session(f.otherTeacher),legacy(Action.GRADE_ATTEMPT));
     }
     @Test void localSuspensionThenTerminationLeavesIndependentInstitutionAuthorized() throws Exception {
@@ -160,6 +164,8 @@ class EvaluationDeliveryAccessDbTest {
     @Test void sessionRevocationVersionsExpiryTemporaryAndDisabledAccountsDenyBothInstitutions() throws Exception {
         Request a=request(false,Action.READ_OWN_ATTEMPT),b=request(true,Action.READ_OWN_ATTEMPT);resolve(a);resolve(b);
         deny(null,a);deny(pupil,null);allow(pupil,a);allow(pupil,b);
+        deny(new SessionPrincipal(pupil.userId(),pupil.username(),pupil.sessionId(),pupil.credentialsVersion(),pupil.role(),true),a);
+        deny(new SessionPrincipal(pupil.userId(),pupil.username(),pupil.sessionId(),pupil.credentialsVersion(),Role.ADMINISTRADOR,false),a);
         sql().update("update account_sessions set revoked_at=statement_timestamp() where id=?",pupil.sessionId());deny(pupil,a);deny(pupil,b);
         pupil=session(f.student);sql().update("update account_sessions set expires_at=statement_timestamp()-interval '1 second' where id=?",pupil.sessionId());deny(pupil,a);deny(pupil,b);
         pupil=session(f.student);f.mutate(f.student,UserAccount::invalidateSessions);deny(pupil,a);deny(pupil,b);
@@ -192,6 +198,9 @@ class EvaluationDeliveryAccessDbTest {
         sql().update("update evaluation_assignments set start_at='2026-12-01 00:00:00',due_at=null where id=?",r.assignment);resolve(q);deny(pupil,q);
     }
     @Test void newT05IgnoresIndividualClosureAndExhaustionWhileFutureOrUndatedEmptyDeliveryRemains() throws Exception {
+        long rec=count("select id from t11b8_recipients where delivery_id=? and account_id=?",aDelivery,f.student.getId());
+        for(int n=0;n<2;n++){long attempt=revisions.reserveFixtureAttempt(rec,op());revisions.finishFixtureAttempt(attempt,1,"{}",18,op());}
+        assertThat(count("select count(*) from t11b8_fixture_attempts where resource_id=? and account_id=?",aResource,f.student.getId())).isEqualTo(3);
         var rev=c.b.b8.successor(c.b.published,"Future exact revision");
         long future=delivery(rev.id(),r.institution,r.otherClass,Instant.now().plusSeconds(100),Instant.now().plusSeconds(1000));
         long empty=r.clazz(r.institution,r.period,"EMPTY-ACCESS");
@@ -218,5 +227,49 @@ class EvaluationDeliveryAccessDbTest {
         var service=new EvaluationDeliveryAccessService(broken,f.app.getBean(AccountSessionService.class),f.app.getBean(PlatformTransactionManager.class));
         var decision=service.decide(pupil,q);assertThat(decision.outcome()).isEqualTo(Outcome.UNAVAILABLE);assertThat(decision.context()).isNull();
         assertThat(c.state()).isEqualTo(before);
+    }
+    @Test void latestB10CorrectionReplacesOldSchoolWithoutFallbackOrAnotherMembershipChoice() throws Exception {
+        Request a=request(false,Action.READ_OWN_ATTEMPT);resolve(a);allow(pupil,a);
+        Request corrected=changed(a,r.foreign,r.foreignClass,a.evaluationId(),a.deliveryId(),a.revisionId(),a.recipientAccountId(),a.attemptId());
+        resolve(corrected);deny(pupil,a);allow(pupil,corrected);
+        Request back=changed(corrected,r.institution,r.classId,a.evaluationId(),a.deliveryId(),a.revisionId(),a.recipientAccountId(),a.attemptId());
+        resolve(back);deny(pupil,corrected);allow(pupil,back);
+    }
+    @Test void validRootNeverAuthorizesAnUnresolvedRecipientOrAttempt() throws Exception {
+        Request q=request(false,Action.READ_OWN_ATTEMPT);
+        resolve(q,"UNRESOLVED","t11b8_recipients");deny(pupil,q);
+        resolve(q,"UNRESOLVED","t11b8_fixture_attempts");deny(pupil,q);
+        resolve(q);allow(pupil,q);
+    }
+    @Test void explicitRootClosureReusesB8WithoutOpeningDeliveryContentOrIgnoringUnclosedGrades() throws Exception {
+        Request content=request(false,Action.READ_DELIVERY);resolve(content);
+        assertThat(allow(pupil,content).context().projection()).isEqualTo(Projection.DELIVERY_WITHOUT_CORRECTION);
+        assertThat(allow(admin,content).context().projection()).isEqualTo(Projection.SUPERVISION_METADATA);
+        long rec=count("select id from t11b8_recipients where delivery_id=? and account_id=?",aDelivery,f.student.getId());
+        long active=revisions.reserveFixtureAttempt(rec,op());
+        revisions.resourceState(aResource,count("select version from t11b8_resources where id=?",aResource),"AVAILABLE",true,false,op());
+        resolve(content);deny(pupil,content);deny(pupil,request(false,Action.READ_CORRECTION));
+        revisions.finishFixtureAttempt(active,1,"{}",18,op());resolve(content);allow(pupil,request(false,Action.READ_CORRECTION));
+    }
+    @Test void closedPeriodCutsOnlyItsInstitutionEvenWhenRowsStillSayActive() throws Exception {
+        Request a=request(false,Action.READ_OWN_ATTEMPT),b=request(true,Action.READ_OWN_ATTEMPT);resolve(a);resolve(b);allow(pupil,a);allow(pupil,b);
+        r.academic.transitionPeriod(r.period,AcademicPeriod.Status.CLOSED,Instant.now());deny(pupil,a);allow(pupil,b);
+    }
+    @Test void suspendedEnrollmentIsNotRestoredByAPreviousRecipient() throws Exception {
+        Request a=request(false,Action.READ_OWN_ATTEMPT),b=request(true,Action.READ_OWN_ATTEMPT);resolve(a);resolve(b);allow(pupil,a);allow(pupil,b);
+        r.academic.transitionEnrollment(r.episode,Enrollment.Status.SUSPENDED,Instant.now());deny(pupil,a);allow(pupil,b);
+    }
+    @Test void freshNewContextCannotAdoptAnOriginalWriterOrPreparedBudget() throws Exception {
+        Request q=request(false,Action.READ_OWN_ATTEMPT);resolve(q);allow(pupil,q);
+        var profile=f.app.getBean(com.morales.chemicallab.repository.TeacherProfileRepository.class).findByUser(f.teacher).orElseThrow();
+        r.assignment(q.evaluationId(),profile,LocalDateTime.of(2026,12,1,0,0));resolve(q);deny(pupil,q);
+        assertThat(count("select count(*) from evaluation_attempts where evaluation_id=?",q.evaluationId())).isZero();
+    }
+    @Test void scheduledDeliveryOnlyAllowsSupervisionWithoutQuestionsOrCorrections() throws Exception {
+        var rev=c.b.b8.successor(c.b.published,"Scheduled academic revision");
+        long delivery=delivery(rev.id(),r.institution,r.otherClass,Instant.now().plusSeconds(600),null);
+        revisions.recipient(delivery,f.student.getId(),r.otherEpisode,0,true,op());
+        Request q=new Request(Contract.NEW,Action.READ_DELIVERY,r.institution,r.otherClass,request(false,Action.READ_DELIVERY).evaluationId(),delivery,rev.id(),f.student.getId(),null);
+        resolve(q);deny(pupil,q);assertThat(allow(admin,q).context().projection()).isEqualTo(Projection.SUPERVISION_METADATA);
     }
 }

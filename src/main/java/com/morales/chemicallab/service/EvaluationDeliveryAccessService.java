@@ -25,12 +25,14 @@ public class EvaluationDeliveryAccessService {
     public enum Contract { LEGACY, NEW }
     public enum Action { READ_DELIVERY, READ_OWN_ATTEMPT, SUPERVISE, REVIEW_ATTEMPT, READ_CORRECTION, GRADE_ATTEMPT }
     public enum RevisionKind { TECHNICAL_SNAPSHOT, PUBLISHED_ACADEMIC }
+    public enum Projection { DELIVERY_WITHOUT_CORRECTION, OWN_ATTEMPT_WITHOUT_CORRECTION, SUPERVISION_METADATA,
+                             TEACHER_REVIEW, OWN_CORRECTION, GRADE_PERMISSION_ONLY }
     public enum Outcome { ALLOW, DENY, UNAVAILABLE }
     /** LEGACY IDs name B3 delivery/revision/recipient and legacy attempt; NEW IDs name B8 rows. */
     public record Request(Contract contract, Action action, long institutionId, long classId,
                           long evaluationId, long deliveryId, long revisionId, long recipientAccountId, Long attemptId) {}
     /** Identifiers only. No questions, answers, scores, feedback, budgets or unrelated memberships. */
-    public record Context(Contract contract, RevisionKind revisionKind, long institutionId, long classId,
+    public record Context(Contract contract, RevisionKind revisionKind, Projection projection, long institutionId, long classId,
                           long evaluationId, long deliveryId, long revisionId, long recipientAccountId,
                           Long attemptId, long rootContextVersion, long deliveryContextVersion, Instant observedAt) {}
     public record Decision(Outcome outcome, Action action, Context context) {
@@ -126,9 +128,17 @@ public class EvaluationDeliveryAccessService {
             case READ_CORRECTION -> own && delivery.started() && attempt.graded() && attempt.closed() && delivery.correctionAvailable();
         };
         require(permitted);
+        Projection projection = switch (q.action()) {
+            case READ_DELIVERY -> own && delivery.available() ? Projection.DELIVERY_WITHOUT_CORRECTION : Projection.SUPERVISION_METADATA;
+            case READ_OWN_ATTEMPT -> Projection.OWN_ATTEMPT_WITHOUT_CORRECTION;
+            case SUPERVISE -> Projection.SUPERVISION_METADATA;
+            case REVIEW_ATTEMPT -> Projection.TEACHER_REVIEW;
+            case READ_CORRECTION -> Projection.OWN_CORRECTION;
+            case GRADE_ATTEMPT -> Projection.GRADE_PERMISSION_ONLY;
+        };
         return new Decision(Outcome.ALLOW, q.action(), new Context(q.contract(),
                 q.contract() == Contract.LEGACY ? RevisionKind.TECHNICAL_SNAPSHOT : RevisionKind.PUBLISHED_ACADEMIC,
-                q.institutionId(), q.classId(), q.evaluationId(), q.deliveryId(), q.revisionId(), q.recipientAccountId(),
+                projection, q.institutionId(), q.classId(), q.evaluationId(), q.deliveryId(), q.revisionId(), q.recipientAccountId(),
                 q.attemptId(), root.version(), d.version(), now));
     }
 
@@ -141,25 +151,25 @@ public class EvaluationDeliveryAccessService {
         private final Map<Long, Boolean> freshness = new HashMap<>();
         private CurrentContexts(Request q) { this.q = q; }
         private Resolved get(String source, long id, boolean classRequired, Long account, Long enrollment) {
-        var rows = jdbc.queryForList("""
-            select v.id,v.proposal_id,v.resolution::text from t11b10_versions v
-            where v.source_table=? and v.source_pk=jsonb_build_object(?::text,?::bigint)
-              and not exists(select 1 from t11b10_versions next where next.predecessor_id=v.id)
-            """, source, source.equals("t11b3_evaluation_resources") ? "evaluation_id" : "id", id);
-        require(rows.size() == 1);
-        var row = rows.get(0);
-        require(freshness.computeIfAbsent(number(row, "proposal_id"), proposal ->
-                exists("select t11p05_fresh(?)", proposal)));
-        JsonNode resolution;
-        try { resolution = JSON.readTree((String) row.get("resolution")); }
-        catch (Exception invalid) { throw new Denied(); }
-        require("INSTITUTION".equals(resolution.path("scope").asText())
-                && equal(resolution, "institutionId", q.institutionId()));
-        if (classRequired || resolution.has("classId")) require(equal(resolution, "classId", q.classId()));
-        if (account != null) require(equal(resolution, "accountId", account));
-        if (enrollment != null) require(equal(resolution, "enrollmentId", enrollment));
-        return new Resolved(((Number) row.get("id")).longValue(),
-                resolution.has("enrollmentId") ? resolution.get("enrollmentId").longValue() : null);
+            var rows = jdbc.queryForList("""
+                select v.id,v.proposal_id,v.resolution::text from t11b10_versions v
+                where v.source_table=? and v.source_pk=jsonb_build_object(?::text,?::bigint)
+                  and not exists(select 1 from t11b10_versions next where next.predecessor_id=v.id)
+                """, source, source.equals("t11b3_evaluation_resources") ? "evaluation_id" : "id", id);
+            require(rows.size() == 1);
+            var row = rows.get(0);
+            require(freshness.computeIfAbsent(number(row, "proposal_id"), proposal ->
+                    exists("select t11p05_fresh(?)", proposal)));
+            JsonNode resolution;
+            try { resolution = JSON.readTree((String) row.get("resolution")); }
+            catch (Exception invalid) { throw new Denied(); }
+            require(resolution != null && resolution.isObject() && "INSTITUTION".equals(resolution.path("scope").asText())
+                    && equal(resolution, "institutionId", q.institutionId()));
+            if (classRequired || resolution.has("classId")) require(equal(resolution, "classId", q.classId()));
+            if (account != null) require(equal(resolution, "accountId", account));
+            if (enrollment != null) require(equal(resolution, "enrollmentId", enrollment));
+            return new Resolved(((Number) row.get("id")).longValue(),
+                    resolution.has("enrollmentId") ? resolution.get("enrollmentId").longValue() : null);
         }
     }
     private static boolean equal(JsonNode value, String key, long expected) {
@@ -235,16 +245,14 @@ public class EvaluationDeliveryAccessService {
         // The DRAFT evaluation is a technical anchor, not a second published academic revision or engine.
         require(!exists("select exists(select 1 from evaluation_assignments where evaluation_id=?) or exists(select 1 from evaluation_attempts where evaluation_id=?)",
                 q.evaluationId(), q.evaluationId()));
+        boolean rootClosed = exists("select t11b8_closed(?)", resource);
         Instant now = jdbc.queryForObject("select statement_timestamp()", Timestamp.class).toInstant();
         boolean started = !now.isBefore(((Timestamp) row.get("starts_at")).toInstant());
-        boolean available = started && "OPEN".equals(row.get("status")) && "AVAILABLE".equals(row.get("availability"))
+        boolean available = started && !rootClosed && "OPEN".equals(row.get("status")) && "AVAILABLE".equals(row.get("availability"))
                 && (row.get("due_at") == null || now.isBefore(((Timestamp) row.get("due_at")).toInstant()));
-        boolean closed = exists("""
-            select exists(select 1 from t11b8_deliveries where resource_id=?)
-              and not exists(select 1 from t11b8_deliveries where resource_id=? and status='OPEN'
-                and (due_at is null or due_at>statement_timestamp()))
-              and not exists(select 1 from t11b8_fixture_attempts where resource_id=? and (status<>'FINAL' or not grade_closed))
-            """, resource, resource, resource);
+        boolean closed = rootClosed && !exists("""
+            select exists(select 1 from t11b8_fixture_attempts where resource_id=? and (status<>'FINAL' or not grade_closed))
+            """, resource);
         return new Delivery("t11b8_deliveries", "t11b8_revisions", "t11b8_recipients", number(row, "recipient_id"),
                 null, resource, started, available, closed);
     }
