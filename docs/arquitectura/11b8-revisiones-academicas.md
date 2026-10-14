@@ -176,3 +176,73 @@ SEC-13/VER-01, Linux/SCA/capacidad/permisos/operación conservan sus gates.
 Auditoría, notas/cierres previos, frontend institucional y 16 E2E preservados.
 PR backend borrador hacia develop; sin merge, despliegue, DDL/backfill real,
 activación multiinstitucional o inicio de P04–P06/T12.
+
+## Evidencia definitiva atribuida al commit
+
+**SHA probado:** `6893c2743daa1e18491768b91db56e72543ddd40`.
+`clean package` terminó el **13 de octubre de 2026, 19:26:57 America/Lima**,
+en **15 min 58 s**: **62 suites, 829 pruebas, 0 fallos, 0 errores, 0 omitidas;
+BUILD SUCCESS y JAR generado**. Incluye **34 casos B8** y las regresiones
+T02–T10/B1–B7 de esa misma ejecución. Las selecciones de desarrollo, carreras y
+restore no se suman al total. El commit posterior de cierre solo agrega evidencia
+documental; fuentes, SQL, pruebas y POM permanecen idénticos al SHA probado.
+
+Entorno: Windows, JDK 17, Maven 3.9.15 offline, PostgreSQL 18 propio/ficticio
+en 127.0.0.1:55438, DB `chemicallab_t01_test`, rol `t11b8_fixture`, perfil test,
+locale C, 300 conexiones. Sin base escolar, Linux, SCA nueva, capacidad,
+privilegios/TLS runtime ni certificación operativa. No ejecución frontend/E2E
+atribuida a esta entrega; sus archivos se preservaron.
+
+JAR SHA-256: `b24eaad819074c4d0906dad9ec49d2d8924e137792b75d2182030c3761953be4`.
+Los once SQL del JAR coinciden con sus fuentes, normalizando solo CRLF/LF.
+Los diez históricos mantienen además sus bytes originales en el checkout.
+
+| Verificación del SHA probado | Resultado |
+| --- | --- |
+| Borrador/publicación | Payload diferente, parent/números/versión conservados; publicación de una única versión coherente. UPDATE combinado edit/publish, cambios directos de publicada y versiones viejas rechazados |
+| Historia académica | Revisión posterior conserva entregas, intentos, respuestas, notas/configuración/orden, autor/institución y bytes PDF anteriores; SQL no puede cambiar autor/procedencia ni retargetear entregas |
+| Entregas/destinatarios | Revisión no publicada, institución/clase/episodio/cuenta ajenos rechazados. Readmisión mantiene recipientId y snapshots de los episodios; suspensión impide consumir una admisión preparada |
+| F09/nueva identidad | Varias clases y revisiones comparten un presupuesto, números 1–3 y único activo. Agotamiento se mantiene en todas. Creación explícita produce otra evaluationId/raíz; copia técnica no. SQL no puede registrar otra vez un ancla existente como NEW, incluso si se actualiza en esa transacción |
+| Legacy | Grupo B3 exacto, budget/consumo/IDs originales intactos; activo inactive conservado. B8 no admite consumo ni exposición propios ni crea otro budget. Cierre vivo T05 y cierre conservado bloquean nuevas entregas/admisiones; regresiones A13–A17 incluidas |
+| Ventanas/cierre | Asignación futura/vacía/sin due_at bloquea exposición hasta cerrar todas. Archivo, expiración, notas abiertas y corrección expuesta no reabren oportunidades; ni readmisión ni otra revisión restituyen saldo. Plazo congelado; respuesta tardía rechazada |
+| Atomicidad | Fallos T08 durante creación, publicación, admisión y consumo revierten ancla/negocio/historia/budget/cuota/operación. Cuota revierte edición. Reintentos exactos no duplican efectos/SUCCESS; otro mapa/versión con el UUID anterior falla |
+| Validación/SQL | JSON duplicado, tipos/configuración/preguntas/opciones inválidos, contenido vacío y bytes inválidos rechazados; evidencia/logs sin datos académicos libres. SQL bloquea historia manual/alterada/borrada/truncada |
+| Expansión/certificación | Instalación con rollback, repetición B8/B7 sin cambio de ledgers; divergencia propia y predecesora detectada sin reparación |
+| Carrera edit/publish | JVM OS 38384/6484; PostgreSQL 32920/16784 observados bloqueados. REJECTED:40001 / COMMITTED; una versión 2 coherente y una transición |
+| Carrera numeración | JVM OS 33472/18960; PostgreSQL 37420/30424 bloqueados. Dos COMMITTED, números académicos 2/3 distintos y consecutivos |
+| Carrera última oportunidad | JVM OS 9292/32780; PostgreSQL 21900/18684 bloqueados. COMMITTED / REJECTED:P0001 por raíz agotada; una sola fila número 1 entre dos clases. Timeout/deadlock no cuentan como éxito |
+| Restauración | pg_dump -Fc/pg_restore transaccional conserva firmas completas de **104 tablas**. B8 vuelve a certificar; guards de auditoría/historia y límite fixture funcionan; deriva detectada y recertificada tras restaurar la guarda |
+
+Carreras SQL comprueban integridad; T08 se comprueba con el mantenedor. Restore
+forma parte de los 34 casos B8; no certifica recuperación P06 con nuevas escrituras.
+Las selecciones previas sobre worktree sin commit fueron diagnósticas: conexión
+inicial del sandbox, aliases PL/pgSQL, fixture de cuota positiva y controles
+adicionales de creación/autor/episodio/vencimiento. No se atribuyen al SHA probado.
+No se repite la suite por este cierre documental.
+
+Reproducción en clúster **nuevo, ficticio, loopback y puerto libre**:
+
+```powershell
+initdb -D ../t11b8-repro-postgres -U t11b8_fixture -A trust --encoding=UTF8 --locale=C
+pg_ctl -D ../t11b8-repro-postgres -l ../t11b8-repro-postgres.log -o '-h 127.0.0.1 -p 55438 -c max_connections=300' -w start
+createdb -h 127.0.0.1 -p 55438 -U t11b8_fixture chemicallab_t01_test
+# JDK17 en JAVA_HOME; PostgreSQL18 en PATH; Maven 3.9.15 cacheado.
+mvn -o '-Dspring.profiles.active=test' '-Dspring.datasource.url=jdbc:postgresql://127.0.0.1:55438/chemicallab_t01_test' '-Dspring.datasource.username=t11b8_fixture' '-Dspring.datasource.password=fictitious' clean package
+dropdb -h 127.0.0.1 -p 55438 -U t11b8_fixture chemicallab_t01_test
+pg_ctl -D ../t11b8-repro-postgres -m fast -w stop
+```
+
+Trust exclusivamente en el clúster propio del ensayo. Evidencia local fuera de PR:
+`.codex-work/t11b8-evidence/tested-sha.txt`, `full-package.log`,
+`verified-results.json`, `verified-suites.json`, `verified-reports.zip`,
+`verified-backend.jar`, `verified-packaged-sql.json`,
+`verified/t11b8-processes` (barreras/PID/resultados), `verified/t11b8-native`
+(dump/manifiesto), `preservation.json` y scripts de colección/limpieza.
+
+Conservación: **43/43 hashes protegidos**, incluidos auditoría/cierres históricos
+y **16/16 E2E**, sin discrepancias. Diez SQL históricos intactos; de 61 documentos
+backend previos, 59 intactos y únicamente matrices T11-A/T11-C actualizadas.
+Auditoría original SHA-256:
+`1eff5d59f7a114dfee91cb557a0405c2f7247e43cd2926d2542172c0255e499b`.
+Frontend conserva `feature/validaciones-datos-institucionales`,
+`e88589635a8269c50ee0f53fccf157f0d0985034` y su `?? e2e-selenium/` previo.
