@@ -59,7 +59,7 @@ class TransitionBatchDbTest {
         create(p,board);assertThat(step(1,1).get("status").asText()).isEqualTo("APPLIED");service.pause(plan,1,op());
         var pending=observation().get("units").get(1);p=pending.get("proposal_id").asLong();
         var root=pending.get("proof").get("root");String table=root.get("source").asText();assertThat(table).isIn("evaluations","whiteboard_sessions");
-        f.sql().update("update "+table+" set title='Changed fixture source' where id=?",root.get("pk").get("id").asLong());
+        f.sql().update("update "+table+" set "+(table.equals("evaluations")?"title":"name")+"='Changed fixture source' where id=?",root.get("pk").get("id").asLong());
         service.resume(plan,2,op());assertThat(step(2,3).get("status").asText()).isEqualTo("STALE");
         assertThat(count("select count(*) from t11b10_approvals where proposal_id=?",p)).isEqualTo(2);
         assertThat(count("select count(*) from t11b10_versions where proposal_id=?",p)).isZero();
@@ -104,6 +104,15 @@ class TransitionBatchDbTest {
         assertThatThrownBy(()->service.create(plan,List.of(p),new TransitionBatchMaintenanceService.Limits(20000,67108864,1,2097152),op())).hasMessageContaining("whole aggregate");assertThat(state()).isEqualTo(before);
         assertThatThrownBy(()->service.create(plan,List.of(p),new TransitionBatchMaintenanceService.Limits(20001,67108864,256,2097152),op())).hasMessageContaining("invalid bounded");
         assertThat(state()).isEqualTo(before);
+    }
+    @Test void postWriteEnvelopeRollsBackWholeUnitIncludingTechnicalCopiesAndAudit() throws Exception {
+        long proposal=approved();long rows=0;
+        var tables=f.sql().queryForList("select n.nspname||'.'||relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname in (?,?) and relkind='r'",String.class,f.schema,ctl);
+        for(String table:tables)rows+=count("select count(*) from "+table);
+        // CREATE adds exactly plan/unit/command/SUCCESS. STEP must exceed this frozen envelope.
+        service.create(plan,List.of(proposal),new TransitionBatchMaintenanceService.Limits((int)rows+4,67108864,256,2097152),op());var before=state();
+        assertThatThrownBy(()->step(1,1)).hasMessageContaining("row fixture envelope exceeded");assertThat(state()).isEqualTo(before);
+        assertThat(count("select count(*) from "+ctl+".checkpoints")).isZero();
     }
     @Test void successorRepeatsWithoutTouchingFrozenLedgersAndRejectsDrift() throws Exception {
         var before=state();f.sql().execute(expansion);assertThat(state()).isEqualTo(before);

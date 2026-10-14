@@ -94,18 +94,18 @@ final class TransitionWalRecoveryFixture {
             Map<String,String> recovered;
             try(var c=connect(recoveryPort,true);var q=c.createStatement()) {
                 assertThat(string(q,"select pg_is_in_recovery()::text")).isEqualTo("false");
-                q.execute(t.expansion);recovered=signatures(c);assertThat(recovered).isEqualTo(after);
+                q.execute(t.expansion);recovered=signatures(c);assertRecovered(after,recovered);
                 assertThat(number(q,"select count(*) from concept_content_examples where example='AFTER_RECOVERY_TARGET'")).isZero();
                 assertThat(number(q,"select count(*) from "+t.ctl+".checkpoints where operation_id='"+operation+"'")).isEqualTo(1);
                 // Same persisted request after recovery: query the operation first, then replay without a second effect.
                 assertThat(string(q,"select t11p06_lookup('"+operation+"') is not null")).isEqualTo("t");
                 String first=execute(c,operation,"STEP",request);String second=execute(c,operation,"STEP",request);assertThat(second).isEqualTo(first);
-                assertThat(signatures(c)).isEqualTo(after);
+                assertThat(signatures(c)).isEqualTo(recovered);
                 assertThatThrownBy(()->q.executeUpdate("update system_logs set outcome='SUCCESS'")).hasMessageContaining("append-only");
                 assertThatThrownBy(()->q.executeUpdate("delete from "+t.ctl+".checkpoints")).hasMessageContaining("generated checkpoint");
             }
             stop(base,"recovery");recoveryStarted=false;start(base,"recovery-retry");recoveryStarted=true;
-            try(var c=connect(recoveryPort,true);var q=c.createStatement()){q.execute(t.expansion);assertThat(signatures(c)).isEqualTo(after);}
+            try(var c=connect(recoveryPort,true);var q=c.createStatement()){q.execute(t.expansion);assertThat(signatures(c)).isEqualTo(recovered);}
             var evidence=new LinkedHashMap<String,Object>();evidence.put("mechanism","PostgreSQL physical base backup + archived WAL to named restore point");
             evidence.put("before",before);evidence.put("after",after);evidence.put("recovered",recovered);evidence.put("changes",changes);
             evidence.put("target",target);evidence.put("targetLsn",lsn);evidence.put("requiredArchivedWal",wal);evidence.put("tables",after.keySet().stream().filter(k->!k.startsWith("sequence:")).count());
@@ -114,6 +114,18 @@ final class TransitionWalRecoveryFixture {
         } finally {
             try {if(recoveryStarted&&Files.exists(base.resolve("postmaster.pid")))stop(base,"recovery-final");}
             finally {if(primaryStarted&&Files.exists(primary.resolve("postmaster.pid")))stop(primary,"primary-final");}
+        }
+    }
+    void assertRecovered(Map<String,String> source,Map<String,String> recovered) {
+        assertThat(recovered.keySet()).isEqualTo(source.keySet());
+        for(var entry:source.entrySet()) {
+            if(!entry.getKey().startsWith("sequence:"))assertThat(recovered.get(entry.getKey())).as(entry.getKey()).isEqualTo(entry.getValue());
+            else {
+                // PostgreSQL WAL prelogs nextval ranges. Recovery may advance a sequence without a new business row.
+                var old=entry.getValue().split(":");var next=recovered.get(entry.getKey()).split(":");
+                assertThat(next[1]).as(entry.getKey()+" is_called").isEqualTo(old[1]);
+                assertThat(Long.parseLong(next[0])).as(entry.getKey()+" must not reuse identities").isGreaterThanOrEqualTo(Long.parseLong(old[0]));
+            }
         }
     }
     void awaitPromotion() throws Exception {

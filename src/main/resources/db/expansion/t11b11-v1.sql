@@ -2460,6 +2460,7 @@ BEGIN
     cfg:=plan.limits;PERFORM t11p06_envelope(cfg);
     IF (NEW.request->>'epoch')::bigint IS DISTINCT FROM plan.epoch THEN RAISE EXCEPTION 'T11-B11 obsolete worker epoch';END IF;
     IF NEW.action IN('PAUSE','RESUME') THEN
+     IF NEW.action='RESUME' AND plan.next_ordinal>plan.total THEN RAISE EXCEPTION 'T11-B11 no remaining unit; preserve STALE and prepare new plan';END IF;
      IF (NEW.action='PAUSE' AND plan.state<>'RUNNING') OR (NEW.action='RESUME' AND plan.state<>'PAUSED') THEN RAISE EXCEPTION 'T11-B11 invalid pause/resume state';END IF;
      UPDATE @ctl@.plans SET state=CASE NEW.action WHEN 'PAUSE' THEN 'PAUSED' ELSE 'RUNNING' END,epoch=epoch+1 WHERE id=plan_id;
     ELSIF NEW.action='STEP' THEN
