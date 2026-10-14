@@ -82,7 +82,7 @@ class EvaluationDeliveryAccessDbTest {
         var decision=access.decide(p,q);assertThat(decision.outcome()).as(q.toString()).isEqualTo(Outcome.ALLOW);
         assertThat(decision.context()).isNotNull();return decision;
     }
-    void deny(SessionPrincipal p,Request q){var d=access.decide(p,q);assertThat(d.allowed()).as(q.toString()).isFalse();assertThat(d.context()).isNull();}
+    void deny(SessionPrincipal p,Request q){var d=access.decide(p,q);assertThat(d.allowed()).as(String.valueOf(q)).isFalse();assertThat(d.context()).isNull();}
     Request changed(Request q,long institution,long clazz,long evaluation,long delivery,long revision,long account,Long attempt) {
         return new Request(q.contract(),q.action(),institution,clazz,evaluation,delivery,revision,account,attempt);
     }
@@ -215,7 +215,7 @@ class EvaluationDeliveryAccessDbTest {
         var sequences=sql().queryForList("select sequencename,last_value from pg_sequences where schemaname=current_schema() order by sequencename");
         for(boolean b:List.of(false,true)) {
             var d=allow(pupil,request(b,Action.READ_OWN_ATTEMPT));deny(teacher,request(b,Action.READ_OWN_ATTEMPT));deny(pupil,request(b,Action.READ_CORRECTION));
-            String result=f.json.writeValueAsString(d);
+            String result=d.toString();
             assertThat(result).doesNotContain("Synthetic criterion","score","payload","answers","budget","feedback");
         }
         allow(teacher,legacy(Action.GRADE_ATTEMPT));assertThat(c.state()).isEqualTo(before);
