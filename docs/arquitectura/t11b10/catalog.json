@@ -1,0 +1,3507 @@
+{
+  "version": "P05_CATALOG_V1",
+  "sources": [
+    {
+      "source": "academic_class_events",
+      "keys": [
+        "id"
+      ],
+      "kind": "INSTITUTION",
+      "reason": "EXPLICIT_INSTITUTION",
+      "relations": [
+        {
+          "columns": [
+            "changed_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "academic_class_events_changed_by_fkey"
+        },
+        {
+          "columns": [
+            "entity_id",
+            "institution_id"
+          ],
+          "parent": "academic_classes",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "academic_class_events_entity_id_institution_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "academic_classes",
+      "keys": [
+        "id"
+      ],
+      "kind": "INSTITUTION",
+      "reason": "EXPLICIT_INSTITUTION",
+      "relations": [
+        {
+          "columns": [
+            "changed_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "academic_classes_changed_by_fkey"
+        },
+        {
+          "columns": [
+            "institution_id"
+          ],
+          "parent": "institutions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "academic_classes_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "period_id",
+            "institution_id"
+          ],
+          "parent": "academic_periods",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "academic_classes_period_id_institution_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "academic_period_events",
+      "keys": [
+        "id"
+      ],
+      "kind": "INSTITUTION",
+      "reason": "EXPLICIT_INSTITUTION",
+      "relations": [
+        {
+          "columns": [
+            "changed_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "academic_period_events_changed_by_fkey"
+        },
+        {
+          "columns": [
+            "entity_id",
+            "institution_id"
+          ],
+          "parent": "academic_periods",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "academic_period_events_entity_id_institution_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "academic_periods",
+      "keys": [
+        "id"
+      ],
+      "kind": "INSTITUTION",
+      "reason": "EXPLICIT_INSTITUTION",
+      "relations": [
+        {
+          "columns": [
+            "changed_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "academic_periods_changed_by_fkey"
+        },
+        {
+          "columns": [
+            "institution_id"
+          ],
+          "parent": "institutions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "academic_periods_institution_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "account_sessions",
+      "keys": [
+        "id"
+      ],
+      "kind": "GLOBAL",
+      "reason": "GLOBAL_IDENTITY",
+      "relations": [
+        {
+          "columns": [
+            "user_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fkou5cj1w8ft8dxncsggvdxboqy"
+        }
+      ]
+    },
+    {
+      "source": "audit_rejection_budget",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": []
+    },
+    {
+      "source": "audit_schema_version",
+      "keys": [
+        "version"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "authentication_limits",
+      "keys": [
+        "bucket"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "concept_assignments",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "concept_content_id"
+          ],
+          "parent": "concept_contents",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fkakbf23a4ctwtrd58b9dflsvn7"
+        },
+        {
+          "columns": [
+            "teacher_id"
+          ],
+          "parent": "teacher_profiles",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fkopy33poq1u3q265ncekodjfiw"
+        }
+      ]
+    },
+    {
+      "source": "concept_content_examples",
+      "keys": [
+        "concept_content_id",
+        "example_order"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "concept_content_id"
+          ],
+          "parent": "concept_contents",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fks65svrx93vuomgw92lkxfsg2"
+        }
+      ]
+    },
+    {
+      "source": "concept_content_formation_steps",
+      "keys": [
+        "concept_content_id",
+        "step_order"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "concept_content_id"
+          ],
+          "parent": "concept_contents",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fkexil4q1a3w2sdeol6cco1c9g4"
+        }
+      ]
+    },
+    {
+      "source": "concept_content_key_points",
+      "keys": [
+        "concept_content_id",
+        "key_point_order"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "concept_content_id"
+          ],
+          "parent": "concept_contents",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fkb0nlccd0cp1ff4kcojtf1meqq"
+        }
+      ]
+    },
+    {
+      "source": "concept_contents",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "created_by_teacher_id"
+          ],
+          "parent": "teacher_profiles",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fke0gku4rpn2mg3r7qrok7ml6jb"
+        }
+      ]
+    },
+    {
+      "source": "concept_materials",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "concept_content_id"
+          ],
+          "parent": "concept_contents",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fk9qje402k4jas4e48tlo409amb"
+        }
+      ]
+    },
+    {
+      "source": "enrollment_events",
+      "keys": [
+        "id"
+      ],
+      "kind": "INSTITUTION",
+      "reason": "EXPLICIT_INSTITUTION",
+      "relations": [
+        {
+          "columns": [
+            "changed_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "enrollment_events_changed_by_fkey"
+        },
+        {
+          "columns": [
+            "entity_id",
+            "institution_id"
+          ],
+          "parent": "enrollments",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "enrollment_events_entity_id_institution_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "enrollments",
+      "keys": [
+        "id"
+      ],
+      "kind": "INSTITUTION",
+      "reason": "EXPLICIT_INSTITUTION",
+      "relations": [
+        {
+          "columns": [
+            "changed_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "enrollments_changed_by_fkey"
+        },
+        {
+          "columns": [
+            "class_id",
+            "institution_id"
+          ],
+          "parent": "academic_classes",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "enrollments_class_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "institution_id"
+          ],
+          "parent": "institutions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "enrollments_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "membership_id",
+            "institution_id"
+          ],
+          "parent": "institution_memberships",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "enrollments_membership_id_institution_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "evaluation_answers",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "reviewed_by"
+          ],
+          "parent": "teacher_profiles",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fk7a7t6euepk1nme2g61wlidhpr"
+        },
+        {
+          "columns": [
+            "selected_option_id"
+          ],
+          "parent": "evaluation_options",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fkeky2a8qd72jay1a6xca9sn9hf"
+        },
+        {
+          "columns": [
+            "attempt_id"
+          ],
+          "parent": "evaluation_attempts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fkg5hh6xn556kgl1ex1rv2wknb"
+        },
+        {
+          "columns": [
+            "question_id"
+          ],
+          "parent": "evaluation_questions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fktrboqr6ir60xufpmwx72hqj7t"
+        }
+      ]
+    },
+    {
+      "source": "evaluation_assignments",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "evaluation_id"
+          ],
+          "parent": "evaluations",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fkin3save54wy582hwdeqewcmro"
+        },
+        {
+          "columns": [
+            "teacher_id"
+          ],
+          "parent": "teacher_profiles",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fkk675vyfibxhsfkngsm13vgnxc"
+        }
+      ]
+    },
+    {
+      "source": "evaluation_attempt_adjustments",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "attempt_id"
+          ],
+          "parent": "evaluation_attempts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fk3wvvanxo29cibu0ohuroh7n8i"
+        },
+        {
+          "columns": [
+            "created_by"
+          ],
+          "parent": "teacher_profiles",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fkkutkcr8f0s2td54xghtm63swt"
+        }
+      ]
+    },
+    {
+      "source": "evaluation_attempt_events",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "attempt_id"
+          ],
+          "parent": "evaluation_attempts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fkc0jq28pbbd6ryxw9v8vvqhs73"
+        }
+      ]
+    },
+    {
+      "source": "evaluation_attempts",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "evaluation_id"
+          ],
+          "parent": "evaluations",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fk38y077dnu39yjqigljcmfu96i"
+        },
+        {
+          "columns": [
+            "assignment_id"
+          ],
+          "parent": "evaluation_assignments",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fka7bpfui2kutf4255uyv7qrpk3"
+        },
+        {
+          "columns": [
+            "student_id"
+          ],
+          "parent": "student_profiles",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fkenl8f27s5m0dc6nwe8x6ymfj7"
+        },
+        {
+          "columns": [
+            "grade_closed_by"
+          ],
+          "parent": "teacher_profiles",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fkn7yu0gk6fgjkbmh54v9ufj9jl"
+        }
+      ]
+    },
+    {
+      "source": "evaluation_options",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "question_id"
+          ],
+          "parent": "evaluation_questions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fkrobgclux46j4co2mgvne68wfb"
+        }
+      ]
+    },
+    {
+      "source": "evaluation_questions",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "evaluation_id"
+          ],
+          "parent": "evaluations",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fkjy1jui076kxjdte4bcapjcf2w"
+        }
+      ]
+    },
+    {
+      "source": "evaluations",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "created_by_teacher_id"
+          ],
+          "parent": "teacher_profiles",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fkaaqjybxm566bgw5ly6n7l2ryy"
+        }
+      ]
+    },
+    {
+      "source": "institution_memberships",
+      "keys": [
+        "id"
+      ],
+      "kind": "INSTITUTION",
+      "reason": "EXPLICIT_INSTITUTION",
+      "relations": [
+        {
+          "columns": [
+            "account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "institution_memberships_account_id_fkey"
+        },
+        {
+          "columns": [
+            "changed_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "institution_memberships_changed_by_fkey"
+        },
+        {
+          "columns": [
+            "institution_id"
+          ],
+          "parent": "institutions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "institution_memberships_institution_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "institutions",
+      "keys": [
+        "id"
+      ],
+      "kind": "INSTITUTION",
+      "reason": "EXPLICIT_INSTITUTION",
+      "relations": []
+    },
+    {
+      "source": "membership_events",
+      "keys": [
+        "id"
+      ],
+      "kind": "INSTITUTION",
+      "reason": "EXPLICIT_INSTITUTION",
+      "relations": [
+        {
+          "columns": [
+            "changed_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "membership_events_changed_by_fkey"
+        },
+        {
+          "columns": [
+            "membership_id",
+            "institution_id"
+          ],
+          "parent": "institution_memberships",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "membership_events_membership_id_institution_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "membership_role_grants",
+      "keys": [
+        "id"
+      ],
+      "kind": "INSTITUTION",
+      "reason": "EXPLICIT_INSTITUTION",
+      "relations": [
+        {
+          "columns": [
+            "granted_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "membership_role_grants_granted_by_fkey"
+        },
+        {
+          "columns": [
+            "membership_id",
+            "institution_id"
+          ],
+          "parent": "institution_memberships",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "membership_role_grants_membership_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "revoked_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "membership_role_grants_revoked_by_fkey"
+        }
+      ]
+    },
+    {
+      "source": "storage_limits",
+      "keys": [
+        "resource"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "storage_schema_version",
+      "keys": [
+        "version"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "storage_usage",
+      "keys": [
+        "scope",
+        "owner_id",
+        "resource"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": [
+        {
+          "columns": [
+            "resource"
+          ],
+          "parent": "storage_limits",
+          "keys": [
+            "resource"
+          ],
+          "constraint": "storage_usage_resource_fkey"
+        }
+      ]
+    },
+    {
+      "source": "student_profiles",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "user_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fk1yxbevsud8v8avcmi408pk8ka"
+        },
+        {
+          "columns": [
+            "teacher_id"
+          ],
+          "parent": "teacher_profiles",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fkb4sjh7ioix559c83kkmqo05x5"
+        }
+      ]
+    },
+    {
+      "source": "system_logs",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "actor_user_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "P05_LOGICAL_ACTOR_V1",
+          "logical": true
+        }
+      ],
+      "typedRelations": {
+        "typeColumn": "target_type",
+        "idColumn": "target_id",
+        "targets": {
+          "WhiteboardSession": "whiteboard_sessions",
+          "WHITEBOARD_SESSION": "whiteboard_sessions",
+          "WHITEBOARD": "whiteboard_sessions",
+          "Evaluation": "evaluations",
+          "EVALUATION": "evaluations",
+          "ConceptContent": "concept_contents",
+          "CONCEPT": "concept_contents"
+        }
+      }
+    },
+    {
+      "source": "t11b1_schema_version",
+      "keys": [
+        "version"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "t11b2_audit_version",
+      "keys": [
+        "version"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "t11b2_schema_version",
+      "keys": [
+        "version"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "t11b3_account_attempt_budgets",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_account_attempt_budgets_account_id_fkey"
+        },
+        {
+          "columns": [
+            "active_attempt_id"
+          ],
+          "parent": "evaluation_attempts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_account_attempt_budgets_active_attempt_id_fkey"
+        },
+        {
+          "columns": [
+            "group_id"
+          ],
+          "parent": "t11b3_opportunity_groups",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_account_attempt_budgets_group_id_fkey"
+        },
+        {
+          "columns": [
+            "reconciliation_id"
+          ],
+          "parent": "t11b3_reconciliations",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_account_attempt_budgets_reconciliation_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b3_apply_version",
+      "keys": [
+        "version"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "t11b3_attempt_consumptions",
+      "keys": [
+        "attempt_id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "attempt_id"
+          ],
+          "parent": "evaluation_attempts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_attempt_consumptions_attempt_id_fkey"
+        },
+        {
+          "columns": [
+            "budget_id",
+            "group_id",
+            "account_id"
+          ],
+          "parent": "t11b3_account_attempt_budgets",
+          "keys": [
+            "id",
+            "group_id",
+            "account_id"
+          ],
+          "constraint": "t11b3_attempt_consumptions_budget_id_group_id_account_id_fkey"
+        },
+        {
+          "columns": [
+            "reconciliation_id"
+          ],
+          "parent": "t11b3_reconciliations",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_attempt_consumptions_reconciliation_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b3_attempt_contexts",
+      "keys": [
+        "attempt_id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "attempt_id"
+          ],
+          "parent": "t11b3_attempt_consumptions",
+          "keys": [
+            "attempt_id"
+          ],
+          "constraint": "t11b3_attempt_contexts_attempt_id_fkey"
+        },
+        {
+          "columns": [
+            "delivery_id",
+            "institution_id",
+            "revision_id"
+          ],
+          "parent": "t11b3_evaluation_deliveries",
+          "keys": [
+            "id",
+            "institution_id",
+            "revision_id"
+          ],
+          "constraint": "t11b3_attempt_contexts_delivery_id_institution_id_revision_fkey"
+        },
+        {
+          "columns": [
+            "enrollment_id"
+          ],
+          "parent": "enrollments",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_attempt_contexts_enrollment_id_fkey"
+        },
+        {
+          "columns": [
+            "recipient_id",
+            "delivery_id",
+            "institution_id",
+            "account_id"
+          ],
+          "parent": "t11b3_evaluation_recipients",
+          "keys": [
+            "id",
+            "delivery_id",
+            "institution_id",
+            "account_id"
+          ],
+          "constraint": "t11b3_attempt_contexts_recipient_id_delivery_id_institutio_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b3_concept_deliveries",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "class_id",
+            "institution_id"
+          ],
+          "parent": "academic_classes",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b3_concept_deliveries_class_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "legacy_assignment_id"
+          ],
+          "parent": "concept_assignments",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_concept_deliveries_legacy_assignment_id_fkey"
+        },
+        {
+          "columns": [
+            "reconciliation_id"
+          ],
+          "parent": "t11b3_reconciliations",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_concept_deliveries_reconciliation_id_fkey"
+        },
+        {
+          "columns": [
+            "revision_id",
+            "institution_id",
+            "concept_id"
+          ],
+          "parent": "t11b3_concept_revisions",
+          "keys": [
+            "id",
+            "institution_id",
+            "concept_id"
+          ],
+          "constraint": "t11b3_concept_deliveries_revision_id_institution_id_concep_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b3_concept_recipients",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_concept_recipients_account_id_fkey"
+        },
+        {
+          "columns": [
+            "delivery_id",
+            "institution_id",
+            "class_id"
+          ],
+          "parent": "t11b3_concept_deliveries",
+          "keys": [
+            "id",
+            "institution_id",
+            "class_id"
+          ],
+          "constraint": "t11b3_concept_recipients_delivery_id_institution_id_class__fkey"
+        },
+        {
+          "columns": [
+            "enrollment_id",
+            "institution_id"
+          ],
+          "parent": "enrollments",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b3_concept_recipients_enrollment_id_institution_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b3_concept_resources",
+      "keys": [
+        "concept_id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "author_account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_concept_resources_author_account_id_fkey"
+        },
+        {
+          "columns": [
+            "author_membership_id",
+            "institution_id"
+          ],
+          "parent": "institution_memberships",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b3_concept_resources_author_membership_id_institution_i_fkey"
+        },
+        {
+          "columns": [
+            "concept_id"
+          ],
+          "parent": "concept_contents",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_concept_resources_concept_id_fkey"
+        },
+        {
+          "columns": [
+            "institution_id"
+          ],
+          "parent": "institutions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_concept_resources_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "reconciliation_id"
+          ],
+          "parent": "t11b3_reconciliations",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_concept_resources_reconciliation_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b3_concept_revisions",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "concept_id",
+            "institution_id"
+          ],
+          "parent": "t11b3_concept_resources",
+          "keys": [
+            "concept_id",
+            "institution_id"
+          ],
+          "constraint": "t11b3_concept_revisions_concept_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "reconciliation_id"
+          ],
+          "parent": "t11b3_reconciliations",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_concept_revisions_reconciliation_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b3_evaluation_deliveries",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "class_id",
+            "institution_id"
+          ],
+          "parent": "academic_classes",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b3_evaluation_deliveries_class_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "legacy_assignment_id"
+          ],
+          "parent": "evaluation_assignments",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_evaluation_deliveries_legacy_assignment_id_fkey"
+        },
+        {
+          "columns": [
+            "reconciliation_id"
+          ],
+          "parent": "t11b3_reconciliations",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_evaluation_deliveries_reconciliation_id_fkey"
+        },
+        {
+          "columns": [
+            "revision_id",
+            "institution_id",
+            "evaluation_id"
+          ],
+          "parent": "t11b3_evaluation_revisions",
+          "keys": [
+            "id",
+            "institution_id",
+            "evaluation_id"
+          ],
+          "constraint": "t11b3_evaluation_deliveries_revision_id_institution_id_eva_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b3_evaluation_recipients",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_evaluation_recipients_account_id_fkey"
+        },
+        {
+          "columns": [
+            "delivery_id",
+            "institution_id",
+            "class_id"
+          ],
+          "parent": "t11b3_evaluation_deliveries",
+          "keys": [
+            "id",
+            "institution_id",
+            "class_id"
+          ],
+          "constraint": "t11b3_evaluation_recipients_delivery_id_institution_id_cla_fkey"
+        },
+        {
+          "columns": [
+            "enrollment_id",
+            "institution_id"
+          ],
+          "parent": "enrollments",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b3_evaluation_recipients_enrollment_id_institution_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b3_evaluation_resources",
+      "keys": [
+        "evaluation_id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "author_account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_evaluation_resources_author_account_id_fkey"
+        },
+        {
+          "columns": [
+            "author_membership_id",
+            "institution_id"
+          ],
+          "parent": "institution_memberships",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b3_evaluation_resources_author_membership_id_institutio_fkey"
+        },
+        {
+          "columns": [
+            "evaluation_id"
+          ],
+          "parent": "evaluations",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_evaluation_resources_evaluation_id_fkey"
+        },
+        {
+          "columns": [
+            "institution_id"
+          ],
+          "parent": "institutions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_evaluation_resources_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "reconciliation_id"
+          ],
+          "parent": "t11b3_reconciliations",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_evaluation_resources_reconciliation_id_fkey"
+        },
+        {
+          "columns": [
+            "evaluation_id"
+          ],
+          "parent": "t11b3_opportunity_groups",
+          "keys": [
+            "evaluation_id"
+          ],
+          "constraint": "t11b3_resource_root"
+        }
+      ]
+    },
+    {
+      "source": "t11b3_evaluation_revisions",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "evaluation_id",
+            "institution_id"
+          ],
+          "parent": "t11b3_evaluation_resources",
+          "keys": [
+            "evaluation_id",
+            "institution_id"
+          ],
+          "constraint": "t11b3_evaluation_revisions_evaluation_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "reconciliation_id"
+          ],
+          "parent": "t11b3_reconciliations",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_evaluation_revisions_reconciliation_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b3_opportunity_groups",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "evaluation_id"
+          ],
+          "parent": "evaluations",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_opportunity_groups_evaluation_id_fkey"
+        },
+        {
+          "columns": [
+            "reconciliation_id"
+          ],
+          "parent": "t11b3_reconciliations",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_opportunity_groups_reconciliation_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b3_reconciliation_events",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "actor_account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_reconciliation_events_actor_account_id_fkey"
+        },
+        {
+          "columns": [
+            "reconciliation_id"
+          ],
+          "parent": "t11b3_reconciliations",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_reconciliation_events_reconciliation_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b3_reconciliations",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "approved_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_reconciliations_approved_by_fkey"
+        },
+        {
+          "columns": [
+            "changed_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b3_reconciliations_changed_by_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b3_schema_version",
+      "keys": [
+        "version"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "t11b4_apply_version",
+      "keys": [
+        "version"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "t11b4_audit_contexts",
+      "keys": [
+        "event_id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b4_audit_contexts_account_id_fkey"
+        },
+        {
+          "columns": [
+            "board_id",
+            "institution_id",
+            "class_id"
+          ],
+          "parent": "t11b4_board_contexts",
+          "keys": [
+            "board_id",
+            "institution_id",
+            "class_id"
+          ],
+          "constraint": "t11b4_audit_contexts_board_id_institution_id_class_id_fkey"
+        },
+        {
+          "columns": [
+            "class_id",
+            "institution_id"
+          ],
+          "parent": "academic_classes",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b4_audit_contexts_class_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "event_id"
+          ],
+          "parent": "system_logs",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b4_audit_contexts_event_id_fkey"
+        },
+        {
+          "columns": [
+            "institution_id"
+          ],
+          "parent": "institutions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b4_audit_contexts_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "reconciliation_id"
+          ],
+          "parent": "t11b4_reconciliations",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b4_audit_contexts_reconciliation_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b4_board_contexts",
+      "keys": [
+        "board_id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "author_account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b4_board_contexts_author_account_id_fkey"
+        },
+        {
+          "columns": [
+            "author_membership_id",
+            "institution_id"
+          ],
+          "parent": "institution_memberships",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b4_board_contexts_author_membership_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "board_id"
+          ],
+          "parent": "whiteboard_sessions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b4_board_contexts_board_id_fkey"
+        },
+        {
+          "columns": [
+            "class_id",
+            "institution_id"
+          ],
+          "parent": "academic_classes",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b4_board_contexts_class_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "institution_id"
+          ],
+          "parent": "institutions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b4_board_contexts_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "reconciliation_id"
+          ],
+          "parent": "t11b4_reconciliations",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b4_board_contexts_reconciliation_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b4_participant_contexts",
+      "keys": [
+        "participant_id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b4_participant_contexts_account_id_fkey"
+        },
+        {
+          "columns": [
+            "board_id",
+            "institution_id",
+            "class_id"
+          ],
+          "parent": "t11b4_board_contexts",
+          "keys": [
+            "board_id",
+            "institution_id",
+            "class_id"
+          ],
+          "constraint": "t11b4_participant_contexts_board_id_institution_id_class_i_fkey"
+        },
+        {
+          "columns": [
+            "enrollment_id",
+            "institution_id"
+          ],
+          "parent": "enrollments",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b4_participant_contexts_enrollment_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "participant_id"
+          ],
+          "parent": "whiteboard_participants",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b4_participant_contexts_participant_id_fkey"
+        },
+        {
+          "columns": [
+            "reconciliation_id"
+          ],
+          "parent": "t11b4_reconciliations",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b4_participant_contexts_reconciliation_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b4_reconciliation_events",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "actor_account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b4_reconciliation_events_actor_account_id_fkey"
+        },
+        {
+          "columns": [
+            "reconciliation_id"
+          ],
+          "parent": "t11b4_reconciliations",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b4_reconciliation_events_reconciliation_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b4_reconciliations",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "approved_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b4_reconciliations_approved_by_fkey"
+        },
+        {
+          "columns": [
+            "changed_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b4_reconciliations_changed_by_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b4_schema_version",
+      "keys": [
+        "version"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "t11b4_usage_contexts",
+      "keys": [
+        "event_id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b4_usage_contexts_account_id_fkey"
+        },
+        {
+          "columns": [
+            "board_id",
+            "institution_id",
+            "class_id"
+          ],
+          "parent": "t11b4_board_contexts",
+          "keys": [
+            "board_id",
+            "institution_id",
+            "class_id"
+          ],
+          "constraint": "t11b4_usage_contexts_board_id_institution_id_class_id_fkey"
+        },
+        {
+          "columns": [
+            "class_id",
+            "institution_id"
+          ],
+          "parent": "academic_classes",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b4_usage_contexts_class_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "event_id"
+          ],
+          "parent": "usage_events",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b4_usage_contexts_event_id_fkey"
+        },
+        {
+          "columns": [
+            "institution_id"
+          ],
+          "parent": "institutions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b4_usage_contexts_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "reconciliation_id"
+          ],
+          "parent": "t11b4_reconciliations",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b4_usage_contexts_reconciliation_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b5_academic_codes",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b5_academic_codes_account_id_fkey"
+        },
+        {
+          "columns": [
+            "institution_id"
+          ],
+          "parent": "institutions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b5_academic_codes_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "membership_id",
+            "institution_id"
+          ],
+          "parent": "institution_memberships",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b5_academic_codes_membership_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "reserved_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b5_academic_codes_reserved_by_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b5_admin_proofs",
+      "keys": [
+        "id"
+      ],
+      "kind": "GLOBAL",
+      "reason": "GLOBAL_IDENTITY",
+      "relations": [
+        {
+          "columns": [
+            "account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b5_admin_proofs_account_id_fkey"
+        },
+        {
+          "columns": [
+            "checked_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b5_admin_proofs_checked_by_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b5_identifier_conflicts",
+      "keys": [
+        "id"
+      ],
+      "kind": "GLOBAL",
+      "reason": "GLOBAL_IDENTITY",
+      "relations": [
+        {
+          "columns": [
+            "identifier_id"
+          ],
+          "parent": "t11b5_login_identifiers",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b5_identifier_conflicts_identifier_id_fkey"
+        },
+        {
+          "columns": [
+            "other_account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b5_identifier_conflicts_other_account_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b5_identity_events",
+      "keys": [
+        "id"
+      ],
+      "kind": "GLOBAL",
+      "reason": "GLOBAL_IDENTITY",
+      "relations": []
+    },
+    {
+      "source": "t11b5_login_bindings",
+      "keys": [
+        "id"
+      ],
+      "kind": "GLOBAL",
+      "reason": "GLOBAL_IDENTITY",
+      "relations": [
+        {
+          "columns": [
+            "identifier_id",
+            "account_id",
+            "comparison_value"
+          ],
+          "parent": "t11b5_login_identifiers",
+          "keys": [
+            "id",
+            "account_id",
+            "comparison_value"
+          ],
+          "constraint": "t11b5_login_bindings_identifier_id_account_id_comparison_v_fkey"
+        },
+        {
+          "columns": [
+            "recorded_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b5_login_bindings_recorded_by_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b5_login_identifiers",
+      "keys": [
+        "id"
+      ],
+      "kind": "GLOBAL",
+      "reason": "GLOBAL_IDENTITY",
+      "relations": [
+        {
+          "columns": [
+            "account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b5_login_identifiers_account_id_fkey"
+        },
+        {
+          "columns": [
+            "recorded_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b5_login_identifiers_recorded_by_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b5_platform_role_grants",
+      "keys": [
+        "id"
+      ],
+      "kind": "GLOBAL",
+      "reason": "GLOBAL_IDENTITY",
+      "relations": [
+        {
+          "columns": [
+            "account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b5_platform_role_grants_account_id_fkey"
+        },
+        {
+          "columns": [
+            "granted_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b5_platform_role_grants_granted_by_fkey"
+        },
+        {
+          "columns": [
+            "proof_id",
+            "account_id"
+          ],
+          "parent": "t11b5_admin_proofs",
+          "keys": [
+            "id",
+            "account_id"
+          ],
+          "constraint": "t11b5_platform_role_grants_proof_id_account_id_fkey"
+        },
+        {
+          "columns": [
+            "revoked_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b5_platform_role_grants_revoked_by_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b5_schema_version",
+      "keys": [
+        "version"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "t11b5_usage",
+      "keys": [
+        "id"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "t11b6_co_assignments",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "changed_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b6_co_assignments_changed_by_fkey"
+        },
+        {
+          "columns": [
+            "class_id",
+            "institution_id"
+          ],
+          "parent": "academic_classes",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b6_co_assignments_class_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "institution_id"
+          ],
+          "parent": "institutions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b6_co_assignments_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "membership_id",
+            "institution_id"
+          ],
+          "parent": "institution_memberships",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b6_co_assignments_membership_id_institution_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b6_co_events",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "changed_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b6_co_events_changed_by_fkey"
+        },
+        {
+          "columns": [
+            "entity_id",
+            "institution_id"
+          ],
+          "parent": "t11b6_co_assignments",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b6_co_events_entity_id_institution_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b6_grant_events",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "entity_id",
+            "institution_id"
+          ],
+          "parent": "t11b6_resource_grants",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b6_grant_events_entity_id_institution_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b6_resource_grants",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "concept_id",
+            "institution_id"
+          ],
+          "parent": "t11b3_concept_resources",
+          "keys": [
+            "concept_id",
+            "institution_id"
+          ],
+          "constraint": "t11b6_resource_grants_concept_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "evaluation_id",
+            "institution_id"
+          ],
+          "parent": "t11b3_evaluation_resources",
+          "keys": [
+            "evaluation_id",
+            "institution_id"
+          ],
+          "constraint": "t11b6_resource_grants_evaluation_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "granted_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b6_resource_grants_granted_by_fkey"
+        },
+        {
+          "columns": [
+            "grantor_membership_id",
+            "institution_id"
+          ],
+          "parent": "institution_memberships",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b6_resource_grants_grantor_membership_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "institution_id"
+          ],
+          "parent": "institutions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b6_resource_grants_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "membership_id",
+            "institution_id"
+          ],
+          "parent": "institution_memberships",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b6_resource_grants_membership_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "revoked_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b6_resource_grants_revoked_by_fkey"
+        },
+        {
+          "columns": [
+            "revoker_membership_id",
+            "institution_id"
+          ],
+          "parent": "institution_memberships",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b6_resource_grants_revoker_membership_id_institution_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b6_schema_version",
+      "keys": [
+        "version"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "t11b6_teaching_slots",
+      "keys": [
+        "responsible_id",
+        "co_id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "class_id",
+            "institution_id"
+          ],
+          "parent": "academic_classes",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b6_teaching_slots_class_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "co_id",
+            "institution_id"
+          ],
+          "parent": "t11b6_co_assignments",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b6_teaching_slots_co_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "membership_id",
+            "institution_id"
+          ],
+          "parent": "institution_memberships",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b6_teaching_slots_membership_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "responsible_id",
+            "institution_id"
+          ],
+          "parent": "teaching_assignments",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b6_teaching_slots_responsible_id_institution_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b6_usage",
+      "keys": [
+        "id"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "t11b7_attestations",
+      "keys": [
+        "id"
+      ],
+      "kind": "GLOBAL",
+      "reason": "GLOBAL_IDENTITY",
+      "relations": [
+        {
+          "columns": [
+            "proof_id"
+          ],
+          "parent": "t11b7_proofs",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b7_attestations_proof_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b7_claims",
+      "keys": [
+        "comparison_value"
+      ],
+      "kind": "GLOBAL",
+      "reason": "GLOBAL_IDENTITY",
+      "relations": [
+        {
+          "columns": [
+            "account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b7_claims_account_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b7_conflicts",
+      "keys": [
+        "id"
+      ],
+      "kind": "GLOBAL",
+      "reason": "GLOBAL_IDENTITY",
+      "relations": [
+        {
+          "columns": [
+            "identifier_id"
+          ],
+          "parent": "t11b7_identifiers",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b7_conflicts_identifier_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b7_events",
+      "keys": [
+        "id"
+      ],
+      "kind": "GLOBAL",
+      "reason": "GLOBAL_IDENTITY",
+      "relations": []
+    },
+    {
+      "source": "t11b7_identifiers",
+      "keys": [
+        "id"
+      ],
+      "kind": "GLOBAL",
+      "reason": "GLOBAL_IDENTITY",
+      "relations": [
+        {
+          "columns": [
+            "account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b7_identifiers_account_id_fkey"
+        },
+        {
+          "columns": [
+            "candidate_id"
+          ],
+          "parent": "t11b5_login_identifiers",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b7_identifiers_candidate_id_fkey"
+        },
+        {
+          "columns": [
+            "changed_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b7_identifiers_changed_by_fkey"
+        },
+        {
+          "columns": [
+            "proof_id",
+            "id"
+          ],
+          "parent": "t11b7_proofs",
+          "keys": [
+            "id",
+            "identifier_id"
+          ],
+          "constraint": "t11b7_identifiers_proof_id_id_fkey"
+        },
+        {
+          "columns": [
+            "recorded_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b7_identifiers_recorded_by_fkey"
+        },
+        {
+          "columns": [
+            "replaces_id"
+          ],
+          "parent": "t11b7_identifiers",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b7_identifiers_replaces_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b7_proofs",
+      "keys": [
+        "id"
+      ],
+      "kind": "GLOBAL",
+      "reason": "GLOBAL_IDENTITY",
+      "relations": [
+        {
+          "columns": [
+            "identifier_id",
+            "account_id"
+          ],
+          "parent": "t11b7_identifiers",
+          "keys": [
+            "id",
+            "account_id"
+          ],
+          "constraint": "t11b7_proofs_identifier_id_account_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b7_reviews",
+      "keys": [
+        "id"
+      ],
+      "kind": "GLOBAL",
+      "reason": "GLOBAL_IDENTITY",
+      "relations": [
+        {
+          "columns": [
+            "identifier_id"
+          ],
+          "parent": "t11b7_identifiers",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b7_reviews_identifier_id_fkey"
+        },
+        {
+          "columns": [
+            "reviewed_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b7_reviews_reviewed_by_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b7_schema_version",
+      "keys": [
+        "version"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "t11b7_usage",
+      "keys": [
+        "id"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "t11b8_budgets",
+      "keys": [
+        "resource_id",
+        "account_id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b8_budgets_account_id_fkey"
+        },
+        {
+          "columns": [
+            "resource_id"
+          ],
+          "parent": "t11b8_resources",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b8_budgets_resource_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b8_creations",
+      "keys": [
+        "operation_id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "author_account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b8_creations_author_account_id_fkey"
+        },
+        {
+          "columns": [
+            "author_membership_id",
+            "institution_id"
+          ],
+          "parent": "institution_memberships",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b8_creations_author_membership_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "institution_id"
+          ],
+          "parent": "institutions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b8_creations_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "resource_id"
+          ],
+          "parent": "t11b8_resources",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b8_creations_resource_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b8_deliveries",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "class_id",
+            "institution_id"
+          ],
+          "parent": "academic_classes",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b8_deliveries_class_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "revision_id",
+            "resource_id",
+            "institution_id"
+          ],
+          "parent": "t11b8_revisions",
+          "keys": [
+            "id",
+            "resource_id",
+            "institution_id"
+          ],
+          "constraint": "t11b8_deliveries_revision_id_resource_id_institution_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b8_events",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "resource_id"
+          ],
+          "parent": "t11b8_resources",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b8_events_resource_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b8_fixture_attempts",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "recipient_id",
+            "resource_id",
+            "institution_id",
+            "account_id"
+          ],
+          "parent": "t11b8_recipients",
+          "keys": [
+            "id",
+            "resource_id",
+            "institution_id",
+            "account_id"
+          ],
+          "constraint": "t11b8_fixture_attempts_recipient_id_resource_id_institutio_fkey"
+        },
+        {
+          "columns": [
+            "resource_id",
+            "account_id"
+          ],
+          "parent": "t11b8_budgets",
+          "keys": [
+            "resource_id",
+            "account_id"
+          ],
+          "constraint": "t11b8_fixture_attempts_resource_id_account_id_fkey"
+        },
+        {
+          "columns": [
+            "revision_id",
+            "resource_id",
+            "institution_id"
+          ],
+          "parent": "t11b8_revisions",
+          "keys": [
+            "id",
+            "resource_id",
+            "institution_id"
+          ],
+          "constraint": "t11b8_fixture_attempts_revision_id_resource_id_institution_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b8_operations",
+      "keys": [
+        "operation_id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "resource_id"
+          ],
+          "parent": "t11b8_resources",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b8_operations_resource_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b8_recipients",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b8_recipients_account_id_fkey"
+        },
+        {
+          "columns": [
+            "delivery_id",
+            "resource_id",
+            "institution_id"
+          ],
+          "parent": "t11b8_deliveries",
+          "keys": [
+            "id",
+            "resource_id",
+            "institution_id"
+          ],
+          "constraint": "t11b8_recipients_delivery_id_resource_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "enrollment_id",
+            "institution_id"
+          ],
+          "parent": "enrollments",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b8_recipients_enrollment_id_institution_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b8_resources",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "author_account_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b8_resources_author_account_id_fkey"
+        },
+        {
+          "columns": [
+            "author_membership_id",
+            "institution_id"
+          ],
+          "parent": "institution_memberships",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b8_resources_author_membership_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "concept_id"
+          ],
+          "parent": "concept_contents",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b8_resources_concept_id_fkey"
+        },
+        {
+          "columns": [
+            "evaluation_id"
+          ],
+          "parent": "evaluations",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b8_resources_evaluation_id_fkey"
+        },
+        {
+          "columns": [
+            "institution_id"
+          ],
+          "parent": "institutions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b8_resources_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "legacy_group_id"
+          ],
+          "parent": "t11b3_opportunity_groups",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b8_resources_legacy_group_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b8_revisions",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "base_concept_revision_id"
+          ],
+          "parent": "t11b3_concept_revisions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b8_revisions_base_concept_revision_id_fkey"
+        },
+        {
+          "columns": [
+            "base_evaluation_revision_id"
+          ],
+          "parent": "t11b3_evaluation_revisions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b8_revisions_base_evaluation_revision_id_fkey"
+        },
+        {
+          "columns": [
+            "parent_id",
+            "resource_id",
+            "institution_id"
+          ],
+          "parent": "t11b8_revisions",
+          "keys": [
+            "id",
+            "resource_id",
+            "institution_id"
+          ],
+          "constraint": "t11b8_revisions_parent_id_resource_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "resource_id",
+            "institution_id"
+          ],
+          "parent": "t11b8_resources",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "t11b8_revisions_resource_id_institution_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b8_schema_version",
+      "keys": [
+        "version"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "t11b9_commands",
+      "keys": [
+        "id"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "t11b9_contract",
+      "keys": [
+        "source_table"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "t11b9_control_usage",
+      "keys": [
+        "id"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "t11b9_counters",
+      "keys": [
+        "scope",
+        "owner_id",
+        "category"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "t11b9_deltas",
+      "keys": [
+        "id"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": [
+        {
+          "columns": [
+            "command_id"
+          ],
+          "parent": "t11b9_commands",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b9_deltas_command_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b9_items",
+      "keys": [
+        "source_table",
+        "source_pk"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": [
+        {
+          "columns": [
+            "command_id"
+          ],
+          "parent": "t11b9_commands",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b9_items_command_id_fkey"
+        },
+        {
+          "columns": [
+            "scope",
+            "owner_id",
+            "category"
+          ],
+          "parent": "t11b9_counters",
+          "keys": [
+            "scope",
+            "owner_id",
+            "category"
+          ],
+          "constraint": "t11b9_items_scope_owner_id_category_fkey"
+        },
+        {
+          "columns": [
+            "source_table"
+          ],
+          "parent": "t11b9_contract",
+          "keys": [
+            "source_table"
+          ],
+          "constraint": "t11b9_items_source_table_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b9_limits",
+      "keys": [
+        "institution_id",
+        "category"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": [
+        {
+          "columns": [
+            "institution_id"
+          ],
+          "parent": "institutions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "t11b9_limits_institution_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "t11b9_schema_version",
+      "keys": [
+        "version"
+      ],
+      "kind": "CONTROL",
+      "reason": "TECHNICAL_CONTROL",
+      "relations": []
+    },
+    {
+      "source": "teacher_profiles",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "user_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fkq0xc0xjidx2wr2mq0b8hwfdtd"
+        }
+      ]
+    },
+    {
+      "source": "teaching_assignment_events",
+      "keys": [
+        "id"
+      ],
+      "kind": "INSTITUTION",
+      "reason": "EXPLICIT_INSTITUTION",
+      "relations": [
+        {
+          "columns": [
+            "changed_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "teaching_assignment_events_changed_by_fkey"
+        },
+        {
+          "columns": [
+            "entity_id",
+            "institution_id"
+          ],
+          "parent": "teaching_assignments",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "teaching_assignment_events_entity_id_institution_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "teaching_assignments",
+      "keys": [
+        "id"
+      ],
+      "kind": "INSTITUTION",
+      "reason": "EXPLICIT_INSTITUTION",
+      "relations": [
+        {
+          "columns": [
+            "changed_by"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "teaching_assignments_changed_by_fkey"
+        },
+        {
+          "columns": [
+            "class_id",
+            "institution_id"
+          ],
+          "parent": "academic_classes",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "teaching_assignments_class_id_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "institution_id"
+          ],
+          "parent": "institutions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "teaching_assignments_institution_id_fkey"
+        },
+        {
+          "columns": [
+            "membership_id",
+            "institution_id"
+          ],
+          "parent": "institution_memberships",
+          "keys": [
+            "id",
+            "institution_id"
+          ],
+          "constraint": "teaching_assignments_membership_id_institution_id_fkey"
+        }
+      ]
+    },
+    {
+      "source": "technical_retention_state",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": []
+    },
+    {
+      "source": "usage_events",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "user_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "P05_LOGICAL_ACTOR_V1",
+          "logical": true
+        }
+      ],
+      "typedRelations": {
+        "typeColumn": "resource_type",
+        "idColumn": "resource_id",
+        "targets": {
+          "WhiteboardSession": "whiteboard_sessions",
+          "WHITEBOARD_SESSION": "whiteboard_sessions",
+          "WHITEBOARD": "whiteboard_sessions",
+          "Evaluation": "evaluations",
+          "EVALUATION": "evaluations",
+          "ConceptContent": "concept_contents",
+          "CONCEPT": "concept_contents"
+        }
+      }
+    },
+    {
+      "source": "user_accounts",
+      "keys": [
+        "id"
+      ],
+      "kind": "GLOBAL",
+      "reason": "GLOBAL_IDENTITY",
+      "relations": []
+    },
+    {
+      "source": "whiteboard_object_ownership",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "board_id"
+          ],
+          "parent": "whiteboard_sessions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fkbjy8qt3nmw0coxy8hktlotinc"
+        },
+        {
+          "columns": [
+            "owner_user_id"
+          ],
+          "parent": "user_accounts",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fkq23kdntrhitju99xhlxi10cto"
+        }
+      ]
+    },
+    {
+      "source": "whiteboard_participants",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "session_id"
+          ],
+          "parent": "whiteboard_sessions",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fkof696ndvrlvfhmxe4d2dkmt4g"
+        },
+        {
+          "columns": [
+            "student_id"
+          ],
+          "parent": "student_profiles",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fkt58r1cy1fgs0aw1x0d99he2w3"
+        }
+      ]
+    },
+    {
+      "source": "whiteboard_sessions",
+      "keys": [
+        "id"
+      ],
+      "kind": "MIXED",
+      "reason": "MAP_REQUIRED",
+      "relations": [
+        {
+          "columns": [
+            "teacher_id"
+          ],
+          "parent": "teacher_profiles",
+          "keys": [
+            "id"
+          ],
+          "constraint": "fk2525d73x14qvq1pswjgbjohdw"
+        }
+      ]
+    },
+    {
+      "source": "legacy_groups",
+      "keys": [
+        "grade",
+        "section"
+      ],
+      "kind": "MIXED",
+      "reason": "LABELS_WITHOUT_PERIOD_OR_INSTITUTION",
+      "relations": []
+    }
+  ],
+  "excluded": [
+    {
+      "source": "t11b10_catalog",
+      "reason": "P05_CONTROL_SELF_REFERENCE; measured directly, never a domain resolution"
+    },
+    {
+      "source": "t11b10_runs",
+      "reason": "P05_CONTROL_SELF_REFERENCE; measured directly, never a domain resolution"
+    },
+    {
+      "source": "t11b10_inventory",
+      "reason": "P05_CONTROL_SELF_REFERENCE; measured directly, never a domain resolution"
+    },
+    {
+      "source": "t11b10_commands",
+      "reason": "P05_CONTROL_SELF_REFERENCE; measured directly, never a domain resolution"
+    },
+    {
+      "source": "t11b10_proposals",
+      "reason": "P05_CONTROL_SELF_REFERENCE; measured directly, never a domain resolution"
+    },
+    {
+      "source": "t11b10_approvals",
+      "reason": "P05_CONTROL_SELF_REFERENCE; measured directly, never a domain resolution"
+    },
+    {
+      "source": "t11b10_events",
+      "reason": "P05_CONTROL_SELF_REFERENCE; measured directly, never a domain resolution"
+    },
+    {
+      "source": "t11b10_versions",
+      "reason": "P05_CONTROL_SELF_REFERENCE; measured directly, never a domain resolution"
+    },
+    {
+      "source": "t11b10_measurements",
+      "reason": "P05_CONTROL_SELF_REFERENCE; measured directly, never a domain resolution"
+    },
+    {
+      "source": "t11b10_usage",
+      "reason": "P05_CONTROL_SELF_REFERENCE; measured directly, never a domain resolution"
+    },
+    {
+      "source": "t11b10_schema_version",
+      "reason": "P05_CONTROL_SELF_REFERENCE; measured directly, never a domain resolution"
+    }
+  ]
+}

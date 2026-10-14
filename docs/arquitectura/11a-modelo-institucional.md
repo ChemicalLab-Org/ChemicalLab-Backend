@@ -358,7 +358,7 @@ F02, F03 y F04 fueron confirmadas por el usuario en la revisión T11-A. F05 fue 
 | Acceso global P02 | **Confirmado B7, independiente de F05:** username o correo verificado y único; correo opcional; username anterior reservado a la misma cuenta; correo reutilizable solo tras revocación/nueva prueba/revisión; igualdad exacta | Historia académica, sesiones y evidencia siguen en accountId original. Persistencia B7; reglas efectivas con resolver T12 y flujos externos T14. No normalización Unicode/case fold ni reset global por rol escolar |
 | F06 | Recuperación para menores sin correo y poderes de reset escolar | Ayuda del colegio inicia recuperación central verificada; no entrega credential global ni reset multiinstitucional unilateral. T14 define pruebas/recuperación y MFA administrativa; registro público de alumnos permanece apagado |
 | F07 | Clase, períodos, padrón, incorporaciones y traslados con intento abierto | Clase por curso/período; nuevas matrículas no acceden retroactivamente a todo el historial; alta a entrega explícita. Traslado deja intento en origen, se resuelve/finaliza bajo reglas originales sin reset de límite ni copia de nota |
-| F08 | Identificación de legacy y responsables de reconciliación | Mapa por origen aprobado; sin asignación por inferencia. Si falta período/asistencia, mantener incertidumbre registrada y denegar nueva publicación hasta resolver |
+| F08 | **Confirmada en P05/B10:** mapas institucionales y correcciones requieren administrador de plataforma y administrador de la institución destino; dos cuentas distintas, procedencia y evidencia registradas | Misma fuente/PK/versión/fotografía/mapa en ambas aprobaciones, revalidación de permisos y frescura; ninguna aprobación suple a la otra o evidencia ausente. No identifica colegios/responsables reales. Solo fixtures en B10; mapas/datos reales fuera del repositorio y operación P08 pendiente |
 | F09 | **Confirmada en B8, solo evaluaciones realmente nuevas:** evaluación lógica + cuenta | Un presupuesto compartido entre todas sus clases, entregas y revisiones. Cambiar clase/docente/matrícula/revisión no devuelve intentos; raíz distinta solo por creación académica explícita. Copia técnica/conciliación/versionado conservan raíz. Legacy mantiene obligatoriamente A13–A17 y T05, sin snapshot como saldo vivo ni segunda autoridad. [P03 persistente B8](11b8-revisiones-academicas.md); adopción/autorización T12 |
 
 ### 7.1 Criterios verificables de T11-B
@@ -391,7 +391,7 @@ T12 exige probar en ambos sentidos A→B y B→A: cuentas sin membresía, membre
 
 T13 exige sustitución durante actividad, baja de docente/alumno, traslado con intento abierto, readmisión y acceso propio histórico: nuevo responsable tiene solo sus clases, saliente pierde facultades actuales, autor sigue intacto, ninguna nota/captura cruza colegio y las ventanas/cierres T05 siguen válidos. F03 exige que con membresía ENDED y sesión global válida el alumno lea resultados individuales anteriores permitidos por T05; clases activas, compañeros y capturas compartidas indiscriminadas se rechazan; salir no revela corrección bloqueada. T14 exige aceptación concurrente única, expiración/revocación/cupo, cuenta existente conservada, recuperación y roles no escalables. Ningún gate se da por cumplido en T11-A.
 
-### 7.3 Matriz vigente de preparación, actualizada por T11-B9 / P04 (14 de octubre de 2026)
+### 7.3 Matriz vigente de preparación, actualizada por T11-B10 / P05 (14 de octubre de 2026)
 
 Esta matriz conserva F05 confirmada y la evidencia de preparación B1–B5,
 atribuida a sus SHA en las notas originales. La revisión documental
@@ -401,7 +401,7 @@ faltantes del modelo completo; no reemplaza criterios de §7.1 ni declara cumpli
 gates T12/T13/operación. T11-B y etapa 3 siguen abiertos: P01–P06 de T11-C
 requerían preparación persistente/ensayo antes de T12. P01 queda implementado en
 [T11-B6](11b6-docencia-delegaciones.md); P02 queda implementado como persistencia en
-[T11-B7](11b7-identificadores-acceso.md). P03 persistente implementado en [T11-B8](11b8-revisiones-academicas.md); P04 persistente implementado en [T11-B9](11b9-cuotas-institucionales.md); P05/P06 permanecen abiertos. No son autorización externa.
+[T11-B7](11b7-identificadores-acceso.md). P03 persistente implementado en [T11-B8](11b8-revisiones-academicas.md); P04 persistente implementado en [T11-B9](11b9-cuotas-institucionales.md); P05 persistente implementado en [T11-B10](11b10-conciliacion-contextos.md); P06 permanece abierto. No son autorización externa.
 
 | Criterio | Preparación del modelo / ensayo | T12/T13 y operación pendientes |
 | --- | --- | --- |
@@ -412,11 +412,11 @@ requerían preparación persistente/ensayo antes de T12. P01 queda implementado 
 | A05 evidencia | Cumplido para fuentes cubiertas y restauración ficticia B5; referencias/historia original intactas | Exhaustividad/inventario real, históricos desconocidos y certificación operativa pendientes |
 | A06 reemplazo | Parte persistente demostrada B2/B6: responsable sustituido conservando co-docentes independientes, classId, matrículas, cuentas, autoría/evidencia y rollback conjunto | Permisos reales del saliente/reemplazo T12/T13 pendientes |
 | A07 traslado/simultaneidad | Parcial: cuentas/membresías A/B y reservas por institución independientes; sin mover hechos previos | Traslado con intento abierto, continuidad/revocación y acceso individual F03 son T13 bajo T05 |
-| A08 mapa/ambigüedad | Parcial: mapas explícitos de fixture y conflictos conservados; firma de un dump no demuestra conciliación de cada PK | Inventario ficticio exhaustivo y corrección aditiva P05 en T11-B; F08 responsables/mapas reales y resolución operativa pendientes |
+| A08 mapa/ambigüedad | P05 persistente implementado en [B10](11b10-conciliacion-contextos.md): catálogo versionado de 113 fuentes, contraste independiente por PK, perfiles/grupos sin recursos, incertidumbre/conflicto con motivo, dos aprobadores F08 distintos, versiones aditivas de agregado y proyección sin fallback; casos B3/B4, cuotas/historia y T08 conservados. Evidencia/SHA en B10 | F08 reales/P08 e inventario escolar autorizado pendientes. Contexto preparado no concede acceso; adopción/autorización T12 y recuperación P06 permanecen abiertas |
 | A09 repetición/recuperación | Parcial: cadena, mismo ID/reintentos, rollback programático y dump/restore de manifiesto estático demostrados | Lotes/checkpoint durable, caída/commit desconocido y conservación de escrituras posteriores del ensayo P06 en T11-B; ventana/capacidad/RPO/RTO reales en operación |
-| A10 cuotas/auditoría | Preparación persistente P04 implementada en [B9](11b9-cuotas-institucionales.md): contrato de fuentes/PK/bytes versionado, contadores y límites de ensayo por institución, histórico íntegro/exceso, deltas derivados y conciliación sin reparación, atomicidad T07-B/T08; copias reales y dimensiones ACCOUNT/SYSTEM conservadas | A10 operacional sigue parcial: escritores legacy hacen visible STALE; adopción/corte T12; capacidad física/WAL/máximos/retención/SEC-13 y permisos reales pendientes. P05/P06 no iniciados |
+| A10 cuotas/auditoría | Preparación persistente P04 implementada en [B9](11b9-cuotas-institucionales.md): contrato de fuentes/PK/bytes versionado, contadores y límites de ensayo por institución, histórico íntegro/exceso, deltas derivados y conciliación sin reparación, atomicidad T07-B/T08; copias reales y dimensiones ACCOUNT/SYSTEM conservadas | A10 operacional sigue parcial: escritores legacy hacen visible STALE; adopción/corte T12; capacidad física/WAL/máximos/retención/SEC-13 y permisos reales pendientes. P05 implementado en B10; P06 no iniciado |
 | A11 compatibilidad cerrada | Parcial: no endpoints/paneles/registro ni nuevas autoridades; login T02/T04 conservado | Ambigüedad y ámbito único de clientes legacy requieren gate integral T12; no activación multiinstitucional |
-| A12 regresión/revisión | Parcial: B1–B6 conservados; suite/empaquetado, carrera y restore P02 atribuidos al SHA probado en la nota B7 | P05/P06 y revisión agregada pendientes; P03/P04 verificados según SHA en B8/B9; Linux/JDK17/PostgreSQL Linux, nueva SCA y VER-01/operación pendientes |
+| A12 regresión/revisión | Parcial: B1–B6 conservados; suite/empaquetado, carrera y restore P02 atribuidos al SHA probado en la nota B7 | P05 verificado según SHA en B10; P06 y revisión agregada pendientes; P03/P04 verificados según SHA en B8/B9; Linux/JDK17/PostgreSQL Linux, nueva SCA y VER-01/operación pendientes |
 | A13 máximo agotado | Demostrado acotado en ensayo B3 con writer legacy; regresión conserva T05, sin nueva raíz por B5 | Corte de writers y admisión/exposición institucional T12 pendientes |
 | A14 entregas/raíz/carrera | Demostrado acotado en ensayo B3, presupuesto/cierre original y última oportunidad legacy conservados; deriva invalida snapshot | P03 persistente B8: revisión distinta/publicación/entrega exacta y F09 evaluación lógica/cuenta ensayados; sincronización/corte T12 pendientes |
 | A15 activo previo | Demostrado acotado en ensayo B3; B5 conserva intento/consumo; no certifica todos los flujos de finalización/baja | Continuidad/baja T13 y resolución real F08 pendientes |
@@ -427,7 +427,7 @@ P02 queda implementado como preparación persistente B7: PREPARED/ACTIVE/RESERVE
 REVOKED, evidencia vinculada a operación/versión, revisión explícita e historia.
 Username anterior reservado a su cuenta; correo sin reserva perpetua, reutilizable
 solo tras revocación, nueva verificación y revisión. Las reglas nuevas serán efectivas
-al adoptarlas en T12; flujos externos T14. P01 permanece preparado en B6; P03 preparado en B8; P05/P06,
+al adoptarlas en T12; flujos externos T14. P01 permanece preparado en B6; P03 preparado en B8; P05 preparado en B10; P06,
 decisiones dependientes y demás pendientes se conservan en T11-C §4–7.
 P03 cierra exclusivamente su alcance persistente: payload diferente, publicación atómica/inmutable, destinatarios con historia, raíz F09 compartida y conservación legacy; evidencia/SHA en B8. B8 es el certificador sucesor; los diez SQL históricos quedan intactos. La etapa 3 y T11-B permanecen abiertos.
 Actualización P04/B9: contadores y límites institucionales de ensayo, medición
@@ -436,6 +436,12 @@ T07-B/T08 implementados; evidencia/SHA en [B9](11b9-cuotas-institucionales.md).
 B9 sucede a B8 conservando los once SQL históricos. P05/P06 y etapa 3 siguen
 abiertos; no contador vivo autoritativo, adopción T12 o capacidad productiva.
 SEC-13 y VER-01 siguen abiertos. La operación no está certificada.
+
+
+Actualización P05/B10: inventario y corrección aditiva preparados, F08 con doble
+aprobación distinta y evidencia de fixtures; B10 certificador sucesor conserva
+los doce SQL históricos y ledgers. Las menciones B9 anteriores son históricas.
+P06 y etapa 3 siguen abiertos; no se inicia T12 ni se adoptan datos reales.
 
 ## 8. Garantías y pendientes que permanecen abiertos
 
