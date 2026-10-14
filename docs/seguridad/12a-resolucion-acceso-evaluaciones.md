@@ -149,5 +149,60 @@ aislamiento integral, SEC-13, VER-01, Linux/SCA ni las puertas T13–T17. No des
 DDL/backfill real, datos escolares, rotaciones, activación multiinstitucional o merge.
 Entrega mediante commits y PR backend en borrador hacia develop, detenida para revisión.
 
-La evidencia exacta de selecciones, suite completa y empaquetado se incorpora tras
-su ejecución; no se suman selecciones ni se atribuyen ensayos a un SHA posterior.
+## Evidencia definitiva y atribución
+
+**SHA ejecutado en la suite completa:** `128915d5b7c806342f1c1586006b0d668bd28aaf`.
+`clean package` offline: **66 suites, 904 pruebas, cero fallos,
+errores u omisiones; BUILD SUCCESS y JAR generado**. Los **22 casos T12-A**
+están incluidos en ese total, junto con las 882 regresiones preexistentes recién
+ejecutadas. No se suman selecciones. El commit documental posterior no modifica
+fuentes, SQL, pruebas ni POM respecto de ese SHA.
+Finalizó el 14 de octubre de 2026 a las **18:04:21 America/Lima**, en 43 min 46 s.
+
+Entorno: Windows, JDK 17.0.12, Maven 3.9.15 offline, PostgreSQL 18.4 desechable
+propio en `127.0.0.1:55442`, DB `chemicallab_t01_test`, rol `t12a_fixture`,
+perfil test, locale C, 300 conexiones. Timestamps nuevos UTC y política legacy
+America/Lima. No certifica Linux, SCA, permisos productivos o capacidad real.
+
+| Ejecución independiente | Fuente y resultado pruebas/fallos/errores/omitidas |
+| --- | --- |
+| selection-1, diagnóstico inicial | Worktree sin commit sobre 0e91c8b; 1/0/0/0. No se atribuye ese código a la base ni al SHA final |
+| selection-2, diagnóstico conservado | Fuentes equivalentes al commit `90ce4dccefce0fbc396fc7a31c8b4595566af2a2`, compiladas en worktree antes de crearlo; 15/0/2/0. Errores de prueba: mensaje con solicitud null y serializador sin soporte Instant |
+| selection-3 | `4334aa4edc7f032b5d403f253de837622cbbee4d`; 10/0/2/0. Dos fixtures rechazados por guardas B10/B8: intento con destinatario incierto y cierre AVAILABLE con ventanas abiertas |
+| selection-4 | `128915d5b7c806342f1c1586006b0d668bd28aaf`; 3/0/0/0. Fixtures coherentes y exposición T05 directa verificados |
+| full-package, definitiva | `128915d5b7c806342f1c1586006b0d668bd28aaf`; 904/0/0/0. Suite completa y empaquetado, sin filtros de tests |
+
+Los fallos se conservan como tales en archivos separados; los ajustes de los
+fixtures no deshabilitan triggers, cambian SQL ni amplían permisos. El intento de
+inicialización PostgreSQL dentro del sandbox se interrumpió; se inicializó un
+cluster propio distinto con ejecución autorizada. No fue una ejecución JUnit.
+
+JAR SHA-256:
+`d07fbf4fed98602a6ba54ac01ab6de7dd617b39a98c3cf0eb8a75eec05d91cc2`.
+Los **14 SQL históricos** empaquetados coinciden con las fuentes, normalizando
+únicamente CRLF/LF. ZIP de XML definitivos SHA-256:
+`3656ccd71a1f0635b9d3e61f375fe2891c6ab541f22385824c4f1964350a608c`.
+
+Evidencia local fuera de la PR: `.codex-work/t12a-evidence/`, con logs/exit/SHA y
+XML de cada selección, `full-package.log`, `verified-results.json`,
+`verified-suites.json`, `verified-reports.zip`, `verified-backend.jar`,
+`before.json` y `preservation.json`. No se mezcla target de selecciones con el
+resultado completo: `clean` elimina los reports anteriores antes de esa ejecución.
+
+Conservación: **183 archivos previos sin diferencias**, incluidos documentos
+del workspace/backend y SQL; **16 E2E** intactos. Los HEAD de los otros
+**25 checkouts** permanecen iguales. Backend principal limpio en develop;
+frontend conserva `e88589635a8269c50ee0f53fccf157f0d0985034` y su `?? e2e-selenium/` previo.
+La auditoría original permanece en
+`1eff5d59f7a114dfee91cb557a0405c2f7247e43cd2926d2542172c0255e499b`.
+El diff agrega este documento, servicio y pruebas; solo extrae la regla T05 común
+en EvaluationAccessPolicy/EvaluationService. No hay llamadas del servicio nuevo
+desde ningún otro archivo main.
+
+Reproducción con JDK 17, Maven 3.9.15 y un PostgreSQL desechable propio preparado
+como en B1, en el puerto/rol de ensayo anteriores:
+
+```powershell
+# Selección: agregar '-Dtest=EvaluationDeliveryAccessDbTest' y sustituir clean package por test.
+./mvnw.cmd -o '-Dspring.profiles.active=test' '-Dspring.datasource.url=jdbc:postgresql://127.0.0.1:55442/chemicallab_t01_test' '-Dspring.datasource.username=t12a_fixture' '-Dspring.datasource.password=fictitious' clean package
+```
