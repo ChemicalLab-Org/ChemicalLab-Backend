@@ -41,7 +41,7 @@ class TransitionBatchDbTest {
     }
     @Test void pauseResumeAndReplayPreserveAggregatesAndAtomicCommittedCheckpoints() throws Exception {
         long p=approved();long board=b.proposal("whiteboard_sessions",f.board,b.r.foreign,b.r.foreignClass);b.approvals(board);
-        var original=b.b.b8.previous.previous.signatures("evaluations","evaluation_assignments","evaluation_attempts","whiteboard_sessions","whiteboard_objects","t11b9_items","t11b9_counters");
+        var original=b.b.b8.previous.previous.signatures("evaluations","evaluation_assignments","evaluation_attempts","whiteboard_sessions","whiteboard_object_ownership","t11b9_items","t11b9_counters");
         create(board,p);
         assertThat(step(1,1).get("status").asText()).isEqualTo("APPLIED");
         service.pause(plan,1,op());var before=state();
@@ -132,6 +132,9 @@ class TransitionBatchDbTest {
             assertThat(count("select count(*) from system_logs where correlation_id=?",unit(1))).isEqualTo(1);
             evidence("race",Map.of("pids",List.of(a.process().pid(),c.process().pid()),"result",Files.readString(a.result()),"checkpoints",1,"successes",1));
         } finally {a.process().destroyForcibly();c.process().destroyForcibly();}
+    }
+    @Test void physicalBackupAndWalRecoverConfirmedLaterWritesAndRetryWithoutDuplication() throws Exception {
+        create(approved());new TransitionWalRecoveryFixture(this).exercise();
     }
     Connection connection() throws Exception {return DriverManager.getConnection(f.setting("spring.datasource.url")+"?currentSchema="+f.schema,f.setting("spring.datasource.username"),f.setting("spring.datasource.password"));}
     record Child(Process process,Path ready,Path go,Path result,Path log){}

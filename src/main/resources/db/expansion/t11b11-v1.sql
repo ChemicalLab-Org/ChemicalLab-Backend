@@ -2442,7 +2442,7 @@ BEGIN
     IF total IS NULL OR total NOT BETWEEN 1 AND 100 OR total<>(SELECT count(DISTINCT x) FROM jsonb_array_elements(NEW.request->'proposals') x) THEN
      RAISE EXCEPTION 'T11-B11 distinct bounded proposals required';END IF;
     spec:=jsonb_build_object('version','P06_PLAN_V1','plan',plan_id,'limits',cfg,'proposals',
-     (SELECT jsonb_agg(p.id ORDER BY p.root::text,p.version,p.id) FROM t11b10_proposals p WHERE p.id IN(SELECT x::text::bigint FROM jsonb_array_elements(NEW.request->'proposals') x)));
+     (SELECT jsonb_agg(candidate.id ORDER BY candidate.root::text,candidate.version,candidate.id) FROM t11b10_proposals candidate WHERE candidate.id IN(SELECT x::text::bigint FROM jsonb_array_elements(NEW.request->'proposals') x)));
     IF jsonb_array_length(spec->'proposals') IS DISTINCT FROM total THEN RAISE EXCEPTION 'T11-B11 proposal absent';END IF;
     INSERT INTO @ctl@.plans VALUES(plan_id,'P06_PLAN_V1',spec,md5(spec::text),cfg,'RUNNING',1,1,total);
     FOR p IN SELECT * FROM t11b10_proposals WHERE id IN(SELECT x::text::bigint FROM jsonb_array_elements(spec->'proposals') x) ORDER BY root::text,version,id LOOP
