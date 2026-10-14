@@ -110,7 +110,9 @@ supervisión, revisión ni calificación de intentos.
 
 Se comparte `EvaluationAccessPolicy.reviewAvailable` con el cálculo existente de
 `EvaluationService`: misma política de cierre global, sin cambiar el motor ni
-conectar el nuevo servicio. LEGACY cuenta **todas las asignaciones actuales**, no
+conectar el nuevo servicio. La exposición individual legacy llama también a
+`EvaluationAccessPolicy.exposeCorrection` con metadatos, sin leer respuestas.
+LEGACY cuenta **todas las asignaciones actuales**, no
 solo las mapeadas a la entrega consultada: futuras/vacías/sin dueAt bloquean;
 archivo/desactivación explícitos y vencimiento global conservan T05. Solo GRADED
 y nota cerrada pueden exponer corrección propia y nunca antes de startAt.

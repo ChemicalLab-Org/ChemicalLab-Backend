@@ -125,7 +125,7 @@ public class EvaluationDeliveryAccessService {
             case SUPERVISE -> admin || teacher;
             case REVIEW_ATTEMPT -> teacher && principal.userId() != q.recipientAccountId() && attempt.terminal();
             case GRADE_ATTEMPT -> teacher && principal.userId() != q.recipientAccountId() && attempt.terminal() && !attempt.closed();
-            case READ_CORRECTION -> own && delivery.started() && attempt.graded() && attempt.closed() && delivery.correctionAvailable();
+            case READ_CORRECTION -> own && attempt.correctionVisible();
         };
         require(permitted);
         Projection projection = switch (q.action()) {
@@ -257,17 +257,21 @@ public class EvaluationDeliveryAccessService {
                 null, resource, started, available, closed);
     }
 
-    private record Attempt(boolean terminal, boolean graded, boolean closed) {}
+    private record Attempt(boolean terminal, boolean closed, boolean correctionVisible) {}
     private Attempt legacyAttempt(Request q, Delivery delivery) {
         var rows = jdbc.queryForList("""
-            select a.status,a.grade_closed from evaluation_attempts a join student_profiles p on p.id=a.student_id
+            select a.status,a.grade_closed,s.start_at from evaluation_attempts a join student_profiles p on p.id=a.student_id
+              join evaluation_assignments s on s.id=a.assignment_id
             where a.id=? and a.evaluation_id=? and a.assignment_id=? and p.user_id=?
             """, q.attemptId(), q.evaluationId(), delivery.assignmentId(), q.recipientAccountId());
         require(rows.size() == 1);
         var row = rows.get(0);
         String status = (String) row.get("status");
         require(Set.of("IN_PROGRESS", "SUBMITTED", "GRADED", "PENDING_MANUAL_REVIEW").contains(status));
-        return new Attempt(!"IN_PROGRESS".equals(status), "GRADED".equals(status), Boolean.TRUE.equals(row.get("grade_closed")));
+        boolean closed = Boolean.TRUE.equals(row.get("grade_closed"));
+        var assignment = EvaluationAssignment.builder().startAt(row.get("start_at") == null ? null : ((Timestamp) row.get("start_at")).toLocalDateTime()).build();
+        var metadata = EvaluationAttempt.builder().status(AttemptStatus.valueOf(status)).gradeClosed(closed).assignment(assignment).build();
+        return new Attempt(!"IN_PROGRESS".equals(status), closed, policy().exposeCorrection(metadata, delivery.correctionAvailable()));
     }
     private Attempt academicAttempt(Request q, Delivery delivery) {
         var rows = jdbc.queryForList("""
@@ -276,7 +280,9 @@ public class EvaluationDeliveryAccessService {
             """, q.attemptId(), delivery.resourceId(), delivery.recipientId(), q.revisionId(), q.recipientAccountId());
         require(rows.size() == 1);
         var row = rows.get(0);
-        return new Attempt("FINAL".equals(row.get("status")), "FINAL".equals(row.get("status")), Boolean.TRUE.equals(row.get("grade_closed")));
+        boolean terminal = "FINAL".equals(row.get("status"));
+        boolean closed = Boolean.TRUE.equals(row.get("grade_closed"));
+        return new Attempt(terminal, closed, terminal && closed && delivery.started() && delivery.correctionAvailable());
     }
 
     private EvaluationAccessPolicy policy() {

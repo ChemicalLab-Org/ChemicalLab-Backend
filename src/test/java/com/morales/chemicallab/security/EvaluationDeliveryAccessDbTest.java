@@ -71,7 +71,8 @@ class EvaluationDeliveryAccessDbTest {
             if(row.path("source").asText().equals("t11b8_fixture_attempts")) {
                 row.put("enrollmentId",episode);row.put("sourceTimezone","America/Lima");
             }
-            if(uncertain!=null&&(uncertainSource==null||row.path("source").asText().equals(uncertainSource))){row.remove(List.of("institutionId","classId","accountId","enrollmentId","sourceTimezone"));row.put("scope",uncertain);}
+            boolean uncertainChild="t11b8_recipients".equals(uncertainSource)&&row.path("source").asText().equals("t11b8_fixture_attempts");
+            if(uncertain!=null&&(uncertainSource==null||row.path("source").asText().equals(uncertainSource)||uncertainChild)){row.remove(List.of("institutionId","classId","accountId","enrollmentId","sourceTimezone"));row.put("scope",uncertain);}
         }
         long proposal=c.service.propose(c.root("evaluations",q.evaluationId()),parsed.toString(),"FIXTURE-ACCESS",op());
         c.approve(proposal,"PLATFORM",c.platform,c.platformGrant);
@@ -247,7 +248,7 @@ class EvaluationDeliveryAccessDbTest {
         assertThat(allow(admin,content).context().projection()).isEqualTo(Projection.SUPERVISION_METADATA);
         long rec=count("select id from t11b8_recipients where delivery_id=? and account_id=?",aDelivery,f.student.getId());
         long active=revisions.reserveFixtureAttempt(rec,op());
-        revisions.resourceState(aResource,count("select version from t11b8_resources where id=?",aResource),"AVAILABLE",true,false,op());
+        revisions.resourceState(aResource,count("select version from t11b8_resources where id=?",aResource),"WITHDRAWN",true,false,op());
         resolve(content);deny(pupil,content);deny(pupil,request(false,Action.READ_CORRECTION));
         revisions.finishFixtureAttempt(active,1,"{}",18,op());resolve(content);allow(pupil,request(false,Action.READ_CORRECTION));
     }
