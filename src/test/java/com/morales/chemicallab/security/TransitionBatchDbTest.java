@@ -48,6 +48,13 @@ class TransitionBatchDbTest {
         assertThatThrownBy(()->step(2,1)).hasMessageContaining("obsolete worker");assertThat(state()).isEqualTo(before);
         assertThatThrownBy(()->step(2,2)).hasMessageContaining("paused");assertThat(state()).isEqualTo(before);
         service.resume(plan,2,op());
+        var resumed=worker("race",2,3);
+        try {
+            await(resumed.ready());Files.writeString(resumed.go(),"go");
+            assertThat(resumed.process().waitFor(60,TimeUnit.SECONDS)).isTrue();assertThat(resumed.process().exitValue()).as(Files.readString(resumed.log())).isZero();
+            assertThat(resumed.process().pid()).isNotEqualTo(ProcessHandle.current().pid());
+            evidence("pause-resume",Map.of("resumingPid",resumed.process().pid(),"initialPid",ProcessHandle.current().pid(),"result",f.json.readTree(Files.readString(resumed.result()))));
+        } finally {resumed.process().destroyForcibly();}
         assertThat(step(2,3).get("state").asText()).isEqualTo("COMPLETED");
         var completed=state();assertThat(step(2,3).get("status").asText()).isEqualTo("APPLIED");assertThat(state()).isEqualTo(completed);
         assertThat(count("select count(*) from "+ctl+".checkpoints")).isEqualTo(2);
