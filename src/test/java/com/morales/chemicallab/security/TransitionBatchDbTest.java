@@ -65,7 +65,7 @@ class TransitionBatchDbTest {
     }
     @Test void revokedF08PrivilegeCannotBeReusedAfterResume() throws Exception {
         long p=approved();create(p);service.pause(plan,1,op());
-        f.sql().update("update membership_role_grants set status='REVOKED',valid_until=statement_timestamp(),changed_at=statement_timestamp() where id=?",b.schoolGrant);
+        b.r.institutions.revokeRole(b.schoolGrant,java.time.Instant.now());
         service.resume(plan,2,op());assertThat(step(1,3).get("status").asText()).isEqualTo("STALE");
         assertThat(count("select count(*) from t11b10_approvals where proposal_id=?",p)).isEqualTo(2);
     }

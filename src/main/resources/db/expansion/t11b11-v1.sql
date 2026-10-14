@@ -2435,6 +2435,9 @@ BEGIN
   DECLARE plan @ctl@.plans%ROWTYPE;unit @ctl@.units%ROWTYPE;p record;proof jsonb;spec jsonb;cfg jsonb;
    plan_id uuid:=(NEW.request->>'plan')::uuid;ord integer:=0;total integer;status text;b10 bigint;measurement bigint;versions text;
   BEGIN
+   PERFORM t11p05_lock();
+   PERFORM set_config('synchronous_commit','on',true);
+   LOCK TABLE @ctl@.plans,@ctl@.units,@ctl@.commands,@ctl@.checkpoints IN SHARE ROW EXCLUSIVE MODE;
    NEW.xid:=pg_current_xact_id()::text;
    IF NEW.action='CREATE' THEN
     cfg:=NEW.request->'limits';PERFORM t11p06_envelope(cfg);
@@ -2485,6 +2488,16 @@ BEGIN
    PERFORM t11p05_quota_check();RETURN NEW;
   END $fn$ $ddl$,'@ctl@',quote_ident(ctl));
 
+  EXECUTE replace($ddl$ CREATE FUNCTION t11p06_after() RETURNS trigger LANGUAGE plpgsql AS $fn$
+  DECLARE cfg jsonb;
+  BEGIN
+   SELECT limits INTO STRICT cfg FROM @ctl@.plans WHERE id=(NEW.request->>'plan')::uuid;
+   PERFORM t11p06_envelope(cfg);
+   IF EXISTS(SELECT 1 FROM t11p06_control_usage() WHERE rows_used>100000 OR bytes_used>33554432) THEN
+    RAISE EXCEPTION 'T11-B11 CONTROL quota exceeded' USING ERRCODE='P7501';END IF;
+   RETURN NEW;
+  END $fn$ $ddl$,'@ctl@',quote_ident(ctl));
+
   EXECUTE replace($ddl$ CREATE FUNCTION t11p06_execute(operation uuid,verb text,payload jsonb) RETURNS jsonb LANGUAGE plpgsql AS $fn$
   DECLARE prior @ctl@.commands%ROWTYPE;answer jsonb;cfg jsonb;t text;
   BEGIN
@@ -2497,9 +2510,6 @@ BEGIN
     RETURN prior.result;
    END IF;
    INSERT INTO @ctl@.commands(operation_id,action,request) VALUES(operation,verb,payload) RETURNING result INTO answer;
-   SELECT limits INTO STRICT cfg FROM @ctl@.plans WHERE id=(payload->>'plan')::uuid;
-   PERFORM t11p06_envelope(cfg);
-   IF EXISTS(SELECT 1 FROM t11p06_control_usage() WHERE rows_used>100000 OR bytes_used>33554432) THEN RAISE EXCEPTION 'T11-B11 CONTROL quota exceeded' USING ERRCODE='P7501';END IF;
    RETURN answer;
   END $fn$ $ddl$,'@ctl@',quote_ident(ctl));
 
@@ -2513,6 +2523,7 @@ BEGIN
   BEGIN PERFORM t11b5_fixture();RETURN (SELECT to_jsonb(c) FROM @ctl@.commands c WHERE operation_id=operation);END $fn$ $ddl$,'@ctl@',quote_ident(ctl));
 
   EXECUTE format('CREATE TRIGGER p06_command BEFORE INSERT ON %I.commands FOR EACH ROW EXECUTE FUNCTION t11p06_command()',ctl);
+  EXECUTE format('CREATE TRIGGER p06_after AFTER INSERT ON %I.commands FOR EACH ROW EXECUTE FUNCTION t11p06_after()',ctl);
   FOREACH tab IN ARRAY ARRAY['schema_version','plans','units','commands','checkpoints'] LOOP
    EXECUTE format('CREATE TRIGGER p06_immutable BEFORE UPDATE OR DELETE OR TRUNCATE ON %I.%I FOR EACH STATEMENT EXECUTE FUNCTION t11p06_guard()',ctl,tab);
    IF tab NOT IN('commands','schema_version') THEN EXECUTE format('CREATE TRIGGER p06_generated BEFORE INSERT ON %I.%I FOR EACH ROW EXECUTE FUNCTION t11p06_guard()',ctl,tab);END IF;

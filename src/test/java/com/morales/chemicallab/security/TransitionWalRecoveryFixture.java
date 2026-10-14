@@ -25,7 +25,9 @@ final class TransitionWalRecoveryFixture {
     static int port() throws Exception {try(var s=new ServerSocket(0,0,java.net.InetAddress.getByName("127.0.0.1"))){return s.getLocalPort();}}
     void exercise() throws Exception {
         try {
-            nativeTool("initdb",List.of("-D",primary.toString(),"-U",user,"--auth=trust","--locale=C","--encoding=UTF8","--no-instructions"));
+            String sourcePort=t.f.setting("spring.datasource.url").split(":")[3].split("/")[0];
+            nativeTool("pg_basebackup",List.of("-h","127.0.0.1","-p",sourcePort,"-U",user,"-D",primary.toString(),"--wal-method=stream","--checkpoint=fast"));
+            nativeTool("pg_verifybackup",List.of(primary.toString()));
             String archiveCommand,restoreCommand;
             if(windows) {
                 Path copier=dir.resolve("archive.cmd");
@@ -38,12 +40,6 @@ final class TransitionWalRecoveryFixture {
             }
             Files.writeString(primary.resolve("postgresql.auto.conf"),"listen_addresses='127.0.0.1'\nport="+primaryPort+"\nmax_connections=30\nshared_buffers='16MB'\nwal_level=replica\narchive_mode=on\narchive_command="+literal(archiveCommand)+"\n");
             start(primary,"primary");primaryStarted=true;
-            nativeTool("createdb",List.of("-h","127.0.0.1","-p",""+primaryPort,"-U",user,"chemicallab_t01_test"));
-            try(var c=connect(primaryPort,false);var q=c.createStatement()){q.execute("create extension btree_gist");}
-            var dump=new ArrayList<>(List.of("-h","127.0.0.1","-p",String.valueOf(t.f.setting("spring.datasource.url").split(":")[3].split("/")[0]),"-U",user,"-d","chemicallab_t01_test","-n",t.f.schema,"-n",t.ctl,"--no-owner","--no-privileges","-Fc","-f",dir.resolve("fixture.dump").toString()));
-            nativeTool("pg_dump",dump);
-            var restore=new ArrayList<>(connectionArgs(primaryPort,"chemicallab_t01_test"));restore.addAll(List.of("--exit-on-error","--single-transaction",dir.resolve("fixture.dump").toString()));
-            nativeTool("pg_restore",restore);
             Map<String,String> before;
             try(var c=connect(primaryPort,true);var q=c.createStatement()) {
                 q.execute(t.expansion);coverage(c);
