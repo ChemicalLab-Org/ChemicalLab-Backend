@@ -185,7 +185,7 @@ reintentos, fuentes globales/no resueltas/conflictivas, materiales/capturas,
 cambio de docente/baja/readmisión/revocación, desactualización, no reparación,
 rollback completo cuota/T08, expansión/repetición/divergencia, carrera entre dos
 JVM por la última revisión disponible y dump/restore nativo con todas las firmas.
-La evidencia definitiva y SHA probado se registrarán tras clean package; las
+La evidencia definitiva y SHA probado se registran a continuación; las
 selecciones diagnósticas no se suman a esa ejecución.
 
 Se cierra únicamente **P04 persistente implementado**. P05/P06, T11-B agregado
@@ -195,3 +195,51 @@ rendimiento, permisos y políticas de retención permanecen operativos. Retenci�
 desactivada, sin purgas/limpieza automática, planes comerciales, capacidad
 productiva, merge, despliegue, DDL/backfill real o activación multiinstitucional.
 Auditoría original, documentos históricos, frontend y 16 E2E conservados.
+
+## Evidencia definitiva atribuida al commit
+
+**SHA probado:** `d666635666efe749250acaa2a98a0043c2d2fefa`.
+`clean package` completo terminó el **14 de octubre de 2026, 05:04:23
+America/Lima**, en **17 min 59 s**: **63 suites, 849 pruebas, 0 fallos, 0 errores,
+0 omitidas; BUILD SUCCESS y JAR generado**. Los **20 casos nuevos P04** están
+incluidos en esas 849, junto con las regresiones T02–T10 y B1–B8. No se suman
+selecciones diagnósticas ni carreras/restores nuevamente al total.
+
+Entorno: Windows, JDK 17.0.12, Maven 3.9.15 offline y PostgreSQL 18.4
+desechable propio, solo 127.0.0.1:55439, DB chemicallab_t01_test, rol ficticio
+t11b9_fixture, perfil test, locale C, 300 conexiones y 32 MiB shared_buffers.
+No se utilizó una base escolar. Los errores de auditoría/arranque deliberados
+en fixtures son esperados; el resultado definitivo procede de Surefire.
+
+Carrera P04: dos JVM/OS PID distintos y dos backends PostgreSQL observados
+bloqueados; resultados exactos COMMITTED y REJECTED:P7501, consumo final de una
+revisión nueva y medición vigente. Dump/restore nativo: 112 tablas con
+firmas idénticas, B9 recertificado, mutaciones fuera de fixtures y truncate de
+evidencia rechazados. Recuento independiente compara todas las 67 fuentes por
+ROW y JSON UTF-8; la medición sigue declarando live_authoritative=false.
+
+Empaquetado: doce SQL encontrados en BOOT-INF/classes/db/expansion, todos
+coincidentes con sus fuentes (solo normalización LF/CRLF para comparación).
+SHA-256 del JAR:
+`86a92cc5b51925289f69624c1468ec4217bf9a006e71801e80afcc058d640bf2`.
+Conservación: 43 archivos protegidos, incluidos 16 E2E y auditoría original,
+sin diferencias; once SQL históricos byte a byte y certificador B8 congelado;
+60 documentos anteriores intactos, solamente matrices T11-A/T11-C modificadas.
+Frontend conserva su rama institucional y archivos E2E no versionados previos.
+
+[Resumen verificable](t11b9/validation.json). Logs, XML archivado, JAR, dump y
+manifiestos detallados permanecen locales en `.codex-work/t11b9-evidence`.
+El commit posterior de cierre modifica exclusivamente documentación/evidencia;
+src, pruebas, SQL y POM son idénticos al SHA probado, comprobados con git diff.
+No se atribuye otra suite a ese HEAD documental ni se requiere repetirla.
+
+Comando reproducible, únicamente con la base ficticia preparada:
+
+```powershell
+./mvnw.cmd -o clean package '-Dspring.profiles.active=test' '-Dspring.datasource.url=jdbc:postgresql://127.0.0.1:55439/chemicallab_t01_test' '-Dspring.datasource.username=t11b9_fixture' '-Dspring.datasource.password=<CLAVE_FICTICIA>'
+```
+
+[PR backend #76](https://github.com/ChemicalLab-Org/ChemicalLab-Backend/pull/76)
+en borrador hacia develop. Cierre exclusivo P04 persistente; P05/P06, etapa 3,
+T11-B agregado, T12 y SEC-13/VER-01 continúan abiertos. Retención apagada,
+sin merge, despliegue, DDL/backfill reales o activación multiinstitucional.
