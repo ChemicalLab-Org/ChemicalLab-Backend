@@ -1,0 +1,567 @@
+[
+  {
+    "expected": 12,
+    "source": "academic_class_events",
+    "inventoried": 12
+  },
+  {
+    "expected": 6,
+    "source": "academic_classes",
+    "inventoried": 6
+  },
+  {
+    "expected": 8,
+    "source": "academic_period_events",
+    "inventoried": 8
+  },
+  {
+    "expected": 4,
+    "source": "academic_periods",
+    "inventoried": 4
+  },
+  {
+    "expected": 0,
+    "source": "account_sessions",
+    "inventoried": 0
+  },
+  {
+    "expected": 1,
+    "source": "audit_rejection_budget",
+    "inventoried": 1
+  },
+  {
+    "expected": 1,
+    "source": "audit_schema_version",
+    "inventoried": 1
+  },
+  {
+    "expected": 0,
+    "source": "authentication_limits",
+    "inventoried": 0
+  },
+  {
+    "expected": 0,
+    "source": "concept_assignments",
+    "inventoried": 0
+  },
+  {
+    "expected": 1,
+    "source": "concept_content_examples",
+    "inventoried": 1
+  },
+  {
+    "expected": 0,
+    "source": "concept_content_formation_steps",
+    "inventoried": 0
+  },
+  {
+    "expected": 0,
+    "source": "concept_content_key_points",
+    "inventoried": 0
+  },
+  {
+    "expected": 2,
+    "source": "concept_contents",
+    "inventoried": 2
+  },
+  {
+    "expected": 0,
+    "source": "concept_materials",
+    "inventoried": 0
+  },
+  {
+    "expected": 10,
+    "source": "enrollment_events",
+    "inventoried": 10
+  },
+  {
+    "expected": 5,
+    "source": "enrollments",
+    "inventoried": 5
+  },
+  {
+    "expected": 1,
+    "source": "evaluation_answers",
+    "inventoried": 1
+  },
+  {
+    "expected": 6,
+    "source": "evaluation_assignments",
+    "inventoried": 6
+  },
+  {
+    "expected": 0,
+    "source": "evaluation_attempt_adjustments",
+    "inventoried": 0
+  },
+  {
+    "expected": 1,
+    "source": "evaluation_attempt_events",
+    "inventoried": 1
+  },
+  {
+    "expected": 1,
+    "source": "evaluation_attempts",
+    "inventoried": 1
+  },
+  {
+    "expected": 1,
+    "source": "evaluation_options",
+    "inventoried": 1
+  },
+  {
+    "expected": 2,
+    "source": "evaluation_questions",
+    "inventoried": 2
+  },
+  {
+    "expected": 4,
+    "source": "evaluations",
+    "inventoried": 4
+  },
+  {
+    "expected": 12,
+    "source": "institution_memberships",
+    "inventoried": 12
+  },
+  {
+    "expected": 4,
+    "source": "institutions",
+    "inventoried": 4
+  },
+  {
+    "expected": 36,
+    "source": "membership_events",
+    "inventoried": 36
+  },
+  {
+    "expected": 12,
+    "source": "membership_role_grants",
+    "inventoried": 12
+  },
+  {
+    "expected": 11,
+    "source": "storage_limits",
+    "inventoried": 11
+  },
+  {
+    "expected": 1,
+    "source": "storage_schema_version",
+    "inventoried": 1
+  },
+  {
+    "expected": 10,
+    "source": "storage_usage",
+    "inventoried": 10
+  },
+  {
+    "expected": 6,
+    "source": "student_profiles",
+    "inventoried": 6
+  },
+  {
+    "expected": 102,
+    "source": "system_logs",
+    "inventoried": 102
+  },
+  {
+    "expected": 1,
+    "source": "t11b1_schema_version",
+    "inventoried": 1
+  },
+  {
+    "expected": 1,
+    "source": "t11b2_audit_version",
+    "inventoried": 1
+  },
+  {
+    "expected": 1,
+    "source": "t11b2_schema_version",
+    "inventoried": 1
+  },
+  {
+    "expected": 1,
+    "source": "t11b3_account_attempt_budgets",
+    "inventoried": 1
+  },
+  {
+    "expected": 1,
+    "source": "t11b3_apply_version",
+    "inventoried": 1
+  },
+  {
+    "expected": 0,
+    "source": "t11b3_attempt_consumptions",
+    "inventoried": 0
+  },
+  {
+    "expected": 0,
+    "source": "t11b3_attempt_contexts",
+    "inventoried": 0
+  },
+  {
+    "expected": 0,
+    "source": "t11b3_concept_deliveries",
+    "inventoried": 0
+  },
+  {
+    "expected": 0,
+    "source": "t11b3_concept_recipients",
+    "inventoried": 0
+  },
+  {
+    "expected": 2,
+    "source": "t11b3_concept_resources",
+    "inventoried": 2
+  },
+  {
+    "expected": 2,
+    "source": "t11b3_concept_revisions",
+    "inventoried": 2
+  },
+  {
+    "expected": 2,
+    "source": "t11b3_evaluation_deliveries",
+    "inventoried": 2
+  },
+  {
+    "expected": 2,
+    "source": "t11b3_evaluation_recipients",
+    "inventoried": 2
+  },
+  {
+    "expected": 1,
+    "source": "t11b3_evaluation_resources",
+    "inventoried": 1
+  },
+  {
+    "expected": 1,
+    "source": "t11b3_evaluation_revisions",
+    "inventoried": 1
+  },
+  {
+    "expected": 1,
+    "source": "t11b3_opportunity_groups",
+    "inventoried": 1
+  },
+  {
+    "expected": 9,
+    "source": "t11b3_reconciliation_events",
+    "inventoried": 9
+  },
+  {
+    "expected": 3,
+    "source": "t11b3_reconciliations",
+    "inventoried": 3
+  },
+  {
+    "expected": 1,
+    "source": "t11b3_schema_version",
+    "inventoried": 1
+  },
+  {
+    "expected": 1,
+    "source": "t11b4_apply_version",
+    "inventoried": 1
+  },
+  {
+    "expected": 0,
+    "source": "t11b4_audit_contexts",
+    "inventoried": 0
+  },
+  {
+    "expected": 0,
+    "source": "t11b4_board_contexts",
+    "inventoried": 0
+  },
+  {
+    "expected": 0,
+    "source": "t11b4_participant_contexts",
+    "inventoried": 0
+  },
+  {
+    "expected": 0,
+    "source": "t11b4_reconciliation_events",
+    "inventoried": 0
+  },
+  {
+    "expected": 0,
+    "source": "t11b4_reconciliations",
+    "inventoried": 0
+  },
+  {
+    "expected": 1,
+    "source": "t11b4_schema_version",
+    "inventoried": 1
+  },
+  {
+    "expected": 0,
+    "source": "t11b4_usage_contexts",
+    "inventoried": 0
+  },
+  {
+    "expected": 0,
+    "source": "t11b5_academic_codes",
+    "inventoried": 0
+  },
+  {
+    "expected": 1,
+    "source": "t11b5_admin_proofs",
+    "inventoried": 1
+  },
+  {
+    "expected": 0,
+    "source": "t11b5_identifier_conflicts",
+    "inventoried": 0
+  },
+  {
+    "expected": 2,
+    "source": "t11b5_identity_events",
+    "inventoried": 2
+  },
+  {
+    "expected": 0,
+    "source": "t11b5_login_bindings",
+    "inventoried": 0
+  },
+  {
+    "expected": 0,
+    "source": "t11b5_login_identifiers",
+    "inventoried": 0
+  },
+  {
+    "expected": 1,
+    "source": "t11b5_platform_role_grants",
+    "inventoried": 1
+  },
+  {
+    "expected": 1,
+    "source": "t11b5_schema_version",
+    "inventoried": 1
+  },
+  {
+    "expected": 1,
+    "source": "t11b5_usage",
+    "inventoried": 1
+  },
+  {
+    "expected": 0,
+    "source": "t11b6_co_assignments",
+    "inventoried": 0
+  },
+  {
+    "expected": 0,
+    "source": "t11b6_co_events",
+    "inventoried": 0
+  },
+  {
+    "expected": 0,
+    "source": "t11b6_grant_events",
+    "inventoried": 0
+  },
+  {
+    "expected": 0,
+    "source": "t11b6_resource_grants",
+    "inventoried": 0
+  },
+  {
+    "expected": 1,
+    "source": "t11b6_schema_version",
+    "inventoried": 1
+  },
+  {
+    "expected": 1,
+    "source": "t11b6_teaching_slots",
+    "inventoried": 1
+  },
+  {
+    "expected": 1,
+    "source": "t11b6_usage",
+    "inventoried": 1
+  },
+  {
+    "expected": 0,
+    "source": "t11b7_attestations",
+    "inventoried": 0
+  },
+  {
+    "expected": 0,
+    "source": "t11b7_claims",
+    "inventoried": 0
+  },
+  {
+    "expected": 0,
+    "source": "t11b7_conflicts",
+    "inventoried": 0
+  },
+  {
+    "expected": 0,
+    "source": "t11b7_events",
+    "inventoried": 0
+  },
+  {
+    "expected": 0,
+    "source": "t11b7_identifiers",
+    "inventoried": 0
+  },
+  {
+    "expected": 0,
+    "source": "t11b7_proofs",
+    "inventoried": 0
+  },
+  {
+    "expected": 0,
+    "source": "t11b7_reviews",
+    "inventoried": 0
+  },
+  {
+    "expected": 1,
+    "source": "t11b7_schema_version",
+    "inventoried": 1
+  },
+  {
+    "expected": 1,
+    "source": "t11b7_usage",
+    "inventoried": 1
+  },
+  {
+    "expected": 0,
+    "source": "t11b8_budgets",
+    "inventoried": 0
+  },
+  {
+    "expected": 2,
+    "source": "t11b8_creations",
+    "inventoried": 2
+  },
+  {
+    "expected": 0,
+    "source": "t11b8_deliveries",
+    "inventoried": 0
+  },
+  {
+    "expected": 8,
+    "source": "t11b8_events",
+    "inventoried": 8
+  },
+  {
+    "expected": 0,
+    "source": "t11b8_fixture_attempts",
+    "inventoried": 0
+  },
+  {
+    "expected": 4,
+    "source": "t11b8_operations",
+    "inventoried": 4
+  },
+  {
+    "expected": 0,
+    "source": "t11b8_recipients",
+    "inventoried": 0
+  },
+  {
+    "expected": 2,
+    "source": "t11b8_resources",
+    "inventoried": 2
+  },
+  {
+    "expected": 2,
+    "source": "t11b8_revisions",
+    "inventoried": 2
+  },
+  {
+    "expected": 1,
+    "source": "t11b8_schema_version",
+    "inventoried": 1
+  },
+  {
+    "expected": 13,
+    "source": "t11b9_commands",
+    "inventoried": 13
+  },
+  {
+    "expected": 67,
+    "source": "t11b9_contract",
+    "inventoried": 67
+  },
+  {
+    "expected": 1,
+    "source": "t11b9_control_usage",
+    "inventoried": 1
+  },
+  {
+    "expected": 11,
+    "source": "t11b9_counters",
+    "inventoried": 11
+  },
+  {
+    "expected": 160,
+    "source": "t11b9_deltas",
+    "inventoried": 160
+  },
+  {
+    "expected": 160,
+    "source": "t11b9_items",
+    "inventoried": 160
+  },
+  {
+    "expected": 12,
+    "source": "t11b9_limits",
+    "inventoried": 12
+  },
+  {
+    "expected": 1,
+    "source": "t11b9_schema_version",
+    "inventoried": 1
+  },
+  {
+    "expected": 5,
+    "source": "teacher_profiles",
+    "inventoried": 5
+  },
+  {
+    "expected": 2,
+    "source": "teaching_assignment_events",
+    "inventoried": 2
+  },
+  {
+    "expected": 1,
+    "source": "teaching_assignments",
+    "inventoried": 1
+  },
+  {
+    "expected": 1,
+    "source": "technical_retention_state",
+    "inventoried": 1
+  },
+  {
+    "expected": 4,
+    "source": "usage_events",
+    "inventoried": 4
+  },
+  {
+    "expected": 12,
+    "source": "user_accounts",
+    "inventoried": 12
+  },
+  {
+    "expected": 0,
+    "source": "whiteboard_object_ownership",
+    "inventoried": 0
+  },
+  {
+    "expected": 4,
+    "source": "whiteboard_participants",
+    "inventoried": 4
+  },
+  {
+    "expected": 4,
+    "source": "whiteboard_sessions",
+    "inventoried": 4
+  },
+  {
+    "expected": 3,
+    "source": "legacy_groups",
+    "inventoried": 3
+  }
+]
