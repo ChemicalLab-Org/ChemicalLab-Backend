@@ -86,6 +86,9 @@ class ContextReconciliationDbTest {
         long unassigned=r.attempt(1,AttemptStatus.GRADED,null,false);
         long question=sql().queryForObject("insert into evaluation_questions(evaluation_id,question_text,question_type,points,order_index,required,active) values(?,'Census question','OPEN_TEXT',1,0,true,true) returning id",Long.class,r.evaluation);
         sql().update("insert into evaluation_answers(attempt_id,question_id,answer_text,points_awarded,reviewed) values(?,?,'Census original answer',1,true)",unassigned,question);
+        long otherQuestion=sql().queryForObject("insert into evaluation_questions(evaluation_id,question_text,question_type,points,order_index,required,active) values(?,'Other census question','MULTIPLE_CHOICE',1,1,true,true) returning id",Long.class,r.evaluation);
+        long wrongOption=sql().queryForObject("insert into evaluation_options(question_id,option_text,correct,order_index,active) values(?,'Different question option',true,0,true) returning id",Long.class,otherQuestion);
+        sql().update("update evaluation_answers set selected_option_id=? where attempt_id=?",wrongOption,unassigned);
         sql().update("insert into evaluation_attempt_events(attempt_id,event_type,occurred_at) values(?,'ATTEMPT_SUBMITTED','2026-02-01 10:06:00')",unassigned);
         b.b8.previous.previous.previous.base.tx().executeWithoutResult(s->{sql().execute("set local session_replication_role=replica");sql().update("insert into concept_content_examples(concept_content_id,example_order,example) values(9223372036854775000,0,'Census orphan')");sql().execute("set local session_replication_role=origin");});
         long id=service.inventory(op());var coverage=new ArrayList<Map<String,Object>>();
@@ -105,6 +108,7 @@ class ContextReconciliationDbTest {
         assertThat(count("select count(*) from t11b10_inventory where run_id=? and source_table='legacy_groups' and reason='AMBIGUOUS_LABEL_WITHOUT_PERIOD_OR_INSTITUTION'",id)).isGreaterThan(0);
         assertThat(count("select count(*) from t11b10_inventory where run_id=? and reason='UNASSIGNED_ATTEMPT_NO_EPISODE_EVIDENCE'",id)).isEqualTo(1);
         assertThat(count("select count(*) from t11b10_inventory where run_id=? and reason like 'MISSING_PARENT:%'",id)).isGreaterThan(0);
+        assertThat(count("select count(*) from t11b10_inventory where run_id=? and reason='ANSWER_OPTION_QUESTION_MISMATCH' and classification='CONFLICT'",id)).isEqualTo(1);
         Path out=Files.createDirectories(Path.of("target/t11b10-evidence"));Files.writeString(out.resolve("coverage.json"),f.json.writerWithDefaultPrettyPrinter().writeValueAsString(coverage));
     }
     @Test void correctionVersionsEntireAggregatePreservesRootsOriginalsAndB9() throws Exception {
