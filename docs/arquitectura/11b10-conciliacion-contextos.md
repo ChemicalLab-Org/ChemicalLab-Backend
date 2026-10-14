@@ -215,10 +215,73 @@ ContextReconciliationDbTest contrasta PKs independientes, perfiles sin recursos,
 grupos/huérfanos/claves ambiguas, aprobaciones F08, stale, corrección entre clases/
 colegios con cuenta compartida, casos B3/B4, incertidumbre sin fallback, consumos/
 ventanas, cuotas, rollback T08, idempotencia, cadena/divergencia, dos procesos y
-dump/restore. El resultado final y SHA probado se registrarán tras la ejecución
-completa, sin sumar selecciones ni evidencia histórica a los resultados nuevos.
+dump/restore. La ejecución definitiva se detalla a continuación; las selecciones
+y resultados históricos conservan su atribución separada.
 
 El cierre corresponde únicamente a P05 persistente implementado/verificado.
 T11-B agregado y etapa 3 permanecen abiertos por P06 y demás gates vigentes;
 P08 mapas reales, T12 adopción/autorización y SEC-13/VER-01 continúan pendientes.
 Auditoría original, documentos históricos, frontend y 16 E2E se conservan.
+
+
+## Evidencia definitiva atribuida al commit
+
+**SHA probado:** `578837a6ebdf19f5c3b8c88b5f9b9060dad26d3b`. `clean package` completo finalizó
+`2026-10-14T09:20:12-05:00` (America/Lima), duración **24:01 min**: **64 suites,
+868 pruebas, 0 fallos, 0 errores, 0 omitidas; BUILD SUCCESS y JAR generado**.
+Los **19 casos P05** están incluidos en ese total. No se suman selecciones,
+carreras/restores o ejecuciones parciales. El commit posterior solo registra
+documentación/evidencia; src/SQL/tests/POM son idénticos al SHA probado.
+
+[Resumen verificable](t11b10/validation.json) y
+[cobertura independiente por fuente](t11b10/coverage.json): **113 fuentes,
+782 claves esperadas, 782 inventariadas, cero omitidas** en el fixture del censo.
+El reporte incluye fuentes vacías con cero y grupos virtuales; no confunde ese
+censo con selección de recursos o firma de un dump. Huérfanos/claves ambiguas y
+deriva se ensayan además en su escenario deliberadamente inconsistente.
+
+Carrera: dos JVM/PID OS distintos y dos backends PostgreSQL bloqueados en la
+barrera; resultados APPLIED/STALE, un agregado versionado y una medición nueva.
+El contendiente SQL verifica integridad; el servicio prueba por separado SUCCESS
+obligatorio y rollback T08. Restauración nativa: **123 tablas con firmas
+idénticas**, certificación B10/B9, guardas e imposibilidad de mutar fuera del
+fixture. No demuestra caída de proceso ni recuperación con escrituras posteriores P06.
+
+Entorno: Windows, JDK 17.0.12, PostgreSQL 18.4, Maven
+3.9.15 offline, perfil test, loopback 55440, locale C, 300 conexiones y
+32 MiB shared_buffers. Todas las cuentas, escuelas, mapas, archivos y pruebas
+son sintéticos. Mensajes de rechazo de auditoría/arranque son esperados por
+fixtures negativos; los XML Surefire finales certifican el resultado.
+
+JAR SHA-256: `24d3dc870aa728832ae1c42a17af27aba76d3c6d6ecc7e12f85de08ed857540a`.
+Contiene exactamente **13 SQL** coincidentes con las fuentes, normalizando solo
+LF/CRLF para comparar; doce archivos históricos byte a byte conservados.
+El certificador B9 congelado permanece íntegro. No se recalculó ningún ledger previo.
+
+Conservación: **43 archivos protegidos, incluidos 16 E2E, sin diferencias**.
+Auditoría original SHA-256
+`1eff5d59f7a114dfee91cb557a0405c2f7247e43cd2926d2542172c0255e499b`.
+De los 64 documentos previos, solo se actualizan las matrices T11-A/T11-C.
+Frontend conserva `feature/validaciones-datos-institucionales`,
+`e88589635a8269c50ee0f53fccf157f0d0985034` y su `?? e2e-selenium/` previo.
+
+Una ejecución anterior fue interrumpida antes de empaquetar y se
+conserva como parcial. También se conservan las parciales anteriores a la guarda
+de biblioteca y al enlace de respuestas/eventos/ajustes con su intento, además
+de las iteraciones de desarrollo (incluidos fallos de preparación,
+colisión de namespace y restauración). Ninguna se presenta como suite aprobada
+ni se suma a los resultados definitivos. Evidencias locales en
+`.codex-work/t11b10-evidence`: full-package.log, verified-results.json,
+verified-reports.zip, verified-backend.jar y preservation.json; carrera/dump en
+target/t11b10-processes y target/t11b10-native. Los datos no se publican en el PR.
+
+Comando reproducible, exclusivamente con la base ficticia propia preparada:
+
+```powershell
+./mvnw.cmd -o clean package '-Dspring.profiles.active=test' '-Dspring.datasource.url=jdbc:postgresql://127.0.0.1:55440/chemicallab_t01_test' '-Dspring.datasource.username=t11b10_fixture' '-Dspring.datasource.password=<CLAVE_FICTICIA>'
+```
+
+Entrega: [PR backend #77](https://github.com/ChemicalLab-Org/ChemicalLab-Backend/pull/77)
+en borrador hacia develop. Solo P05 preparado queda cerrado. P06/T12 no se
+inician; T11-B agregado, etapa 3, P08 y SEC-13/VER-01 continúan abiertos.
+Sin merge, despliegue, DDL/backfill real, retención o activación institucional.

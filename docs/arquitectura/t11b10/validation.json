@@ -1,0 +1,107 @@
+{
+  "testedSha": "578837a6ebdf19f5c3b8c88b5f9b9060dad26d3b",
+  "base": "ab19dde3d724be7c3d581e20074661514146fdb6",
+  "command": "mvnw.cmd -o clean package (test profile, owned disposable PostgreSQL)",
+  "environment": {
+    "os": "Windows",
+    "java": "17.0.12",
+    "postgresql": "18.4",
+    "maven": "3.9.15",
+    "fixture": "127.0.0.1:55440/chemicallab_t01_test"
+  },
+  "result": "BUILD SUCCESS",
+  "suites": 64,
+  "tests": 868,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "p05Tests": 19,
+  "coverage": {
+    "sources": 113,
+    "expectedPk": 782,
+    "inventoriedPk": 782,
+    "missing": 0,
+    "report": "coverage.json"
+  },
+  "restoredTables": 123,
+  "race": {
+    "scope": "SQL integrity; mandatory service audit tested separately",
+    "results": [
+      "APPLIED",
+      "STALE"
+    ],
+    "blockedPostgresPids": [
+      9400,
+      12572
+    ],
+    "osPids": [
+      5048,
+      12968
+    ]
+  },
+  "protectedFiles": 43,
+  "preservedE2e": 16,
+  "previousSqlUnchanged": 12,
+  "frozenB9": true,
+  "packagedSql": [
+    {
+      "file": "t11b1-v1.sql",
+      "sha256LF": "23eb762d3ac581289e05f09725ab235efea7cf3d50b832e3a98f89e730e59548"
+    },
+    {
+      "file": "t11b10-v1.sql",
+      "sha256LF": "99c78c576d1e304bb469dd97a9fd42e97e3841eb6990b2bb5f26ad31c3a36f13"
+    },
+    {
+      "file": "t11b2-v1.sql",
+      "sha256LF": "85c9a06bc9fa7a974d5ea2534d3040c2e9bcbaa38134ff67d106a3eeeb7e6e4f"
+    },
+    {
+      "file": "t11b2-v2.sql",
+      "sha256LF": "fb5363a68a291b5e41b0bf0babf241bddcb882f1089af733446f7eb6fee252a1"
+    },
+    {
+      "file": "t11b3-v1.sql",
+      "sha256LF": "9fb63b81d399c1cf12d3f824cbacc6d8706f01680d792b4b43956de2728215f7"
+    },
+    {
+      "file": "t11b3-v2.sql",
+      "sha256LF": "f9801eee77dec461da3ee463b7f4e147d1888cadc2ab30c11de0d7e997ee04a9"
+    },
+    {
+      "file": "t11b4-v1.sql",
+      "sha256LF": "1c28b9e95889e03cc1f0feb3b6aa32f2487ee684b4d535ae6f63a21efc9a21b9"
+    },
+    {
+      "file": "t11b4-v2.sql",
+      "sha256LF": "96adca19b81028eda16eda7efad8b69ae74a50beb74d2149678b2f2f11e2115d"
+    },
+    {
+      "file": "t11b5-v1.sql",
+      "sha256LF": "44eaf40b695846f295c5d643e0beafb53095386d66d1d8ea9b992ff5ec51e2df"
+    },
+    {
+      "file": "t11b6-v1.sql",
+      "sha256LF": "a3a02cbe0a921a04353d29319faccee7ee7527bcc67898ba10b629740e0cd75d"
+    },
+    {
+      "file": "t11b7-v1.sql",
+      "sha256LF": "9c76ee9c27b8f7517980fd36f76a87a7b63658b8d9c923e05812d501937f3ccb"
+    },
+    {
+      "file": "t11b8-v1.sql",
+      "sha256LF": "99969a45e136564edf04a418ebe62d9e2043dd552b31ac5af51cc073d50c2407"
+    },
+    {
+      "file": "t11b9-v1.sql",
+      "sha256LF": "b973b823287bf50eeedd7f909f777b174218eab68c5440f50448829953a0e772"
+    }
+  ],
+  "jarSha256": "24d3dc870aa728832ae1c42a17af27aba76d3c6d6ecc7e12f85de08ed857540a",
+  "limits": [
+    "Fixtures only; no school data or maps",
+    "No live authorization/adoption or authoritative budget/counter",
+    "P06 and stage 3 remain open",
+    "No Linux/production certification; SEC-13/VER-01 remain open"
+  ]
+}
