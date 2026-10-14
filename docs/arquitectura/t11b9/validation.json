@@ -1,0 +1,115 @@
+{
+  "testedSha": "d666635666efe749250acaa2a98a0043c2d2fefa",
+  "suites": 63,
+  "tests": 849,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "jarSha256": "86a92cc5b51925289f69624c1468ec4217bf9a006e71801e80afcc058d640bf2",
+  "packagedSqlCount": 12,
+  "baseSha": "f2a2b082b919688ae51a515aa6bf255b14d3fbba",
+  "command": "mvn -o clean package (profile test; owned loopback fixture)",
+  "completedAt": "2026-10-14T05:04:23-05:00",
+  "timezone": "America/Lima",
+  "elapsed": "17:59",
+  "newP04Tests": 20,
+  "newP04IncludedInTotal": true,
+  "selectionsAddedToTotal": false,
+  "environment": {
+    "os": "Windows",
+    "java": "17.0.12",
+    "maven": "3.9.15 offline",
+    "postgresql": "18.4",
+    "fixture": "127.0.0.1:55439/chemicallab_t01_test"
+  },
+  "sourceTables": 67,
+  "contract": "ROW_JSON_UTF8_V1",
+  "liveAuthoritative": false,
+  "race": {
+    "scope": "SQL integrity; mandatory service audit tested separately",
+    "results": [
+      "REJECTED:P7501",
+      "COMMITTED"
+    ],
+    "blockedPostgresPids": [
+      26636,
+      26204
+    ],
+    "osPids": [
+      22220,
+      23644
+    ]
+  },
+  "nativeRestore": {
+    "tables": 112,
+    "allSignaturesMatch": true,
+    "certifier": "B9 v1 frozen B8 chain"
+  },
+  "preservation": {
+    "protectedUnique": 43,
+    "e2eFiles": 16,
+    "differences": [],
+    "historicalSql": [
+      {
+        "file": "t11b1-v1.sql",
+        "sha256": "af82fe40ac9d0193a521460f09f67355b40c6d27190eb51b5b363491689e335d"
+      },
+      {
+        "file": "t11b2-v1.sql",
+        "sha256": "4d56b1a6fd7ac31506ddd6015788b4f37d8a1f087c18a1148a33d26cce85606a"
+      },
+      {
+        "file": "t11b2-v2.sql",
+        "sha256": "997eded3ed9488a14c1cc8c1a3e643b8b1a3e5687b7b02d35c9cbb8685ab3358"
+      },
+      {
+        "file": "t11b3-v1.sql",
+        "sha256": "2785f8e6affa36ea6dfe79fc9d0c6aee0c2caf0a6ad85b7337bdbddbc18edc05"
+      },
+      {
+        "file": "t11b3-v2.sql",
+        "sha256": "0592b3fc548520ea1b981240b167cc673d05edd56a3fc298e651b17f1ae1bd0b"
+      },
+      {
+        "file": "t11b4-v1.sql",
+        "sha256": "0adbbbe1abeba662c620d271f412a5fc2e6a97a08f7867a1ff1d091681d3c39d"
+      },
+      {
+        "file": "t11b4-v2.sql",
+        "sha256": "2d9bc85ab505a6234ea08b29621a0f0ee20e7ac51dcb02eb1477610809c2c151"
+      },
+      {
+        "file": "t11b5-v1.sql",
+        "sha256": "915210e7ccdaa72290939c1447f211b712e254ea25225799faad19e596c88e4f"
+      },
+      {
+        "file": "t11b6-v1.sql",
+        "sha256": "32c9d1eb42acea1e90fa86dc444ead639684827ece7218c4ed4d7fa488eb96e3"
+      },
+      {
+        "file": "t11b7-v1.sql",
+        "sha256": "b7541335d43606bf33b38d4464f45cff8e2c1007ab301b0cc372650ed4fa2d6a"
+      },
+      {
+        "file": "t11b8-v1.sql",
+        "sha256": "90b9813c00239919d82de20f7cbbd1c1caf9f936c6d632ed57e64246efedc80b"
+      }
+    ],
+    "frozenB8": true,
+    "previousDocuments": 62,
+    "changedPreviousDocuments": [
+      "docs/arquitectura/11a-modelo-institucional.md",
+      "docs/arquitectura/11c-balance-cierre-modelo.md"
+    ],
+    "unchangedPreviousDocuments": 60
+  },
+  "open": [
+    "P05",
+    "P06",
+    "T12",
+    "stage3",
+    "SEC-13",
+    "VER-01"
+  ],
+  "pullRequest": "https://github.com/ChemicalLab-Org/ChemicalLab-Backend/pull/76"
+}
