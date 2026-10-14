@@ -391,37 +391,42 @@ T12 exige probar en ambos sentidos A→B y B→A: cuentas sin membresía, membre
 
 T13 exige sustitución durante actividad, baja de docente/alumno, traslado con intento abierto, readmisión y acceso propio histórico: nuevo responsable tiene solo sus clases, saliente pierde facultades actuales, autor sigue intacto, ninguna nota/captura cruza colegio y las ventanas/cierres T05 siguen válidos. F03 exige que con membresía ENDED y sesión global válida el alumno lea resultados individuales anteriores permitidos por T05; clases activas, compañeros y capturas compartidas indiscriminadas se rechazan; salir no revela corrección bloqueada. T14 exige aceptación concurrente única, expiración/revocación/cupo, cuenta existente conservada, recuperación y roles no escalables. Ningún gate se da por cumplido en T11-A.
 
-### 7.3 Matriz vigente de preparación, actualizada por T11-B11 / P06 (14 de octubre de 2026)
+### 7.3 Matriz vigente de preparación, revisada por T11-D (14 de octubre de 2026)
 
-Esta matriz conserva F05 confirmada y la evidencia de preparación B1–B5,
-atribuida a sus SHA en las notas originales. La revisión documental
-[T11-C](11c-balance-cierre-modelo.md), sobre develop
-`e2bcc1afe347ba9630c1e90ea5d998f09a65812f`, distingue lo demostrado de los
-faltantes del modelo completo; no reemplaza criterios de §7.1 ni declara cumplidos
-gates T12/T13/operación. T11-B y etapa 3 siguen abiertos: P01–P06 de T11-C
-requerían preparación persistente/ensayo antes de T12. P01 queda implementado en
-[T11-B6](11b6-docencia-delegaciones.md); P02 queda implementado como persistencia en
-[T11-B7](11b7-identificadores-acceso.md). P03 persistente implementado en [T11-B8](11b8-revisiones-academicas.md); P04 persistente implementado en [T11-B9](11b9-cuotas-institucionales.md); P05 persistente implementado en [T11-B10](11b10-conciliacion-contextos.md); P06 preparado en [T11-B11](11b11-lotes-recuperacion.md). La revisión final agregada y etapa 3 permanecen abiertas; no son autorización externa.
+**Dictamen vigente: preparación técnica de etapa 3 cerrada y apta para iniciar
+T12**, sobre develop `68b4e95432cdadf99c237d5c3c2aeb65036a87fc`.
+[T11-D](11d-cierre-preparacion-modelo.md) contrasta conjuntamente B1–B11 y cierra
+P01–P06 dentro de su alcance persistente/ensayo; no declara cumplidos los criterios
+completos de §7.1 ni gates T12/T13/T14/operación. Sus matrices §3–5 fijan archivo,
+SHA, límites y responsable restante para cada criterio. Las 882 pruebas pertenecen
+exclusivamente a `0152f851761b56ecd6078cc04d248ae4c0bc1117`; las siete
+comprobaciones adicionales B11 se registran aparte. No se ejecutan pruebas nuevas.
+P08/mapas reales, autorización/adopción T12, continuidad T13, incorporación T14,
+SEC-13, VER-01, privacidad y requisitos operativos permanecen abiertos.
 
 | Criterio | Preparación del modelo / ensayo | T12/T13 y operación pendientes |
 | --- | --- | --- |
 | A01 coincidencias | Fixtures B5 y P02/B7: claims globales entre tipos, username principal único y reserva anterior, correo opcional/verificación/revocación/reutilización, candidatos/conflictos e historia conservados | Adopción del resolver T12 y verificación/recuperación externa T14; comparación exacta confirmada. F05 escolar independiente |
-| A02 membresías/roles | Cumplido para B1 + PlatformRoleGrant independiente con procedencia explícita; consulta de episodios B5 | T12 compone vigencias/contexto y combinación F04; grants nuevos reales e importación operativa F08 pendientes |
-| A03 integridad | Parcial del modelo completo: B1–B5 conservados; P01 añade co-docencia y grants tipados con FKs, vigencias, procedencia administrativa, historia y exclusiones PostgreSQL entre funciones/facultades, según B6 | P01/P03 persistentes implementados en B6/B8; autorización bilateral T12 y flujos T13 pendientes |
+| A02 membresías/roles | Demostrado acotado para B1 + PlatformRoleGrant independiente con procedencia explícita; consulta de episodios B5 | T12 compone vigencias/contexto y combinación F04; grants nuevos reales e importación operativa F08 pendientes |
+| A03 integridad | Preparación demostrada; criterio completo parcial: B1–B5 conservados; P01 añade co-docencia y grants tipados con FKs, vigencias, procedencia administrativa, historia y exclusiones PostgreSQL entre funciones/facultades, según B6 | P01/P03 persistentes B6/B8 contrastados con la corrección aditiva B10 en T11-D; autorización bilateral T12 y flujos T13 pendientes |
 | A04 cuenta | B5 conserva códigos/cuenta; B7 cambia identificador preparado manteniendo accountId, credenciales/sesiones e historia académica originales. El username legacy aún no cambia | Conciliación real F08 y corte de writers/login T12 pendientes; no fusión de personas |
-| A05 evidencia | Cumplido para fuentes cubiertas y restauración ficticia B5; referencias/historia original intactas. B11 recupera 128 tablas tras escrituras posteriores y conserva identidades/resultados/raíces/cuotas por firmas exactas | Exhaustividad/inventario real, históricos desconocidos y certificación operativa pendientes |
+| A05 evidencia | Demostrado para fuentes cubiertas y restauración ficticia B5; referencias/historia original intactas. B11 recupera 128 tablas tras escrituras posteriores y conserva identidades/resultados/raíces/cuotas por firmas exactas | P05/P06 ficticios contrastados conjuntamente en T11-D; exhaustividad/inventario real, históricos desconocidos y certificación operativa pendientes |
 | A06 reemplazo | Parte persistente demostrada B2/B6: responsable sustituido conservando co-docentes independientes, classId, matrículas, cuentas, autoría/evidencia y rollback conjunto | Permisos reales del saliente/reemplazo T12/T13 pendientes |
 | A07 traslado/simultaneidad | Parcial: cuentas/membresías A/B y reservas por institución independientes; sin mover hechos previos | Traslado con intento abierto, continuidad/revocación y acceso individual F03 son T13 bajo T05 |
 | A08 mapa/ambigüedad | P05 persistente implementado en [B10](11b10-conciliacion-contextos.md): catálogo versionado de 113 fuentes, contraste independiente por PK, perfiles/grupos sin recursos, incertidumbre/conflicto con motivo, dos aprobadores F08 distintos, versiones aditivas de agregado y proyección sin fallback; casos B3/B4, cuotas/historia y T08 conservados. Evidencia/SHA en B10 | F08 reales/P08 e inventario escolar autorizado pendientes. Contexto preparado no concede acceso; adopción/autorización T12 pendiente; recuperación ficticia P06 preparada en B11 |
-| A09 repetición/recuperación | P06 preparado en [B11](11b11-lotes-recuperacion.md): planes/unidades versionados, checkpoints atómicos ligados a fuente/PK/checksum/XID/operación, pausa/reanudación, muerte real de JVM, commit sin respuesta, contendientes y STALE F08/antecedentes. Respaldo físico + WAL recupera escrituras posteriores e idempotencia | Sobre de fixture explícito; B10 sigue escaneándolo completo. Revisión final agregada pendiente; ventana/capacidad/RPO/RTO y cobertura de escritores/almacenamiento real en operación/T12 |
+| A09 repetición/recuperación | P06 preparado en [B11](11b11-lotes-recuperacion.md): planes/unidades versionados, checkpoints atómicos ligados a fuente/PK/checksum/XID/operación, pausa/reanudación, muerte real de JVM, commit sin respuesta, contendientes y STALE F08/antecedentes. Respaldo físico + WAL recupera escrituras posteriores e idempotencia | Sobre de fixture explícito; B10 sigue escaneándolo completo. Revisión conjunta T11-D concluida dentro del sobre; ventana/capacidad/RPO/RTO y cobertura de escritores/almacenamiento real en operación/T12 |
 | A10 cuotas/auditoría | Preparación persistente P04 implementada en [B9](11b9-cuotas-institucionales.md): contrato de fuentes/PK/bytes versionado, contadores y límites de ensayo por institución, histórico íntegro/exceso, deltas derivados y conciliación sin reparación, atomicidad T07-B/T08; copias reales y dimensiones ACCOUNT/SYSTEM conservadas | A10 operacional sigue parcial: escritores legacy hacen visible STALE; adopción/corte T12; capacidad física/WAL/máximos/retención/SEC-13 y permisos reales pendientes. P05 implementado en B10; P06 preparado en B11 |
 | A11 compatibilidad cerrada | Parcial: no endpoints/paneles/registro ni nuevas autoridades; login T02/T04 conservado | Ambigüedad y ámbito único de clientes legacy requieren gate integral T12; no activación multiinstitucional |
-| A12 regresión/revisión | Parcial: B1–B6 conservados; suite/empaquetado, carrera y restore P02 atribuidos al SHA probado en la nota B7 | P05 verificado según SHA en B10; P06 verificado según SHA en B11; revisión agregada pendiente; P03/P04 verificados según SHA en B8/B9; Linux/JDK17/PostgreSQL Linux, nueva SCA y VER-01/operación pendientes |
+| A12 regresión/revisión | Parte técnica demostrada; criterio completo parcial: E1–E11 y R11 atribuidos en T11-D §2; XML/JAR/SQL E11 reconfirmados sin reejecución y revisión conjunta concluida | P05 verificado según SHA en B10; P06 verificado según SHA en B11; revisión agregada concluida en T11-D; P03/P04 verificados según SHA en B8/B9; Linux/JDK17/PostgreSQL Linux, nueva SCA y VER-01/operación pendientes |
 | A13 máximo agotado | Demostrado acotado en ensayo B3 con writer legacy; regresión conserva T05, sin nueva raíz por B5 | Corte de writers y admisión/exposición institucional T12 pendientes |
 | A14 entregas/raíz/carrera | Demostrado acotado en ensayo B3, presupuesto/cierre original y última oportunidad legacy conservados; deriva invalida snapshot | P03 persistente B8: revisión distinta/publicación/entrega exacta y F09 evaluación lógica/cuenta ensayados; sincronización/corte T12 pendientes |
 | A15 activo previo | Demostrado acotado en ensayo B3; B5 conserva intento/consumo; no certifica todos los flujos de finalización/baja | Continuidad/baja T13 y resolución real F08 pendientes |
-| A16 readmisión/clases | Demostrado acotado B3/B5 para unicidad, reserva/cuenta/episodios; no escenario integral con sustituto/carrera institucional | P01 persistente implementado; gate bilateral T12 y continuidad T13 pendientes |
-| A17 cierre/conciliación | Demostrado acotado en ensayo B3; B5 no cambia T05 ni habilita exposición | Autorización F03 T12/T13, corte y resolución real F08 pendientes |
+| A16 readmisión/clases | Demostrado acotado B3/B5 para unicidad, reserva/cuenta/episodios; no escenario integral con sustituto/carrera institucional | P01/P03 persistentes implementados y conservación B10/P06 contrastada; gate bilateral T12 y continuidad T13 pendientes |
+| A17 cierre/conciliación | Demostrado acotado en ensayo B3; B8/B10/P06 conservan raíz/cierre/consumo y B5 no habilita exposición | Autorización F03 T12/T13, corte y resolución real F08 pendientes |
+
+**Registro histórico de actualizaciones B7–B10:** los estados y certificadores
+siguientes conservan su atribución al bloque de origen; el dictamen vigente es
+el de T11-D anterior.
 
 P02 queda implementado como preparación persistente B7: PREPARED/ACTIVE/RESERVED/
 REVOKED, evidencia vinculada a operación/versión, revisión explícita e historia.
@@ -467,3 +472,12 @@ Conserva los trece SQL B1–B10 y sus ledgers; B11 es el certificador sucesor.
 P01–P06 preparados se entregan para revisión final; T11-B agregado y etapa 3
 no se cierran automáticamente. T12, mapas reales/P08, SEC-13, VER-01 y operación
 permanecen abiertos. Las actualizaciones anteriores conservan su fecha/alcance.
+
+**Conclusión vigente T11-D (14 de octubre de 2026):** la revisión conjunta sobre
+`68b4e95432cdadf99c237d5c3c2aeb65036a87fc` cierra únicamente preparación técnica
+de etapa 3/P01–P06 y la considera apta para iniciar T12. No queda un bloqueo de
+preparación identificado; A01–A17 conservan los límites de fixtures y sus partes
+posteriores abiertas según [T11-D §5–7](11d-cierre-preparacion-modelo.md).
+No autoriza adopción/corte, servicio multiinstitucional ni operación real y no
+implementa T12. Se conservan las actualizaciones y conclusiones históricas;
+P08, T12/T13/T14, SEC-13, VER-01, privacidad y requisitos operativos siguen pendientes.
