@@ -258,9 +258,66 @@ capacidad, permisos y demás pendientes operativos permanecen abiertos.
 Sin merge, despliegue, DDL/backfill escolar, rotaciones o activación institucional.
 Se conservan auditoría, documentos históricos, frontend institucional y 16 E2E.
 
-## Evidencia definitiva
+## Evidencia definitiva atribuida al código probado
 
-La ejecución completa final y su SHA exacto se incorporan aquí después de su
-terminación. Las selecciones/iteraciones fallidas se mantienen separadas y no se
-suman a la suite definitiva. Los artefactos voluminosos y credenciales sintéticas
-permanecen locales en `.codex-work/t11b11-evidence` y `target/t11b11-*`.
+**SHA probado:** `0152f851761b56ecd6078cc04d248ae4c0bc1117`. `clean package` completo finalizó
+`2026-10-14T11:12:40-05:00` (America/Lima), duración ** 29:58 min**:
+**65 suites, 882 pruebas, cero fallos, errores u omisiones;
+BUILD SUCCESS y JAR generado**. Los **14 casos P06** están incluidos en ese
+total. Los commits posteriores registran exclusivamente documentación/evidencia;
+src, SQL, pruebas y POM permanecen iguales al SHA probado.
+
+[Resumen verificable](t11b11/validation.json) y
+[matriz de recuperación](t11b11/recovery.json): **128 tablas** (123 de negocio/
+preparación B1–B10 y cinco de control P06) con firmas después/recuperado idénticas,
+**75 secuencias** cotejadas sin retroceso/reutilización y
+avance de WAL documentado; restart/replay exactos sobre el estado recuperado.
+El contraste independiente conserva **25 fuentes** de identidades,
+resultados, relaciones, raíces/consumo T05/F09 y mediciones B9 también entre el
+estado anterior y el posterior al STEP. El manifiesto no es un mapa escolar.
+
+Pausa/reanudación entre JVM/PID diferentes. Carrera entre dos JVM/backend
+PostgreSQL bloqueados en una barrera: mismo resultado, un checkpoint y un SUCCESS.
+Muerte real antes de confirmar: firmas de negocio/control intactas y operación
+ausente; muerte después de commit sin entregar respuesta: operación confirmada
+consultada antes de repetir, sin efectos duplicados. Fuente cambiada entre lotes,
+F08 revocado y antecedente cambiado conservan STALE y su evidencia. Fallos de
+auditoría, cuota institucional y sobre posterior a escritura revierten el lote
+completo. La recuperación recertifica B11/B10 y comprueba guardas append-only.
+
+Entorno: Windows, JDK 17.0.12, PostgreSQL 18.4 propio/desechable, Maven 3.9.15
+offline, perfil test, loopback 55441, locale C, 300 conexiones y 32 MiB
+shared_buffers. El arnés WAL usa otros dos puertos propios y procesos PostgreSQL
+independientes. Todas las cuentas, escuelas, recursos, respuestas y constancias
+son ficticios. Los mensajes de rechazo de arranque/auditoría corresponden a
+controles negativos; los XML definitivos certifican los totales.
+
+JAR SHA-256: `cd2bb6cc3ff58e6d8c887f465f6c20815a6186e9b3a52961a53fdf3699676c2e`.
+Incluye exactamente **14 SQL** iguales a las fuentes (comparación normalizando
+solo LF/CRLF); los **trece archivos históricos** conservan sus bytes y el
+certificador B10 completo está congelado. No se recalculó ningún ledger previo.
+
+Conservación: **43 archivos protegidos**, incluidos
+**16 E2E**, sin diferencias. De **68 documentos backend previos**,
+solo se actualizan las matrices T11-A/T11-C; conclusiones históricas intactas.
+Frontend conserva `feature/validaciones-datos-institucionales`,
+`e88589635a8269c50ee0f53fccf157f0d0985034` y su `?? e2e-selenium/` previo.
+El backend primario continúa limpio en develop `f22fb04bd62fa635f8f2b096b33bf76306f7a30e`;
+los otros **24 worktrees** conservan sus HEAD. Auditoría original SHA-256
+`1eff5d59f7a114dfee91cb557a0405c2f7247e43cd2926d2542172c0255e499b`.
+
+Las ocho selecciones de desarrollo permanecen separadas en validation.json con
+SHA exacto del código compilado, resultado y hash de log; no se suman a esta suite.
+Las primeras selecciones anteriores al primer commit contienen el mismo árbol
+src que `437fad8`; el bloqueo inicial de loopback no ejecutó el protocolo.
+Se conservan las fallidas por preparación SQL/fixture, rechazo de semilla lógica,
+restore Windows y expectativa incorrecta de secuencias, sin atribuirlas al éxito
+final. Artefactos locales: `.codex-work/t11b11-evidence/full-package.log`,
+verified-results.json, verified-reports.zip, verified-backend.jar, preservation.json
+y development-artifacts; procesos/respaldos definitivos en `target/t11b11-*`.
+Backups, WAL, credenciales y artefactos voluminosos quedan fuera del PR.
+
+Entrega backend en borrador hacia develop, preparada para revisión de P06 y
+balance final de criterios. **T11-B agregado y etapa 3 permanecen abiertos**;
+T12, mapas reales/P08, SEC-13, VER-01 y operación continúan pendientes.
+Sin merge, despliegue, DDL/backfill real, rotaciones o activación institucional.

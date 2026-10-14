@@ -1,0 +1,256 @@
+{
+  "scope": "P06_FIXTURES_ONLY; final stage-3 review remains open",
+  "testedSha": "0152f851761b56ecd6078cc04d248ae4c0bc1117",
+  "baseSha": "f22fb04bd62fa635f8f2b096b33bf76306f7a30e",
+  "suites": 65,
+  "tests": 882,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "p06TestsIncludedInTotal": 14,
+  "build": "BUILD SUCCESS",
+  "finishedAt": "2026-10-14T11:12:40-05:00",
+  "duration": " 29:58 min",
+  "environment": {
+    "os": "Windows",
+    "java": "17.0.12",
+    "postgresql": "18.4",
+    "maven": "3.9.15 offline",
+    "fixturePort": 55441,
+    "locale": "C",
+    "maximumConnections": 300,
+    "sharedBuffers": "32 MiB"
+  },
+  "jarSha256": "cd2bb6cc3ff58e6d8c887f465f6c20815a6186e9b3a52961a53fdf3699676c2e",
+  "packagedSql": 14,
+  "historicalSqlUnchanged": 13,
+  "recoveryTables": 128,
+  "sequencesCompared": 75,
+  "sequenceAdvancePolicy": "WAL prelogging gaps allowed; is_called preserved and identities never rewound; all row PKs and table hashes exact",
+  "preservedBusinessSourcesAcrossStep": [
+    "user_accounts",
+    "teacher_profiles",
+    "student_profiles",
+    "evaluation_attempts",
+    "evaluation_answers",
+    "evaluation_assignments",
+    "evaluation_questions",
+    "evaluation_attempt_events",
+    "evaluation_attempt_adjustments",
+    "evaluations",
+    "t11b3_opportunity_groups",
+    "t11b3_account_attempt_budgets",
+    "t11b3_attempt_consumptions",
+    "t11b8_resources",
+    "t11b8_revisions",
+    "t11b8_deliveries",
+    "t11b8_recipients",
+    "t11b8_budgets",
+    "t11b8_fixture_attempts",
+    "t11b8_events",
+    "whiteboard_sessions",
+    "whiteboard_participants",
+    "t11b9_items",
+    "t11b9_counters",
+    "t11b9_commands"
+  ],
+  "processEvidence": {
+    "race": {
+      "pids": [
+        19416,
+        10428
+      ],
+      "result": "{\"xid\": \"48331\", \"next\": 2, \"plan\": \"05eec526-c209-45a8-90fe-bc9696906a14\", \"audit\": 107, \"epoch\": 1, \"state\": \"COMPLETED\", \"total\": 1, \"status\": \"APPLIED\", \"operation\": \"59d125ff-4de0-8eda-d896-e96ca7414446\"}",
+      "checkpoints": 1,
+      "successes": 1
+    },
+    "pause-resume": {
+      "initialPid": 15420,
+      "resumingPid": 7384,
+      "result": {
+        "xid": "46859",
+        "next": 3,
+        "plan": "d1072fdf-f0b1-4c6c-8e68-e787c58c1c24",
+        "audit": 113,
+        "epoch": 3,
+        "state": "COMPLETED",
+        "total": 2,
+        "status": "APPLIED",
+        "operation": "a1fa084c-442e-8113-e58f-69ad5bf18d0a"
+      }
+    },
+    "lost-response": {
+      "pid": 7276,
+      "duplicateEffects": false,
+      "persisted": {
+        "xid": "45044",
+        "action": "STEP",
+        "result": {
+          "xid": "45044",
+          "next": 2,
+          "plan": "99691711-340b-4be7-b28c-7ba4a732e051",
+          "audit": 107,
+          "epoch": 1,
+          "state": "COMPLETED",
+          "total": 1,
+          "status": "APPLIED",
+          "operation": "8a33096b-e1d6-2f41-23c8-69cadd0543c5"
+        },
+        "request": {
+          "plan": "99691711-340b-4be7-b28c-7ba4a732e051",
+          "epoch": 1,
+          "ordinal": 1
+        },
+        "audit_id": 107,
+        "recorded_at": "2026-10-14T11:07:21.308982-05:00",
+        "operation_id": "8a33096b-e1d6-2f41-23c8-69cadd0543c5"
+      }
+    },
+    "killed-before-commit": {
+      "pid": 8380,
+      "unchanged": true
+    }
+  },
+  "preservation": {
+    "protectedUnique": 43,
+    "e2eFiles": 16,
+    "protectedDifferences": [],
+    "historicalSql": [
+      {
+        "file": "t11b1-v1.sql",
+        "sha256": "af82fe40ac9d0193a521460f09f67355b40c6d27190eb51b5b363491689e335d"
+      },
+      {
+        "file": "t11b10-v1.sql",
+        "sha256": "cd60214c477112ee195a7094435fc85f5400b47f57765e3687963ca87ad9987b"
+      },
+      {
+        "file": "t11b2-v1.sql",
+        "sha256": "4d56b1a6fd7ac31506ddd6015788b4f37d8a1f087c18a1148a33d26cce85606a"
+      },
+      {
+        "file": "t11b2-v2.sql",
+        "sha256": "997eded3ed9488a14c1cc8c1a3e643b8b1a3e5687b7b02d35c9cbb8685ab3358"
+      },
+      {
+        "file": "t11b3-v1.sql",
+        "sha256": "2785f8e6affa36ea6dfe79fc9d0c6aee0c2caf0a6ad85b7337bdbddbc18edc05"
+      },
+      {
+        "file": "t11b3-v2.sql",
+        "sha256": "0592b3fc548520ea1b981240b167cc673d05edd56a3fc298e651b17f1ae1bd0b"
+      },
+      {
+        "file": "t11b4-v1.sql",
+        "sha256": "0adbbbe1abeba662c620d271f412a5fc2e6a97a08f7867a1ff1d091681d3c39d"
+      },
+      {
+        "file": "t11b4-v2.sql",
+        "sha256": "2d9bc85ab505a6234ea08b29621a0f0ee20e7ac51dcb02eb1477610809c2c151"
+      },
+      {
+        "file": "t11b5-v1.sql",
+        "sha256": "915210e7ccdaa72290939c1447f211b712e254ea25225799faad19e596c88e4f"
+      },
+      {
+        "file": "t11b6-v1.sql",
+        "sha256": "32c9d1eb42acea1e90fa86dc444ead639684827ece7218c4ed4d7fa488eb96e3"
+      },
+      {
+        "file": "t11b7-v1.sql",
+        "sha256": "b7541335d43606bf33b38d4464f45cff8e2c1007ab301b0cc372650ed4fa2d6a"
+      },
+      {
+        "file": "t11b8-v1.sql",
+        "sha256": "90b9813c00239919d82de20f7cbbd1c1caf9f936c6d632ed57e64246efedc80b"
+      },
+      {
+        "file": "t11b9-v1.sql",
+        "sha256": "2543458350e9f2b5fea0bee04068359e862452c42e440c4b3c320eb1e525219b"
+      }
+    ],
+    "frozenB10Unmodified": true,
+    "previousDocuments": 68,
+    "changedPreviousDocuments": [
+      "docs/arquitectura/11a-modelo-institucional.md",
+      "docs/arquitectura/11c-balance-cierre-modelo.md"
+    ],
+    "unchangedOtherWorktrees": 24,
+    "frontend": {
+      "head": "e88589635a8269c50ee0f53fccf157f0d0985034",
+      "status": "?? e2e-selenium/"
+    },
+    "primaryBackend": {
+      "head": "f22fb04bd62fa635f8f2b096b33bf76306f7a30e",
+      "status": ""
+    }
+  },
+  "developmentSelectionsSeparate": [
+    {
+      "run": "selection-1",
+      "sourceSha": "437fad84f42520362df400140dbab0644dafbb9a",
+      "result": "failed selection",
+      "reason": "Sandbox blocked loopback before fixture setup",
+      "logSha256": "78268de5f4d59a5defdab26b048f6d362a177899f895f823247c1a2b9c898fd2",
+      "sourceAttribution": "Source contents compiled/copied for this run; initial precommit selections have the same src tree as 437fad8"
+    },
+    {
+      "run": "selection-2",
+      "sourceSha": "437fad84f42520362df400140dbab0644dafbb9a",
+      "result": "passed selection",
+      "reason": null,
+      "logSha256": "db9b18664ebc75c2b9c116efcbddde0d2bedb56a8425d7a71c7c07863ad4a191",
+      "sourceAttribution": "Source contents compiled/copied for this run; initial precommit selections have the same src tree as 437fad8"
+    },
+    {
+      "run": "selection-3",
+      "sourceSha": "437fad84f42520362df400140dbab0644dafbb9a",
+      "result": "failed selection",
+      "reason": "Initial PL/pgSQL variable collision and fixture table name",
+      "logSha256": "3b66302a12b11bfa0a65fa983e916bf50eca8434604b14cb02a7af6fe6ac61b6",
+      "sourceAttribution": "Exact source SHA recorded at launch"
+    },
+    {
+      "run": "selection-4",
+      "sourceSha": "9314cfa8ae895ad502f186c78f30dd13a709b7d6",
+      "result": "failed selection",
+      "reason": "Selective logical seed rejected by frozen B5 certifier",
+      "logSha256": "fae3698a3da96356061cdc465c67e1ddfc0f3cf8f9b57c786dfc275dfd8132c6",
+      "sourceAttribution": "Exact source SHA recorded at launch"
+    },
+    {
+      "run": "selection-5",
+      "sourceSha": "e083aead57ab385451b887a024bfe824f69687cc",
+      "result": "failed selection",
+      "reason": "Windows restore path failed to reach named WAL target",
+      "logSha256": "0a24220de2576cce4a2bae675e9a36b6c1c9624e043adb3942cc6b7aad7cfaed",
+      "sourceAttribution": "Exact source SHA recorded at launch"
+    },
+    {
+      "run": "selection-6",
+      "sourceSha": "e8adbfadfc3acbd679d0fe46d23d0f169e8e2fe2",
+      "result": "failed selection",
+      "reason": "Fixture column name and expected PostgreSQL sequence WAL prelogging gaps",
+      "logSha256": "4837e13d822e76cad193bb5ada0616a9d3ee58a3721f7252e1a0858fdad213c4",
+      "sourceAttribution": "Exact source SHA recorded at launch"
+    },
+    {
+      "run": "selection-7",
+      "sourceSha": "e6f538ddcac39813e0a0bc1f137bba6932c5a11a",
+      "result": "passed selection",
+      "reason": null,
+      "logSha256": "1e66e3da927345f86b68e34ae56870c89843881d5193f6779c1eb7c90fbd34ac",
+      "sourceAttribution": "Exact source SHA recorded at launch"
+    },
+    {
+      "run": "selection-8",
+      "sourceSha": "0152f851761b56ecd6078cc04d248ae4c0bc1117",
+      "result": "passed selection",
+      "reason": null,
+      "logSha256": "39bbd0c820ac276ff34536b3f8db61bc0ad1ade26e79226cfa7869b1668d985d",
+      "sourceAttribution": "Exact source SHA recorded at launch"
+    }
+  ],
+  "finalLogSha256": "8bdfd58cd1099cae91b9ec3f2a822b82f5da651ec7d204e1898d451c0656cf65",
+  "reportsZipSha256": "ec3c4df576ed95e990b55d857d53a52374dd1e6596587bf9e2fbc1794f10a302"
+}
