@@ -2149,12 +2149,15 @@ BEGIN
       OR (parent->>'classId' IS NOT NULL AND parent->>'classId' IS DISTINCT FROM x->>'classId') THEN RAISE EXCEPTION 'T11-B10 typed parent institution/class mismatch';END IF;
     END IF;
     r:=t11p05_row(s->>'source_table',s->'source_pk');clazz:=(x->>'classId')::bigint;account:=(x->>'accountId')::bigint;
+    IF s->>'source_table'='t11b6_resource_grants' AND (r->>'institution_id')::bigint IS DISTINCT FROM p.institution_id THEN
+     RAISE EXCEPTION 'T11-B10 authority grant cannot change institution; retain uncertainty/conflict';END IF;
     IF clazz IS NOT NULL AND NOT EXISTS(SELECT 1 FROM academic_classes WHERE id=clazz AND institution_id=p.institution_id) THEN RAISE EXCEPTION 'T11-B10 class institution mismatch';END IF;
     IF account IS NOT NULL AND NOT EXISTS(SELECT 1 FROM user_accounts WHERE id=account) THEN RAISE EXCEPTION 'T11-B10 absent original account';END IF;
     original_account:=coalesce((r->>'account_id')::bigint,(r->>'author_account_id')::bigint,(r->>'owner_user_id')::bigint,(r->>'user_id')::bigint,(r->>'actor_user_id')::bigint);
     IF r->>'teacher_id' IS NOT NULL THEN SELECT user_id INTO original_account FROM teacher_profiles WHERE id=(r->>'teacher_id')::bigint;END IF;
     IF r->>'created_by_teacher_id' IS NOT NULL THEN SELECT user_id INTO original_account FROM teacher_profiles WHERE id=(r->>'created_by_teacher_id')::bigint;END IF;
     IF r->>'student_id' IS NOT NULL THEN SELECT user_id INTO original_account FROM student_profiles WHERE id=(r->>'student_id')::bigint;END IF;
+    IF s->>'source_table'='t11b6_resource_grants' THEN SELECT account_id INTO original_account FROM institution_memberships WHERE id=(r->>'membership_id')::bigint AND institution_id=p.institution_id;END IF;
     IF account IS DISTINCT FROM original_account THEN RAISE EXCEPTION 'T11-B10 original account/author/owner cannot change, be invented or omitted';END IF;
     IF r->>'enrollment_id' IS NOT NULL AND x->>'enrollmentId' IS NULL THEN RAISE EXCEPTION 'T11-B10 existing episode needs explicit corrected episode or uncertainty';END IF;
     IF r->>'student_id' IS NOT NULL THEN

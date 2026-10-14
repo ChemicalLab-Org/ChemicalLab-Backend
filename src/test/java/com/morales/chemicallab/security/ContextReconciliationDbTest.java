@@ -60,6 +60,7 @@ class ContextReconciliationDbTest {
             for(String field:List.of("account_id","author_account_id","owner_user_id","user_id","actor_user_id"))if(row.get("snapshot").hasNonNull(field))x.put("accountId",row.get("snapshot").get(field).asLong());
             for(String field:List.of("teacher_id","created_by_teacher_id"))if(row.get("snapshot").hasNonNull(field))x.put("accountId",count("select user_id from teacher_profiles where id=?",row.get("snapshot").get(field).asLong()));
             if(row.get("snapshot").hasNonNull("student_id"))x.put("accountId",count("select user_id from student_profiles where id=?",row.get("snapshot").get("student_id").asLong()));
+            if(x.get("source").equals("t11b6_resource_grants"))x.put("accountId",count("select account_id from institution_memberships where id=?",row.get("snapshot").get("membership_id").asLong()));
             if(row.get("snapshot").hasNonNull("enrollment_id")) {x.put("enrollmentId",institution==r.foreign?foreignEpisode:r.episode);x.put("sourceTimezone","America/Lima");}
             if(x.get("source").equals("evaluation_attempts")&&row.get("snapshot").hasNonNull("assignment_id")) {x.put("enrollmentId",institution==r.foreign?foreignEpisode:r.episode);x.put("sourceTimezone","America/Lima");}
             if(x.get("source").equals("evaluation_attempts")&&row.get("snapshot").get("assignment_id").isNull()) {
@@ -266,6 +267,33 @@ class ContextReconciliationDbTest {
         assertThat(sql().queryForObject("select to_jsonb(l)::text from system_logs l where id=?",String.class,log)).isEqualTo(original);
         long changed=proposal("whiteboard_sessions",f.board,r.institution,r.classId);approve(changed,"PLATFORM",platform,platformGrant);approve(changed,"INSTITUTION",school,foreignSchoolGrant);assertThat(service.apply(changed,op())).isEqualTo("APPLIED");
         assertThat(count("select count(*) from t11b10_current where source_table in('system_logs','usage_events') and status='STALE'")).isEqualTo(2);
+    }
+    @Test void resourceCorrectionCannotTransferOldSchoolLibraryAuthority() throws Exception {
+        var delegations=f.app.getBean(DelegationMaintenanceService.class);long admin=count("select membership_id from membership_role_grants where id=?",foreignSchoolGrant);
+        var now=java.time.Instant.now();authenticate(school);long grant;
+        try{grant=delegations.grantResource(r.institution,ResourceManagerGrant.Kind.EVALUATION,r.evaluation,r.authorMember,ResourceManagerGrant.Faculty.ASSIGN,admin,now.plusSeconds(1),now.plusSeconds(600),now).id();}finally{SecurityContextHolder.clearContext();}
+        long p=proposal();approvals(p);var before=state();
+        assertThatThrownBy(()->service.apply(p,op())).isInstanceOf(DataAccessException.class).hasMessageContaining("authority grant cannot change");assertThat(state()).isEqualTo(before);
+        var map=f.json.readTree(mapping("evaluations",r.evaluation,r.foreign,r.foreignClass));
+        for(var item:map.get("resolutions"))if(item.get("source").asText().equals("t11b6_resource_grants")) {
+            var x=(com.fasterxml.jackson.databind.node.ObjectNode)item;x.put("scope","CONFLICT");x.remove(List.of("institutionId","classId","accountId","enrollmentId","sourceTimezone"));
+        }
+        long q=service.propose(root("evaluations",r.evaluation),map.toString(),"FIXTURE-KEEP-OLD-GRANT",op());approvals(q);assertThat(service.apply(q,op())).isEqualTo("APPLIED");
+        assertThat(count("select institution_id from t11b6_resource_grants where id=?",grant)).isEqualTo(r.institution);
+        assertThat(count("select count(*) from t11b10_current where source_table='t11b6_resource_grants' and source_pk=jsonb_build_object('id',?::bigint) and status='CONFLICT' and not context_valid",grant)).isEqualTo(1);
+    }
+    @Test void originalAccountAndHistoricalEpisodeMustBothMatch() throws Exception {
+        long attempt=r.attempt(1,AttemptStatus.GRADED,r.assignment,true);
+        var map=f.json.readTree(mapping("evaluations",r.evaluation,r.foreign,r.foreignClass));
+        for(var item:map.get("resolutions"))if(item.get("source").asText().equals("evaluation_attempts"))((com.fasterxml.jackson.databind.node.ObjectNode)item).put("accountId",f.peerStudent.getId());
+        long wrongAccount=service.propose(root("evaluations",r.evaluation),map.toString(),"FIXTURE-WRONG-ACCOUNT",op());approvals(wrongAccount);
+        assertThatThrownBy(()->service.apply(wrongAccount,op())).isInstanceOf(DataAccessException.class).hasMessageContaining("account/author/owner");
+        for(var item:map.get("resolutions"))if(item.get("source").asText().equals("evaluation_attempts")){
+            var x=(com.fasterxml.jackson.databind.node.ObjectNode)item;x.put("accountId",f.student.getId());x.put("enrollmentId",r.episode);
+        }
+        long wrongEpisode=service.propose(root("evaluations",r.evaluation),map.toString(),"FIXTURE-WRONG-EPISODE",op());approvals(wrongEpisode);
+        assertThatThrownBy(()->service.apply(wrongEpisode,op())).isInstanceOf(DataAccessException.class).hasMessageContaining("episode/class/institution/account");
+        assertThat(count("select count(*) from t11b10_versions where source_table='evaluation_attempts' and source_pk=jsonb_build_object('id',?::bigint)",attempt)).isZero();
     }
     @Test void twoProcessesCompeteOnSamePredecessorAndRestoreCertifiesFullSuccessor() throws Exception {
         long one=proposal(),two=proposal();approvals(one);approvals(two);

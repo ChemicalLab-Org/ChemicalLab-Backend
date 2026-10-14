@@ -103,6 +103,9 @@ no copia el recurso a ambos para eludir una contradicción. Clase/colegio/cuenta
 episodio y hecho original deben concordar; episodios se comprueban en la fecha
 del hecho con zona explícita. Un participante existente no se crea desde una
 matrícula; una cuenta desconocida continúa desconocida.
+Un grant de biblioteca B6 del colegio anterior conserva su institución y
+facultades originales: debe permanecer incierto/conflictivo en esa corrección,
+sin convertirse en autorización del destino por heredar el nuevo recurso.
 
 `t11b10_current` ofrece solo la última versión de cada PK, con antecedente,
 status, context_valid y **access_authorized=false**. Revalida fuente, relaciones
