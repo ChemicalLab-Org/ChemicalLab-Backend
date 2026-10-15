@@ -227,8 +227,47 @@ Logs, comandos, SHA/parche, XML, backups y hashes se conservan localmente en
 fuentes compiladas, sin sumar selecciones a suites completas. Los intentos
 fallidos permanecen registrados; compilación no equivale a pruebas aprobadas.
 
-Resultados definitivos, JAR, conservación y SHA publicado se incorporan al
-terminar las ejecuciones y antes de entregar el PR en borrador.
+Entorno: Windows, Java 17.0.12+8-LTS-286, Maven 3.9.15 offline, PostgreSQL 18.4,
+zona America/Lima y perfil único test. Clúster nuevo y desechable propio:
+127.0.0.1:55448/chemicallab_t01_test, rol ficticio t12e_fixture,
+max_connections=100, shared_buffers=32MB y max_locks_per_transaction=512.
+Los clientes se conectan por HTTP al servidor real y por JDBC a PostgreSQL;
+no se utiliza H2 ni se simulan persistencia, calificación o autorización.
+
+| Ejecución de desarrollo | SHA compilado | Resultado y límite |
+| --- | --- | --- |
+| compile-1 | Base `6d3de4c` + implementación luego conservada en `298d3d8` | BUILD SUCCESS; solo compilación, sin JUnit/JAR verificado |
+| selection-1 | `298d3d8` | 1 prueba / 0 fallos / 1 error / 0 omitidas; loopback denegado por sandbox, sin resultado de negocio |
+| selection-2 | `298d3d8` | 1/0/0/0; recorrido docente inicial, 3 min 32 s; selección, no suite completa |
+| candidate-e | `afdf195` | Interrumpida con exit 1 tras detectar defectos de preparación del arnés; no hay un resultado de suite completa |
+| critical-e | `d7ca41f` | 4/1/0/0; 8 min 40 s, BUILD FAILURE; tres casos pasan, falla GET del co-docente administrador por fotografía previa no vigente |
+| co-teacher-retry | `4a70d91` | 1/0/0/0; 2 min 30 s, BUILD SUCCESS; la fotografía previa devuelve fresh=false y se prepara una nueva conciliación F08 explícita |
+
+La preparación inicial de PostgreSQL informó primero conexión denegada por
+sandbox y después conexión rechazada, antes de iniciar el clúster fuera de
+esa restricción. Son intentos de preparación separados de JUnit. No hubo
+rechazo de aprobación automática. El arnés original intentaba crear un perfil
+docente ya existente y usaba instantes distintos en una misma planificación;
+se corrigió antes de las verificaciones siguientes. También se separan las
+aserciones sobre SUCCESS de los eventos REJECTED/FAILED que T08 conserva tras
+rollback, y se prueba expiración real del plazo de sesión al finalizar la unidad.
+La revisión de cuotas distingue AUXILIARY para ajustes y ORIGINAL para el cierre.
+Las correcciones del arnés no cambian las reglas de negocio ni los SQL anteriores.
+
+Se conservan logs y artefactos parciales, incluida la recuperación física
+alcanzada durante candidate-e; no se presenta ese candidato como aprobado ni
+se atribuyen sus resultados parciales al código posterior. Los ERROR deliberados
+de auditoría, cuota o certificación se valoran por las aserciones y XML JUnit,
+no por su mera presencia en PostgreSQL/logs.
+
+La ejecución definitiva usa `clean package` con estas doce clases completas:
+EvaluationDeliveryAccessDbTest, InstitutionalEvaluationReadDbTest,
+InstitutionalAnswerSaveDbTest, InstitutionalAttemptLifecycleDbTest,
+InstitutionalAttemptReviewDbTest, EvaluationWindowHttpDbTest, ConcurrencyDbTest,
+EvaluationServiceTest, EvaluationOpenQuestionPersistenceDbTest,
+EvaluationAccessPolicyTest, TransportInputFilterTest e InputBudgetsTest.
+No equivale a ejecutar toda la suite del repositorio. Resultados definitivos,
+JAR, conservación y SHA publicado se incorporan al terminar, antes de entregar.
 
 ## Pendientes
 
