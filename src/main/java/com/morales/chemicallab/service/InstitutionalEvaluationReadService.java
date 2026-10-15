@@ -191,9 +191,7 @@ public class InstitutionalEvaluationReadService {
     private List<Long> legacyOrder(String raw,Content content) {
         // Match the legacy read fallback in memory; never repair a row or randomize on GET.
         if(raw==null || raw.isBlank()) return content.questions().stream().map(i->i.question().id()).toList();
-        var order=new ArrayList<Long>();
-        for(String part:raw.split(",")) order.add(id(JSON.getNodeFactory().textNode(part.trim())));
-        return List.copyOf(order);
+        return legacyQuestionOrder(raw);
     }
     private List<Long> order(JsonNode raw,Content content) {
         if(!raw.isArray()) throw unavailable();

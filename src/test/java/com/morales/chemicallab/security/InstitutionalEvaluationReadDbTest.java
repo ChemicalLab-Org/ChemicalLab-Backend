@@ -213,6 +213,67 @@ class InstitutionalEvaluationReadDbTest {
         sql().update("insert into evaluation_answers(attempt_id,question_id,answer_text,points_awarded,reviewed,teacher_feedback) values(?,?,'OWN-LEGACY-T12B',2,true,'PRIVATE-FEEDBACK-T12B-8e32')",e.legacyAttempt,question);
         sql().update("update evaluation_attempts set question_order=?,current_question_index=1,score=2,max_score=2,final_score=20,overall_feedback='PRIVATE-FEEDBACK-T12B-8e32' where id=?",Long.toString(question),e.legacyAttempt);
     }
+    long orderedQuestion(long evaluation,boolean active) {
+        return sql().queryForObject("insert into evaluation_questions(evaluation_id,question_text,question_type,points,order_index,required,active) values(?,'ORDER-ONLY-T12B','OPEN_TEXT',1,77,true,?) returning id",Long.class,evaluation,active);
+    }
+    void ordered(long... ids) {
+        sql().update("update evaluation_attempts set question_order=?,current_question_index=1 where id=?",
+                String.join(",",Arrays.stream(ids).mapToObj(Long::toString).toList()),e.legacyAttempt);
+    }
+    long answeredQuestion() {return sql().queryForObject("select question_id from evaluation_answers where attempt_id=?",Long.class,e.legacyAttempt);}
+    void deniedOrderWithoutPartialOrMutation(Request q) throws Exception {
+        var before=e.c.state();var sequenceBefore=sequences();
+        var response=get(pupil,q);System.out.println("T12B-P2 HTTP "+response.statusCode()+" "+response.body());
+        assertThat(response.statusCode()).as(response.body()).isEqualTo(403);
+        assertNoSecrets(response.body());
+        assertThat(response.body()).doesNotContain("questionOrder","currentQuestionIndex","answers","scope","OWN-LEGACY-T12B","ORDER-ONLY-T12B");
+        var after=e.c.state();
+        for(String technical:List.of("system_logs","audit_rejection_budget")){before.remove(technical);after.remove(technical);}
+        assertThat(after).isEqualTo(before);
+        assertThat(sequences().stream().filter(x->!x.get("sequencename").toString().startsWith("system_logs" )).toList())
+                .isEqualTo(sequenceBefore.stream().filter(x->!x.get("sequencename").toString().startsWith("system_logs")).toList());
+    }
+    @Test void legacyOrderRejectsForeignQuestionWithoutPartialOrMutation() throws Exception {
+        legacyContent();Request q=e.legacy(Action.READ_OWN_ATTEMPT);
+        long foreign=orderedQuestion(e.request(true,Action.READ_OWN_ATTEMPT).evaluationId(),true);
+        ordered(answeredQuestion(),foreign);e.resolve(q);deniedOrderWithoutPartialOrMutation(q);
+    }
+    @Test void legacyOrderRejectsNonexistentQuestionWithoutPartialOrMutation() throws Exception {
+        legacyContent();Request q=e.legacy(Action.READ_OWN_ATTEMPT);
+        ordered(answeredQuestion(),Long.MAX_VALUE);e.resolve(q);deniedOrderWithoutPartialOrMutation(q);
+    }
+    @Test void legacyOrderRejectsInactiveUnresolvedQuestionWithoutAnswers() throws Exception {
+        legacyContent();Request q=e.legacy(Action.READ_OWN_ATTEMPT);long inactive=orderedQuestion(q.evaluationId(),false);
+        ordered(answeredQuestion(),inactive);
+        var mapping=f.json.readTree(e.c.mapping("evaluations",q.evaluationId(),q.institutionId(),q.classId()));
+        for(var row:mapping.get("resolutions"))if(row.path("source").asText().equals("evaluation_questions")&&row.path("pk").path("id").asLong()==inactive){
+            var resolution=(com.fasterxml.jackson.databind.node.ObjectNode)row;
+            resolution.remove(List.of("institutionId","classId","accountId","enrollmentId","sourceTimezone"));resolution.put("scope","UNRESOLVED");
+        }
+        long proposal=e.c.service.propose(e.c.root("evaluations",q.evaluationId()),mapping.toString(),"FIXTURE-P2-ORDER",e.op());
+        e.c.approve(proposal,"PLATFORM",e.c.platform,e.c.platformGrant);e.c.approve(proposal,"INSTITUTION",e.c.school,e.c.foreignSchoolGrant);
+        assertThat(e.c.service.apply(proposal,e.op())).isEqualTo("APPLIED");
+        assertThat(sql().queryForObject("select status from t11b10_current where source_table='evaluation_questions' and source_pk=jsonb_build_object('id',?::bigint)",String.class,inactive)).isEqualTo("UNRESOLVED");
+        assertThat(sql().queryForObject("select count(*) from evaluation_answers where question_id=?",Integer.class,inactive)).isZero();
+        deniedOrderWithoutPartialOrMutation(q);
+    }
+    @Test void legacyOrderPreservesResolvedInactiveHistoryAndCursorWithoutMutation() throws Exception {
+        legacyContent();Request q=e.legacy(Action.READ_OWN_ATTEMPT);long active=answeredQuestion(),inactive=orderedQuestion(q.evaluationId(),false);
+        ordered(inactive,active);e.resolve(q);var before=e.c.state();var sequenceBefore=sequences();
+        var attempt=ok(pupil,q);assertThat(attempt.path("questionOrder").toString()).isEqualTo("["+inactive+","+active+"]");
+        assertThat(attempt.path("currentQuestionIndex").asInt()).isEqualTo(1);
+        assertThat(sql().queryForObject("select count(*) from evaluation_answers where question_id=?",Integer.class,inactive)).isZero();
+        assertThat(e.c.state()).isEqualTo(before);assertThat(sequences()).isEqualTo(sequenceBefore);
+    }
+    @Test void legacyOrderAbsentPreservesExistingFallbackWithoutMutation() throws Exception {
+        legacyContent();Request q=e.legacy(Action.READ_OWN_ATTEMPT);long active=answeredQuestion();orderedQuestion(q.evaluationId(),false);
+        for(String absent:Arrays.asList(null,"   ")) {
+            sql().update("update evaluation_attempts set question_order=? where id=?",absent,e.legacyAttempt);e.resolve(q);
+            var before=e.c.state();var sequenceBefore=sequences();var attempt=ok(pupil,q);
+            assertThat(attempt.path("questionOrder").toString()).isEqualTo("["+active+"]");assertThat(attempt.path("currentQuestionIndex").asInt()).isEqualTo(1);
+            assertThat(e.c.state()).isEqualTo(before);assertThat(sequences()).isEqualTo(sequenceBefore);
+        }
+    }
     @Test void legacyUnitReadsHideCorrectionAndNeverReconcileOrAdvanceExpiredAttempts() throws Exception {
         legacyContent();Request q=e.legacy(Action.READ_DELIVERY);e.resolve(q);
         assertNoSecrets(ok(pupil,q).toString());JsonNode attempt=ok(pupil,e.legacy(Action.READ_OWN_ATTEMPT));assertNoSecrets(attempt.toString());assertThat(attempt.path("answers").toString()).contains("OWN-LEGACY-T12B");
@@ -246,7 +307,7 @@ class InstitutionalEvaluationReadDbTest {
         assertNoSecrets(ok(pupil,e.request(false,Action.READ_OWN_ATTEMPT)).toString());
     }
     @Test void readsPreserveAllBusinessRowsSequencesQuotasHistoryAndSuccess() throws Exception {
-        academicContent();Request a=e.request(false,Action.READ_DELIVERY),b=e.request(true,Action.READ_DELIVERY),legacy=e.legacy(Action.READ_DELIVERY);e.resolve(a);e.resolve(b);e.resolve(legacy);
+        academicContent();legacyContent();Request a=e.request(false,Action.READ_DELIVERY),b=e.request(true,Action.READ_DELIVERY),legacy=e.legacy(Action.READ_DELIVERY);e.resolve(a);e.resolve(b);e.resolve(legacy);
         var before=e.c.state();var sequences=sequences();
         for(Request q:List.of(a,b,legacy)){ok(pupil,q);assertThat(f.request("GET",base(q)+"?recipientAccountId="+f.student.getId(),admin,null).statusCode()).isEqualTo(200);}
         ok(pupil,e.request(false,Action.READ_OWN_ATTEMPT));ok(pupil,e.legacy(Action.READ_OWN_ATTEMPT));

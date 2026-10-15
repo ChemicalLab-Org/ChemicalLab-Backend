@@ -203,6 +203,15 @@ public class EvaluationDeliveryAccessService {
      * Use the very same B10 resolver/cache as the decision; NEW JSON belongs to its exact revision row.
      */
     private void validateReadRows(Request q, CurrentContexts b10) {
+        if(q.action()==Action.READ_OWN_ATTEMPT) {
+            String stored=jdbc.queryForObject("select question_order from evaluation_attempts where id=?",String.class,q.attemptId());
+            // Historical order may contain inactive, unanswered questions. Check every ID,
+            // without filtering/reordering, with this decision's resolver and coherent locks.
+            for(long id:legacyQuestionOrder(stored)) {
+                require(exists("select exists(select 1 from evaluation_questions where id=? and evaluation_id=?)",id,q.evaluationId()));
+                b10.get("evaluation_questions",id,false,null,null);
+            }
+        }
         for(long id:jdbc.queryForList("""
             select x.id from evaluation_questions x where x.evaluation_id=? and
               (x.active or exists(select 1 from evaluation_answers a where a.question_id=x.id and a.attempt_id=?))
@@ -217,6 +226,24 @@ public class EvaluationDeliveryAccessService {
         if(q.attemptId()!=null)
             for(long id:jdbc.queryForList("select id from evaluation_answers where attempt_id=?",Long.class,q.attemptId()))
                 b10.get("evaluation_answers",id,true,q.recipientAccountId(),null);
+    }
+
+    /** Shared stored-order parser: validation and projection consume exactly the same IDs.
+     * An absent order still uses the active-content fallback, validated above.
+     */
+    static List<Long> legacyQuestionOrder(String raw) {
+        if(raw==null || raw.isBlank()) return List.of();
+        var order=new ArrayList<Long>();
+        try {
+            for(String part:raw.split(",")) {
+                String value=part.trim();
+                if(!value.matches("[1-9][0-9]{0,18}")) throw new NumberFormatException();
+                order.add(Long.parseLong(value));
+            }
+        } catch(NumberFormatException invalid) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Proyección no disponible.");
+        }
+        return List.copyOf(order);
     }
 
     private record Resolved(long version, Long enrollment) {}
