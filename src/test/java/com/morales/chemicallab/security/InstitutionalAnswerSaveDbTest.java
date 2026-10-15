@@ -209,7 +209,7 @@ class InstitutionalAnswerSaveDbTest {
     @Test void twoLegacyRootsAndCorrectedInstitutionKeepAnswersAndMeasurementsIsolated() throws Exception {
         Request original=q;
         q=e.changed(q,r.foreign,r.foreignClass,q.evaluationId(),q.deliveryId(),q.revisionId(),q.recipientAccountId(),q.attemptId());
-        e.resolve(q);save(UUID.randomUUID(),open,null,"Answer in B after F08 correction");
+        UUID operationB=UUID.randomUUID();e.resolve(q);save(operationB,open,null,"Answer in B after F08 correction");
         long firstAnswer=count("select id from evaluation_answers where attempt_id=? and question_id=?",q.attemptId(),open);
         assertThat(post(h.pupil,original,body(UUID.randomUUID(),open,null,"Old A context")).statusCode()).isEqualTo(403);
         var teacher=f.app.getBean(com.morales.chemicallab.repository.TeacherProfileRepository.class).findByUser(f.teacher).orElseThrow();
@@ -228,7 +228,9 @@ class InstitutionalAnswerSaveDbTest {
         long delivery=count("select id from t11b3_evaluation_deliveries where legacy_assignment_id=?",assignment);
         Request b=q;Request a=new Request(Contract.LEGACY,Action.READ_OWN_ATTEMPT,r.institution,r.classId,root,delivery,
             count("select revision_id from t11b3_evaluation_deliveries where id=?",delivery),f.student.getId(),attempt);
-        e.resolve(a);q=a;save(UUID.randomUUID(),secondQuestion,null,"Independent answer in A");
+        e.resolve(a);q=a;
+        assertThat(post(h.pupil,a,body(operationB,secondQuestion,null,"Independent answer in A")).statusCode()).isEqualTo(409);
+        save(UUID.randomUUID(),secondQuestion,null,"Independent answer in A");
         assertThat(h.ok(h.pupil,a).path("answers").toString()).contains("Independent answer in A").doesNotContain("Answer in B");
         assertThat(h.ok(h.pupil,b).path("answers").toString()).contains("Answer in B").doesNotContain("Independent answer in A");
         for(Request bad:List.of(e.changed(a,b.institutionId(),a.classId(),a.evaluationId(),a.deliveryId(),a.revisionId(),a.recipientAccountId(),a.attemptId()),
@@ -240,13 +242,13 @@ class InstitutionalAnswerSaveDbTest {
     }
     @Test void windowExpiringAfterAuthorizationRollsBackAnswerReceiptCursorAndSuccess() throws Exception {
         sequential();
-        sql().update("update evaluation_assignments set due_at=(clock_timestamp() at time zone 'America/Lima')+interval '15 seconds' where id=?",r.assignment);e.resolve(q);
+        sql().update("update evaluation_assignments set due_at=(clock_timestamp() at time zone 'America/Lima')+interval '20 seconds' where id=?",r.assignment);e.resolve(q);
         var saves=f.app.getBean(InstitutionalAnswerSaveService.class);JdbcTemplate spy=spy(sql());
         doAnswer(call->{
             Object result=call.callRealMethod();
             long remaining=sql().queryForObject("select greatest(0,ceil(extract(epoch from ((due_at at time zone 'America/Lima')-clock_timestamp()))*1000))::bigint from evaluation_assignments where id=?",Long.class,r.assignment);
             assertThat(remaining).isPositive();Thread.sleep(remaining+50);return result;
-        }).when(spy).queryForObject(contains(".begin_save("),eq(String.class),any(Object[].class));
+        }).when(spy).queryForObject(contains(".finish_save("),eq(Object.class),any(Object[].class));
         ReflectionTestUtils.setField(saves,"jdbc",spy);
         try {
             assertThat(post(h.pupil,q,body(UUID.randomUUID(),open,null,"Late commit")).statusCode()).isEqualTo(403);

@@ -45,7 +45,7 @@ attemptId, questionId, selectedOptionId, answerText propio normalizado,
 currentQuestionIndex y savedAt. No hay puntuaciones, correct, reviewed,
 expectedAnswer, soluciones, claves, explicación ni feedback. Sesión inválida:
 401; temporal: 403 PASSWORD_CHANGE_REQUIRED de T02; autorización/semántica:
-403 genérico; activación incompleta: 404; fallo transaccional/persistente:
+403 genérico; clave incompatible: 409 genérico; activación incompleta: 404; fallo transaccional/persistente:
 503 genérico. Los fallos no devuelven SQL ni entidades académicas.
 
 ## Por qué se necesita un sucesor
@@ -114,7 +114,7 @@ El control T12-C tiene techo independiente de 10000 recibos/64 MiB JSON.
 
 La misma operationId con idéntico actor/contexto/contenido devuelve el resultado
 durable original, tras autorización actual, sin otro avance/evento/medición.
-Una reutilización incompatible se rechaza. La coordinación se adquiere antes
+Una reutilización incompatible se rechaza con 409. Un contendiente puede agotar el lock_timeout y recibir 503; repetir después consulta el resultado durable sin duplicarlo. La coordinación se adquiere antes
 de consultar el recibo: una petición que perdió la respuesta puede repetir
 después de un commit desconocido; ausencia previa al lock no acredita rollback.
 No se promete aceptar un reintento cuando la autorización o ventana ya venció.
@@ -143,7 +143,7 @@ secuencias; conserva vínculo con el fingerprint B11. No recalcular un ledger
 para aceptar deriva. Tras fallo, confirmar rollback y corregir la causa; ante
 commit desconocido, repetir la misma petición bajo coordinación.
 
-El respaldo debe incluir **t03, t06 y t12c juntos**, incluidos negocio,
+El respaldo debe incluir **t03, t06 y t12c juntos**, y sus extensiones/dependencias completas, incluidos negocio,
 aprobaciones, recibos, cuotas y auditoría. Restaurar en instancia aislada,
 sin Hibernate reparador; certificar el sucesor y comparar todas las tablas.
 Para recuperación con escrituras posteriores, conservar WAL continuo de la
