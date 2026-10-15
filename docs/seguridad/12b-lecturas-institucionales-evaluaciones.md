@@ -194,10 +194,19 @@ Otra barrera prueba cierre académico durante una corrección bloqueada; una
 conexión escritora que confirma primero prueba también la observación nueva.
 Los spies solo colocan barreras, sin simular permisos, datos, locks ni escritores.
 
-Resultados definitivos y SHA de suite completa/empaquetado: pendientes de la
-ejecución final. Las selecciones y fallos diagnósticos se conservan separados
-en `.codex-work/t12b-evidence/`; no se suman a una suite completa ni se atribuyen
-al SHA final. El directorio local de evidencia y la DB no forman parte de la PR.
+**SHA ejecutado en la suite completa y el empaquetado:**
+`fb002223d7a29a586e69c3c0dffb6d4261e44bf7`.
+`clean package` offline, sin filtros: **67 suites, 926 pruebas, cero fallos,
+errores u omisiones; BUILD SUCCESS y JAR generado**. Incluye los **22 casos HTTP
+T12-B**, los 22 T12-A y las demás regresiones; los 22 nuevos ya están incluidos
+en el total, no se suman selecciones. Finalizó el 15 de octubre de 2026 a las
+**02:24:26 America/Lima**; Maven informa duración `01:16 h`.
+El commit documental posterior conserva idénticos código, pruebas, configuración,
+SQL y POM respecto del SHA ejecutado.
+
+Las selecciones y fallos diagnósticos se conservan separados en
+`.codex-work/t12b-evidence/`; no se suman a la suite completa ni se atribuyen al
+SHA definitivo. Ese directorio local de evidencia y la DB no forman parte de la PR.
 
 | Ejecución independiente | Fuente y resultado pruebas/fallos/errores/omitidas |
 | --- | --- |
@@ -206,6 +215,7 @@ al SHA final. El directorio local de evidencia y la DB no forman parte de la PR.
 | selection-2 | Worktree previo a 345c7a1: 3/0/0/0 HTTP; diagnóstico, sin atribución al SHA final |
 | selection-3 | `345c7a183385133b3ddc8a8e7b18c713ab25ecb0`: 43/1/2/0. T12-A: 22/0/0/0; T05: 4/0/0/0; HTTP T12-B: 17/1/2/0. Se conservan log/XML originales |
 | selection-4 | `6ed31a492fe5388b17b7035e2bb6378c64532029`: 12/0/0/0. Casos corregidos y afectados; hijos B10 inciertos, DB incorrecta, fallo PostgreSQL, matrícula/período y corrección B10 concurrente |
+| full-package, definitiva | `fb002223d7a29a586e69c3c0dffb6d4261e44bf7`: **926/0/0/0**, suite completa y JAR; sin selección de tests |
 
 Los tres problemas de selection-3 pertenecen al arnés: una cuenta global
 ESTUDIANTE ya tenía ADMIN_INSTITUCION en el fixture B6 y recibía legítimamente
@@ -219,6 +229,42 @@ perfil test, locale C y 300 conexiones. La prueba de DB incorrecta crea un schem
 vacío en `postgres` de **esa misma instancia desechable**, comprueba el rechazo
 y lo elimina; no consulta bases reales. No acredita Linux/SCA, permisos runtime
 productivos, inventario real de escritores ni capacidad operativa.
+
+Artefactos locales verificados:
+
+| Archivo en `.codex-work/t12b-evidence/` | SHA-256 |
+| --- | --- |
+| verified-backend.jar | `d4b5e131c9646eb02aa94dffb426e06cd1cc206b406a37acedf8a716c9409ef0` |
+| verified-reports.zip | `6268238477d556e7eeaec5b82952849dfb9a6b6d99240d029940bb19097065a5` |
+| full-package.log | `f85c2e3a9bff0f67c490a8422342bf0b9e19fe2df34bfb28f4fe76728d611265` |
+
+`collect.py` contrasta código/POM con el SHA ejecutado, cuenta directamente los
+67 XML y los coteja con el resumen final del log. Verifica las tres clases nuevas
+en el JAR, la configuración desactivada y los **14 SQL históricos** empaquetados
+contra sus fuentes, normalizando únicamente CRLF/LF. `verified-results.json` y
+`verified-suites.json` conservan la atribución y conteos. `clean` eliminó informes
+previos antes de ejecutar la suite completa. Los logs/exit/SHA/XML de selecciones
+y el error de compilación se conservan separados.
+
+Conservación comprobada por SHA-256: **185 archivos previos** intactos,
+incluidos documentos del workspace/backend, auditoría y SQL; **16 E2E** intactos.
+Los HEAD de los otros **26 checkouts** permanecen iguales. Backend principal
+limpio en develop/fae2895; frontend conserva
+`e88589635a8269c50ee0f53fccf157f0d0985034` y su `?? e2e-selenium/` previo.
+`before.json`, `preserve.py` y `preservation.json` registran la comprobación sin
+absorber, sobrescribir o borrar cambios ajenos.
+
+Reproducción con JDK 17, Maven 3.9.15 y una instancia PostgreSQL desechable propia
+preparada como B1, con el puerto/rol ficticios de esta ejecución:
+
+```powershell
+# Solo ensayo; nunca una base escolar. El arnés crea/elimina sus schemas propios.
+./mvnw.cmd -o '-Dspring.profiles.active=test' '-Dspring.datasource.url=jdbc:postgresql://127.0.0.1:55443/chemicallab_t01_test' '-Dspring.datasource.username=t12b_fixture' '-Dspring.datasource.password=fictitious' clean package
+```
+
+Para una selección durante desarrollo, sustituir `clean package` por `test` y
+agregar `-Dtest=InstitutionalEvaluationReadDbTest`. El arnés habilita únicamente
+su schema explícito por caso; la configuración distribuida permanece desactivada.
 
 ## Superficies pendientes y entrega
 
