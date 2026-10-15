@@ -203,6 +203,30 @@ Los fallos de desarrollo se conservan como tales. El resultado definitivo,
 SHA probado, suites completas, JAR y recuperación se registran tras completar
 la verificación; una compilación o selección parcial no acredita el total.
 
+Ejecuciones de desarrollo independientes; pruebas/fallos/errores/omitidas:
+
+| Ejecución | SHA ejecutado | Resultado y límite |
+| --- | --- | --- |
+| selection-1 | `399c7d32e106e8d19087a6b862896510b44152f2` | 1/0/1/0; sandbox denegó conexión loopback; sin prueba de negocio |
+| selection-2 | `399c7d32e106e8d19087a6b862896510b44152f2` | 1/1/0/0; alias SQL ambiguo en la nueva medición; inicio revertido |
+| selection-3 | `59c7ba4833ecc63c1713fc0d9ce28cfe222e62f8` | 1/1/0/0; alias del predecesor incompleto; inicio revertido |
+| selection-4 | `b7e553c52b5e85aed8df292ecf2527769d00894f` | 1/1/0/0; precedencia JSONB al validar el cierre; inicio/lectura/guardado previos confirmados, cierre revertido |
+| candidate-d | `883bd3434bc1681a145d26c8442530401c38d729` | 21/0/1/0; veinte casos pasan, incluida recuperación física de 132 tablas; la carrera falla en el arnés por aplicar una prohibición de campo a `score:null` del DTO legacy. No prueba el resultado final de esa carrera |
+
+El último error del arnés se corrigió verificando ausencia de corrección real
+y nulidad del puntaje en el DTO legacy, mientras las respuestas institucionales
+siguen exigiendo ausencia total del campo. No se relajaron restricciones de
+negocio ni fingerprints. Las correcciones posteriores añaden procedencia del
+replay, auditoría pendiente obligatoria, reloj de recuperación y seis casos D.
+Estos cambios no se atribuyen retroactivamente a candidate-d.
+
+La compilación inicial terminó con BUILD SUCCESS (sin JUnit ni JAR verificado).
+Los intentos de preparación de PostgreSQL en sandbox informaron conexión
+denegada y conexión rechazada; luego se inició únicamente el clúster propio
+fuera de esa restricción. No son pruebas JUnit adicionales. Los ERROR
+deliberados de auditoría/cuota/certificación se evalúan por las aserciones de
+rollback y el resultado JUnit, no por su sola presencia en los logs.
+
 La selección final abarca T12-A/B/C/D y las suites afectadas de política,
 ventanas HTTP, guardado/envío legacy, abiertas y concurrencia; también la
 regresión del filtro de entrada modificado. No se ejecuta toda la suite del
