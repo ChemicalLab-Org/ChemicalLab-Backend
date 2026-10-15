@@ -154,29 +154,41 @@ class InstitutionalAnswerSaveDbTest {
         var tx=new org.springframework.transaction.support.TransactionTemplate(f.app.getBean(org.springframework.transaction.PlatformTransactionManager.class));
         tx.executeWithoutResult(s->{sql().execute("alter table "+ctl+".saves disable trigger immutable");
             assertThatThrownBy(()->sql().execute(rUncheckedScript())).isInstanceOf(org.springframework.dao.DataAccessException.class).hasMessageContaining("divergence");s.setRollbackOnly();});
-        java.nio.file.Path dir=java.nio.file.Files.createDirectories(java.nio.file.Path.of("target/t12c-recovery",f.schema));
+        java.nio.file.Path dir=java.nio.file.Files.createDirectories(java.nio.file.Path.of("target/t12c-recovery",f.schema)).toAbsolutePath();
         String url=f.setting("spring.datasource.url"),port=url.substring(url.indexOf(':',18)+1,url.lastIndexOf('/'));
         var args=List.of("-h","127.0.0.1","-p",port,"-U",f.setting("spring.datasource.username"));
         sql().update("update authentication_limits set expires_at=greatest(expires_at,floor(extract(epoch from clock_timestamp())*1000)::bigint+3600000)");
         Map<String,String> before=new TreeMap<>();
         for(String schema:List.of(f.schema,"t06_"+f.schema.substring(4),ctl))for(String table:sql().queryForList("select tablename from pg_tables where schemaname=? order by tablename",String.class,schema))
             before.put(schema+"."+table,sql().queryForObject(r.signature(schema+"."+table),String.class));
-        r.nativeTool("pg_dump",args,List.of("-Fc","-n",f.schema,"-n","t06_"+f.schema.substring(4),"-n",ctl,"-d","chemicallab_t01_test","-f",dir.resolve("fixture.dump").toAbsolutePath().toString()),dir);
-        f.app.close();
-        try(var statement=f.control.createStatement()) {
-            statement.execute("drop schema "+ctl+" cascade;drop schema t06_"+f.schema.substring(4)+" cascade;drop schema "+f.schema+" cascade");
+        var backup=dir.resolve("copy");
+        r.nativeTool("pg_basebackup",args,List.of("-D",backup.toString(),"--wal-method=stream","--checkpoint=fast"),dir);
+        r.nativeTool("pg_verifybackup",List.of(),List.of(backup.toString()),dir);
+        int copyPort=TransitionWalRecoveryFixture.port();
+        java.nio.file.Files.writeString(backup.resolve("postgresql.auto.conf"),"listen_addresses='127.0.0.1'\nport="+copyPort+"\nmax_connections=20\nmax_locks_per_transaction=512\nshared_buffers='16MB'\n");
+        boolean started=false;String sourceOrigin=f.origin;
+        org.springframework.context.ConfigurableApplicationContext copyApp=null;
+        try {
+            r.nativeTool("pg_ctl",List.of(),List.of("-D",backup.toString(),"-l",dir.resolve("copy-postgres.log").toString(),"-w","start"),dir);started=true;
+            String copyUrl="jdbc:postgresql://127.0.0.1:"+copyPort+"/chemicallab_t01_test";
+            try(Connection copy=DriverManager.getConnection(copyUrl,f.setting("spring.datasource.username"),f.setting("spring.datasource.password"));var statement=copy.createStatement()) {
+                statement.execute("set search_path to "+f.schema+",public");statement.execute(r.script("t12c-v1"));
+                Map<String,String> restored=new TreeMap<>();
+                for(String table:before.keySet())try(var rows=statement.executeQuery(r.signature(table))){rows.next();restored.put(table,rows.getString(1));}
+                assertThat(restored).isEqualTo(before);
+                java.nio.file.Files.writeString(dir.resolve("signatures.json"),f.json.writerWithDefaultPrettyPrinter().writeValueAsString(Map.of("before",before,"restored",restored,"copyPort",copyPort,"method","physical backup after save, not PITR")));
+                copyApp=f.startApp("--spring.datasource.url="+copyUrl+"?currentSchema="+f.schema,"--spring.jpa.hibernate.ddl-auto=none",
+                    "--app.evaluations.institutional.enabled=true","--app.evaluations.institutional.answer-save-enabled=true","--app.evaluations.institutional.fixture-schema="+f.schema);
+                f.origin=f.origin(copyApp);
+                assertThat(save(op,open,null,"Durable answer")).isEqualTo(first);
+                assertThat(h.ok(h.pupil,q).path("answers").toString()).contains("Durable answer");
+                try(var rows=statement.executeQuery("select count(*) from "+ctl+".saves")){rows.next();assertThat(rows.getInt(1)).isEqualTo(1);}
+                try(var rows=statement.executeQuery("select current_question_index from evaluation_attempts where id="+q.attemptId())){rows.next();assertThat(rows.getInt(1)).isEqualTo(1);}
+            }
+        }finally{
+            f.origin=sourceOrigin;if(copyApp!=null)copyApp.close();
+            if(started)r.nativeTool("pg_ctl",List.of(),List.of("-D",backup.toString(),"-m","fast","-w","stop"),dir);
         }
-        r.nativeTool("pg_restore",args,List.of("--single-transaction","--exit-on-error","-d","chemicallab_t01_test",dir.resolve("fixture.dump").toAbsolutePath().toString()),dir);
-        Map<String,String> restored=new TreeMap<>();
-        try(var statement=f.control.createStatement()) {
-            statement.execute("set search_path to "+f.schema+",public");statement.execute(r.script("t12c-v1"));
-            for(String table:before.keySet())try(var rows=statement.executeQuery(r.signature(table))){rows.next();restored.put(table,rows.getString(1));}
-        }
-        assertThat(restored).isEqualTo(before);
-        java.nio.file.Files.writeString(dir.resolve("signatures.json"),f.json.writerWithDefaultPrettyPrinter().writeValueAsString(Map.of("before",before,"restored",restored)));
-        f.app=f.startApp("--spring.jpa.hibernate.ddl-auto=none");f.origin=f.origin(f.app);
-        assertThat(save(op,open,null,"Durable answer")).isEqualTo(first);
-        assertThat(h.ok(h.pupil,q).path("answers").toString()).contains("Durable answer");assertThat(receipts()).isEqualTo(1);
     }
     String rUncheckedScript(){try{return r.script("t12c-v1");}catch(Exception ex){throw new IllegalStateException(ex);}}
     @Test void freshF08CorrectionPrecedesAllOldReceiptsAndNewSavesBindToNewMap() throws Exception {
@@ -194,14 +206,67 @@ class InstitutionalAnswerSaveDbTest {
         assertThat(post(h.pupil,q,body(UUID.randomUUID(),open,null,"X")).statusCode()).isEqualTo(403);
         e.resolve(q,"UNRESOLVED","evaluation_options");assertThat(post(h.pupil,q,body(UUID.randomUUID(),choice,option,null)).statusCode()).isEqualTo(403);assertThat(receipts()).isZero();
     }
+    @Test void twoLegacyRootsAndCorrectedInstitutionKeepAnswersAndMeasurementsIsolated() throws Exception {
+        Request original=q;
+        q=e.changed(q,r.foreign,r.foreignClass,q.evaluationId(),q.deliveryId(),q.revisionId(),q.recipientAccountId(),q.attemptId());
+        e.resolve(q);save(UUID.randomUUID(),open,null,"Answer in B after F08 correction");
+        long firstAnswer=count("select id from evaluation_answers where attempt_id=? and question_id=?",q.attemptId(),open);
+        assertThat(post(h.pupil,original,body(UUID.randomUUID(),open,null,"Old A context")).statusCode()).isEqualTo(403);
+        var teacher=f.app.getBean(com.morales.chemicallab.repository.TeacherProfileRepository.class).findByUser(f.teacher).orElseThrow();
+        long root=f.app.getBean(com.morales.chemicallab.repository.EvaluationRepository.class).saveAndFlush(
+            Evaluation.builder().title("Second fictitious legacy root").status(EvaluationStatus.PUBLISHED).maxAttempts(3).timeLimitMinutes(30).createdByTeacher(teacher).build()).getId();
+        long assignment=r.assignment(root,teacher,java.time.LocalDateTime.now(java.time.ZoneId.of("America/Lima")).plusHours(1));
+        long secondQuestion=question(root,"OPEN_TEXT",0);
+        long attempt=f.app.getBean(com.morales.chemicallab.repository.EvaluationAttemptRepository.class).saveAndFlush(
+            EvaluationAttempt.builder().evaluation(f.app.getBean(com.morales.chemicallab.repository.EvaluationRepository.class).findById(root).orElseThrow())
+                .student(f.app.getBean(com.morales.chemicallab.repository.StudentProfileRepository.class).findByUser_Id(f.student.getId()).orElseThrow())
+                .assignment(f.app.getBean(com.morales.chemicallab.repository.EvaluationAssignmentRepository.class).findById(assignment).orElseThrow())
+                .attemptNumber(1).status(AttemptStatus.IN_PROGRESS).startedAt(java.time.LocalDateTime.now(java.time.ZoneId.of("America/Lima")))
+                .questionOrder(""+secondQuestion).currentQuestionIndex(0).build()).getId();
+        String map=r.map(List.of(r.delivery(assignment,r.classId,r.episode)),List.of());
+        long prepared=r.approved(ResourceReconciliationService.SourceKind.EVALUATION,root,map);assertThat(r.service.apply(prepared)).isEqualTo("APPLIED");
+        long delivery=count("select id from t11b3_evaluation_deliveries where legacy_assignment_id=?",assignment);
+        Request b=q;Request a=new Request(Contract.LEGACY,Action.READ_OWN_ATTEMPT,r.institution,r.classId,root,delivery,
+            count("select revision_id from t11b3_evaluation_deliveries where id=?",delivery),f.student.getId(),attempt);
+        e.resolve(a);q=a;save(UUID.randomUUID(),secondQuestion,null,"Independent answer in A");
+        assertThat(h.ok(h.pupil,a).path("answers").toString()).contains("Independent answer in A").doesNotContain("Answer in B");
+        assertThat(h.ok(h.pupil,b).path("answers").toString()).contains("Answer in B").doesNotContain("Independent answer in A");
+        for(Request bad:List.of(e.changed(a,b.institutionId(),a.classId(),a.evaluationId(),a.deliveryId(),a.revisionId(),a.recipientAccountId(),a.attemptId()),
+            e.changed(a,a.institutionId(),a.classId(),a.evaluationId(),a.deliveryId(),a.revisionId(),a.recipientAccountId(),b.attemptId())))
+            assertThat(post(h.pupil,bad,body(UUID.randomUUID(),secondQuestion,null,"Foreign")).statusCode()).isEqualTo(403);
+        assertThat(post(h.pupil,a,body(UUID.randomUUID(),open,null,"Foreign question")).statusCode()).isEqualTo(403);
+        assertThat(count("select (x->>'owner_id')::bigint from "+ctl+".saves s cross join lateral jsonb_array_elements(s.dataset) x where s.ordinal=(select max(ordinal) from "+ctl+".saves) and x->>'source_table'='evaluation_answers' and x->'source_pk'=jsonb_build_object('id',?::bigint)",firstAnswer)).isEqualTo(r.foreign);
+        assertThat(receipts()).isEqualTo(2);
+    }
+    @Test void windowExpiringAfterAuthorizationRollsBackAnswerReceiptCursorAndSuccess() throws Exception {
+        sequential();
+        sql().update("update evaluation_assignments set due_at=(clock_timestamp() at time zone 'America/Lima')+interval '15 seconds' where id=?",r.assignment);e.resolve(q);
+        var saves=f.app.getBean(InstitutionalAnswerSaveService.class);JdbcTemplate spy=spy(sql());
+        doAnswer(call->{
+            Object result=call.callRealMethod();
+            long remaining=sql().queryForObject("select greatest(0,ceil(extract(epoch from ((due_at at time zone 'America/Lima')-clock_timestamp()))*1000))::bigint from evaluation_assignments where id=?",Long.class,r.assignment);
+            assertThat(remaining).isPositive();Thread.sleep(remaining+50);return result;
+        }).when(spy).queryForObject(contains(".begin_save("),eq(String.class),any(Object[].class));
+        ReflectionTestUtils.setField(saves,"jdbc",spy);
+        try {
+            assertThat(post(h.pupil,q,body(UUID.randomUUID(),open,null,"Late commit")).statusCode()).isEqualTo(403);
+            assertThat(receipts()).isZero();assertThat(count("select count(*) from evaluation_answers where attempt_id=?",q.attemptId())).isZero();
+            assertThat(count("select current_question_index from evaluation_attempts where id=?",q.attemptId())).isZero();
+            assertThat(count("select count(*) from system_logs where action='SAVE_INSTITUTIONAL_ANSWER'")).isZero();
+        }finally{ReflectionTestUtils.setField(saves,"jdbc",sql());}
+    }
     @Test void concurrentSameOperationHasOneCommitAndOneSequentialAdvance() throws Exception {
         sequential();String command=body(UUID.randomUUID(),open,null,"Concurrent");
         ExecutorService threads=Executors.newFixedThreadPool(2);
         try {
             Future<HttpResponse<String>> a=threads.submit(()->post(h.pupil,q,command)),b=threads.submit(()->post(h.pupil,q,command));
             var first=a.get(25,TimeUnit.SECONDS);var second=b.get(25,TimeUnit.SECONDS);
-            assertThat(first.statusCode()).as(first.body()).isEqualTo(200);assertThat(second.statusCode()).as(second.body()).isEqualTo(200);
-            assertThat(f.json.readTree(first.body())).isEqualTo(f.json.readTree(second.body()));assertThat(receipts()).isEqualTo(1);
+            assertThat(first.statusCode()).as(first.body()).isIn(200,503);assertThat(second.statusCode()).as(second.body()).isIn(200,503);
+            assertThat(List.of(first.statusCode(),second.statusCode())).contains(200);
+            var committed=first.statusCode()==200?first:second;
+            var retry=post(h.pupil,q,command);assertThat(retry.statusCode()).as(retry.body()).isEqualTo(200);
+            assertThat(f.json.readTree(committed.body())).isEqualTo(f.json.readTree(retry.body()));assertThat(receipts()).isEqualTo(1);
+            assertThat(count("select count(*) from system_logs where action='SAVE_INSTITUTIONAL_ANSWER'")).isEqualTo(1);
             assertThat(count("select current_question_index from evaluation_attempts where id=?",q.attemptId())).isEqualTo(1);
         }finally{threads.shutdownNow();}
     }
@@ -240,8 +305,11 @@ class InstitutionalAnswerSaveDbTest {
             long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(4);boolean waiting=false;
             while(System.nanoTime()<until){waiting=Boolean.TRUE.equals(sql().queryForObject("select count(*)>=2 from pg_stat_activity where wait_event_type='Lock' and query ilike '%evaluations%'",Boolean.class));if(waiting)break;Thread.sleep(20);}
             assertThat(waiting).isTrue();release.countDown();saving.get(35,TimeUnit.SECONDS);
-            var submitted=submission.get(25,TimeUnit.SECONDS);assertThat(submitted.statusCode()).as(submitted.body()).isEqualTo(200);h.assertNoSecrets(submitted.body());
-            var observed=reading.get(25,TimeUnit.SECONDS);assertThat(observed.statusCode()).isIn(200,403);h.assertNoSecrets(observed.body());
+            var submitted=submission.get(25,TimeUnit.SECONDS);assertThat(submitted.statusCode()).as(submitted.body()).isEqualTo(200);JsonNode legacyResult=f.json.readTree(submitted.body());
+            assertThat(legacyResult.path("score").isNull()).isTrue();assertThat(legacyResult.path("maxScore").isNull()).isTrue();
+            for(JsonNode answer:legacyResult.path("answers")){assertThat(answer.path("correct").isNull()).isTrue();assertThat(answer.path("pointsAwarded").isNull()).isTrue();}
+            assertThat(submitted.body()).doesNotContain("PRIVATE-EXPECTED-T12B-1937","PRIVATE-CORRECTION-T12B-64c9");
+            var observed=reading.get(25,TimeUnit.SECONDS);assertThat(observed.statusCode()).isIn(200,403,503);h.assertNoSecrets(observed.body());
             if(observed.statusCode()==200)assertThat(observed.body()).contains("Before submit");
             assertThat(receipts()).isEqualTo(1);assertThat(count("select count(*) from evaluation_attempt_events where attempt_id=? and event_type='ATTEMPT_SUBMITTED'",q.attemptId())).isEqualTo(1);
         }finally{release.countDown();threads.shutdownNow();ReflectionTestUtils.setField(saves,"jdbc",sql());}

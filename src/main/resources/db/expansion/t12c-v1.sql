@@ -2680,11 +2680,16 @@ BEGIN
       FROM t11b9_measure() m LEFT JOIN t11b10_versions v ON v.source_table=m.source_table AND v.source_pk=m.source_pk
        AND NOT EXISTS(SELECT 1 FROM t11b10_versions n WHERE n.predecessor_id=v.id) AND m.source_table NOT LIKE 't11b%'
       WHERE m.source_table<>'system_logs' OR NOT EXISTS(SELECT 1 FROM system_logs WHERE id=(m.source_pk->>'id')::bigint AND target_type='ContextResolution');
-    -- Preserve attribution for earlier new answers while the same current approved map is in force.
-    SELECT jsonb_agg(CASE WHEN x->>'source_table'='evaluation_answers' AND EXISTS(
-       SELECT 1 FROM @ctl@.saves prior WHERE prior.proposal_id=s.proposal_id AND prior.after_manifest IS NOT NULL
-        AND prior.answer_id=(x->'source_pk'->>'id')::bigint)
-      THEN x||jsonb_build_object('scope','INSTITUTION','owner_id',p.institution_id) ELSE x END ORDER BY x->>'source_table',(x->'source_pk')::text)
+    -- Every current root retains its derived new-answer attribution. A later F08
+    -- head wins, even when a different root triggers the next measurement.
+    SELECT jsonb_agg(CASE WHEN x->>'source_table'='evaluation_answers' THEN coalesce(
+      (SELECT x||jsonb_build_object('scope',prior.answer_resolution->>'scope',
+        'owner_id',(prior.answer_resolution->>'institutionId')::bigint)
+       FROM @ctl@.saves prior JOIN t11b10_versions root ON root.id=prior.root_version
+       WHERE prior.after_manifest IS NOT NULL AND prior.answer_id=(x->'source_pk'->>'id')::bigint
+        AND NOT EXISTS(SELECT 1 FROM t11b10_versions next WHERE next.predecessor_id=root.id)
+        AND NOT EXISTS(SELECT 1 FROM t11b10_versions explicit WHERE explicit.source_table='evaluation_answers' AND explicit.source_pk=x->'source_pk')
+       ORDER BY prior.ordinal DESC LIMIT 1),x) ELSE x END ORDER BY x->>'source_table',(x->'source_pk')::text)
       INTO data FROM jsonb_array_elements(data) x;
     FOR g IN SELECT x->>'scope' scope,(x->>'owner_id')::bigint owner,x->>'category' category,
       sum((x->>'rows_used')::bigint) rows,sum((x->>'bytes_used')::bigint) bytes FROM jsonb_array_elements(data) x GROUP BY 1,2,3 LOOP
