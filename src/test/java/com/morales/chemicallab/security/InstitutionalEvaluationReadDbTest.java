@@ -283,6 +283,7 @@ class InstitutionalEvaluationReadDbTest {
             waitForBlocked(pid);release.countDown();
             HttpResponse<String> result=reading.get(12,TimeUnit.SECONDS);assertThat(result.statusCode()).as(result.body()).isEqualTo(afterAuthorization?200:403);
             if(q.action()!=Action.READ_CORRECTION)assertNoSecrets(result.body());
+            if(afterAuthorization)assertThat(f.json.readTree(result.body()).path("scope").path("institutionId").asLong()).isEqualTo(q.institutionId());
             changing.get(12,TimeUnit.SECONDS);
             // A new HTTP read must resolve again, never consume the old ALLOW.
             assertThat(get(token,q).statusCode()).isEqualTo(nextStatus);
@@ -291,6 +292,21 @@ class InstitutionalEvaluationReadDbTest {
     @Test void contextWriterCannotChangeTheScopeBetweenAuthorizationAndProjection() throws Exception {
         Request q=e.request(false,Action.READ_DELIVERY);e.resolve(q);
         race(q,pupil,"update evaluations set title='CHANGED-PARENT-T12B' where id="+q.evaluationId(),403);
+    }
+    @Test void approvedB10ContextCorrectionDuringReadCannotMixInstitutions() throws Exception {
+        Request q=e.request(false,Action.READ_DELIVERY);e.resolve(q);
+        Request corrected=e.changed(q,r.foreign,r.foreignClass,q.evaluationId(),q.deliveryId(),q.revisionId(),q.recipientAccountId(),null);
+        var mapping=f.json.readTree(e.c.mapping("evaluations",q.evaluationId(),r.foreign,r.foreignClass));
+        for(var item:mapping.get("resolutions")) {
+            var row=(com.fasterxml.jackson.databind.node.ObjectNode)item;
+            if(row.has("enrollmentId"))row.put("enrollmentId",e.c.foreignEpisode);
+            if(row.path("source").asText().equals("t11b8_fixture_attempts")){row.put("enrollmentId",e.c.foreignEpisode);row.put("sourceTimezone","America/Lima");}
+        }
+        long proposal=e.c.service.propose(e.c.root("evaluations",q.evaluationId()),mapping.toString(),"FIXTURE-CONTEXT-RACE",e.op());
+        e.c.approve(proposal,"PLATFORM",e.c.platform,e.c.platformGrant);
+        e.c.approve(proposal,"INSTITUTION",e.c.school,e.c.schoolGrant);
+        race(q,pupil,"insert into t11b10_commands(operation_id,action,request) values('"+e.op()+"','APPLY','{\"proposal\":"+proposal+"}'::jsonb)",403);
+        assertThat(ok(pupil,corrected).path("scope").path("institutionId").asLong()).isEqualTo(r.foreign);
     }
     @Test void sessionRevocationFromIndependentConnectionSerializesWithRead() throws Exception {
         Request q=e.request(false,Action.READ_OWN_ATTEMPT);e.resolve(q);

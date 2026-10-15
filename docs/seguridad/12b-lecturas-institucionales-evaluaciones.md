@@ -185,7 +185,9 @@ cuotas, historia, SUCCESS y secuencias; regresión HTTP de rutas legacy.
 
 Las barreras de carrera detienen una lectura HTTP después de ALLOW y de cargar
 contenido NEW, manteniendo sus locks mientras otra conexión intenta cambiar
-contexto, grant o sesión. PostgreSQL pg_stat_activity acredita la espera real.
+fuente/contexto, grant o sesión. Incluyen aplicar una corrección B10 ya aprobada
+de A hacia B: respuesta anterior íntegra en A, nueva petición denegada en A y
+autorizada íntegramente en B. PostgreSQL pg_stat_activity acredita la espera real.
 Otra barrera prueba cierre académico durante una corrección bloqueada; una
 conexión escritora que confirma primero prueba también la observación nueva.
 Los spies solo colocan barreras, sin simular permisos, datos, locks ni escritores.
