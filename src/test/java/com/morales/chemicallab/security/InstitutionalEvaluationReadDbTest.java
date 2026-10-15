@@ -78,7 +78,10 @@ class InstitutionalEvaluationReadDbTest {
         assertThat(f.request("GET",base(q)+"?recipientAccountId="+f.peerStudent.getId(),admin,null).statusCode()).isEqualTo(403);
         Request other=e.request(true,Action.READ_OWN_ATTEMPT);e.resolve(other);
         forbidden(pupil,e.changed(q,q.institutionId(),q.classId(),q.evaluationId(),q.deliveryId(),q.revisionId(),q.recipientAccountId(),other.attemptId()));
-        assertThat(f.request("GET",base(q)+"?recipientAccountId="+f.student.getId(),peer,null).statusCode()).isEqualTo(403);
+        // The frozen B6 fixture gives peerStudent ADMIN_INSTITUCION in A despite its global student role.
+        var supervised=f.request("GET",base(q)+"?recipientAccountId="+f.student.getId(),peer,null);
+        assertThat(supervised.statusCode()).isEqualTo(200);assertThat(f.json.readTree(supervised.body()).path("projection").asText()).isEqualTo("SUPERVISION_METADATA");assertNoSecrets(supervised.body());
+        assertThat(f.request("GET",base(q)+"?recipientAccountId="+f.student.getId(),f.login(f.outsider),null).statusCode()).isEqualTo(403);
         assertThat(f.request("POST",path(q),pupil,"{}").statusCode()).isNotEqualTo(200);
     }
     @Test void realAuthenticationRejectsMissingInvalidRevokedExpiredVersionAndTemporarySessions() throws Exception {
@@ -101,7 +104,7 @@ class InstitutionalEvaluationReadDbTest {
         long grant=e.count("select id from membership_role_grants where membership_id=? and role='ESTUDIANTE'",foreignMember);
         r.institutions.revokeRole(grant,Instant.now());forbidden(pupil,b);
         r.institutions.grantRole(foreignMember,MembershipRoleGrant.InstitutionalRole.ESTUDIANTE,Instant.now().plusSeconds(300),r.until);forbidden(pupil,b);
-        r.institutions.grantRole(foreignMember,MembershipRoleGrant.InstitutionalRole.ESTUDIANTE,r.from.plusSeconds(50),r.from.plusSeconds(100));forbidden(pupil,b);
+        r.institutions.grantRole(foreignMember,MembershipRoleGrant.InstitutionalRole.ESTUDIANTE,r.from.plusSeconds(1),r.from.plusSeconds(2));forbidden(pupil,b);
         Request delivery=e.request(false,Action.READ_DELIVERY);
         r.academic.transitionAssignment(e.responsible,TeachingAssignment.Status.ENDED,Instant.now());e.resolve(delivery);
         assertThat(f.request("GET",base(delivery)+"?recipientAccountId="+f.student.getId(),teacher,null).statusCode()).isEqualTo(403);
@@ -319,7 +322,7 @@ class InstitutionalEvaluationReadDbTest {
     @Test void membershipPermissionWriterSerializesWithRead() throws Exception {
         Request q=e.request(false,Action.READ_OWN_ATTEMPT);e.resolve(q);
         long grant=e.count("select id from membership_role_grants where membership_id=? and role='ESTUDIANTE'",r.member);
-        race(q,pupil,"update membership_role_grants set status='REVOKED',revoked_at=clock_timestamp() where id="+grant,403);
+        race(q,pupil,"update membership_role_grants set status='REVOKED',revoked_at=clock_timestamp(),revocation_reason='REMOVED' where id="+grant,403);
     }
     @Test void academicClosureDuringReadReturnsOldDenialThenLegitimatelyReleasedCorrection() throws Exception {
         legacyContent();sql().update("update evaluation_attempts set status='GRADED',grade_closed=true where id=?",e.legacyAttempt);
