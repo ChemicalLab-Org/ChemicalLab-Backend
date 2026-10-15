@@ -1043,7 +1043,7 @@ public class EvaluationService {
         if (recalculateAfterReview(attempt, policy)) {
             if (legacyAudit) logReviewCompleted(attempt, evaluation);
         }
-        
+
     }
 
     /**
@@ -1079,7 +1079,7 @@ public class EvaluationService {
         if (!wasGraded) {
             if (legacyAudit) logReviewCompleted(attempt, attempt.getEvaluation());
         }
-        
+
     }
 
     /**
@@ -1209,7 +1209,7 @@ public class EvaluationService {
                             + evaluation.getTitle() + "».",
                     "attemptId=" + attempt.getId() + ";adjustmentId=" + adjustment.getId());
         }
-        
+
     }
 
     /**
@@ -1241,7 +1241,7 @@ public class EvaluationService {
                         + evaluation.getTitle() + "».",
                 "attemptId=" + attempt.getId());
 
-        
+
     }
 
     /**
@@ -1287,7 +1287,7 @@ public class EvaluationService {
                         + evaluation.getTitle() + "».",
                 "attemptId=" + attempt.getId());
 
-        
+
     }
 
 

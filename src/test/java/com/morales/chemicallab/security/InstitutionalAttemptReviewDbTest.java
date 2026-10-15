@@ -64,7 +64,12 @@ class InstitutionalAttemptReviewDbTest {
     JsonNode read() throws Exception{return ok(send("GET",teacher,q,"",null));}
     JsonNode command(String suffix,Object...fields) throws Exception{return ok(post(teacher,suffix,body(UUID.randomUUID(),fields)));}
     JsonNode grade() throws Exception{return command("/answers/"+answer,"score",1,"feedback"," \tTeacher text\n ");}
-    Map<String,String> state(){return e.c.b.b8.previous.previous.signatures("evaluation_attempts","evaluation_answers","evaluation_attempt_adjustments","evaluation_attempt_events","system_logs","t11b9_counters",ctl+".saves");}
+    Map<String,String> state(){
+        var state=new TreeMap<>(e.c.b.b8.previous.previous.signatures("evaluation_attempts","evaluation_answers","evaluation_attempt_adjustments","evaluation_attempt_events","t11b9_counters",ctl+".saves"));
+        // T08 intentionally records bounded REJECTED/FAILED evidence after business
+        // rollback. Only SUCCESS participates in the business atomicity assertion.
+        state.put("successAudit",sql().queryForObject("select md5(coalesce(jsonb_agg(to_jsonb(x) order by id)::text,'')) from system_logs x where outcome='SUCCESS'",String.class));return state;
+    }
     long receipts(){return count("select count(*) from "+ctl+".saves");}
     void forbidden(HttpResponse<String> response){assertThat(response.statusCode()).as(response.body()).isEqualTo(403);h.assertNoSecrets(response.body());}
 
@@ -104,12 +109,21 @@ class InstitutionalAttemptReviewDbTest {
         r.institutions.grantRole(member,DOCENTE,r.from.plusSeconds(20),null);
         var co=delegation.planCoTeacher(r.institution,r.classId,member,r.from.plusSeconds(30),r.until,r.from.plusSeconds(21));
         delegation.transitionCoTeacher(co.id(),TeachingAssignment.Status.ACTIVE,r.from.plusSeconds(30));
-        ok(send("GET",h.admin,q,"",null));ok(post(h.admin,"/answers/"+answer,body(UUID.randomUUID(),"score",1)));
+        boolean fresh=sql().queryForObject("select "+ctl+".fresh(proposal_id) from t11b10_versions v where source_table='evaluations' and source_pk=jsonb_build_object('id',?::bigint) and not exists(select 1 from t11b10_versions n where n.predecessor_id=v.id)",Boolean.class,q.evaluationId());
+        java.nio.file.Path diagnostics=java.nio.file.Files.createDirectories(java.nio.file.Path.of("target/t12e-diagnostics"));
+        java.nio.file.Files.writeString(diagnostics.resolve(f.schema+"-co-teacher.json"),f.json.writeValueAsString(Map.of("freshBeforeExplicitFixtureReapproval",fresh)));
+        // Same fixture setup contract as T12-A: changes to the approving school
+        // account's membership/grants are not silently accepted by an old photograph.
+        e.resolve(q);
+        UUID actorBound=UUID.randomUUID();String grading=body(actorBound,"score",1);
+        ok(send("GET",h.admin,q,"",null));ok(post(h.admin,"/answers/"+answer,grading));
+        assertThat(post(teacher,"/answers/"+answer,grading).statusCode()).isEqualTo(409);
         assertThat(count("select t.user_id from evaluation_answers a join teacher_profiles t on t.id=a.reviewed_by where a.id=?",answer)).isEqualTo(e.c.school.getId());
         delegation.transitionCoTeacher(co.id(),TeachingAssignment.Status.ENDED,Instant.now());forbidden(send("GET",h.admin,q,"",null));
         r.institutions.grantRole(r.member,DOCENTE,r.from.plusSeconds(20),null);
         var self=delegation.planCoTeacher(r.institution,r.classId,r.member,r.from.plusSeconds(30),r.until,r.from.plusSeconds(21));
         delegation.transitionCoTeacher(self.id(),TeachingAssignment.Status.ACTIVE,r.from.plusSeconds(30));
+        e.resolve(q);
         forbidden(post(h.pupil,"/answers/"+answer,body(UUID.randomUUID(),"score",1)));forbidden(send("GET",h.pupil,q,"",null));
     }
     @Test void scoreBoundsPendingOpenAdjustmentsAndClosedGradeKeepLegacyRules() throws Exception {
@@ -191,6 +205,21 @@ class InstitutionalAttemptReviewDbTest {
             original.stop();
         }
     }
+    @Test void dReceiptsSurviveTeacherClosureAndNewCAndDWritesUseTheSameSuccessor() throws Exception {
+        UUID start=UUID.fromString(sql().queryForObject("select operation_id::text from "+d.ctl+".saves where request->>'operation'='START'",String.class));
+        UUID submit=UUID.fromString(sql().queryForObject("select operation_id::text from "+d.ctl+".saves where request->>'operation'='SUBMIT'",String.class));
+        String frozen=sql().queryForObject(r.signature(d.ctl+".saves"),String.class);
+        grade();command("/close");var first=d.begin(start);
+        assertThat(first.path("attemptId").asLong()).isEqualTo(q.attemptId());
+        assertThat(d.finish(q.attemptId(),submit,List.of(d.answer(s.choice,s.option,null))).path("status").asText()).isEqualTo("PENDING_MANUAL_REVIEW");
+        assertThat(sql().queryForObject(r.signature(d.ctl+".saves"),String.class)).isEqualTo(frozen);
+        long next=d.begun();d.q=d.own(next);s.q=d.q;s.save(UUID.randomUUID(),s.open,null,"Successor answer");
+        d.finish(next,UUID.randomUUID(),List.of(d.answer(s.choice,s.option,null)));
+        assertThat(h.ok(h.pupil,d.q).path("answers").toString()).contains("Successor answer");
+        assertThat(ok(send("GET",teacher,d.q,"",null)).path("recipientAccountId").asLong()).isEqualTo(f.student.getId());
+        assertThat(count("select count(*) from "+ctl+".saves where request->>'operation' in ('START','SAVE','SUBMIT')")).isEqualTo(3);
+        assertThat(sql().queryForObject(r.signature(d.ctl+".saves"),String.class)).isEqualTo(frozen);
+    }
     @Test void defaultFlagsProfileSchemaAndTransportBoundsRemainIndependent() throws Exception {
         h.activation.remove("app.evaluations.institutional.review-enabled");assertThat(send("GET",teacher,q,"",null).statusCode()).isEqualTo(404);
         h.activation.put("app.evaluations.institutional.review-enabled",true);
@@ -209,7 +238,7 @@ class InstitutionalAttemptReviewDbTest {
         assertThat(state()).isEqualTo(before);read();
     }
     @Test void institutionalQuotaFailureRollsBackNewAdjustmentAndFinalScore() throws Exception {
-        e.c.b.service.limit(q.institutionId(),"ORIGINAL",1,1,UUID.randomUUID());var before=state();
+        e.c.b.service.limit(q.institutionId(),"AUXILIARY",1,1,UUID.randomUUID());var before=state();
         assertThat(post(teacher,"/adjustments",body(UUID.randomUUID(),"amount",1,"reason","Quota fail")).statusCode()).isEqualTo(503);
         assertThat(state()).isEqualTo(before);read();
     }
@@ -228,14 +257,19 @@ class InstitutionalAttemptReviewDbTest {
     }
     @Test void finalSessionRevalidationRollsBackAlreadyFinishedJournalAndGrade() throws Exception {
         var principal=(SessionPrincipal)f.app.getBean(AccountSessionService.class).authenticate(teacher).getPrincipal();
+        sql().update("update account_sessions set expires_at=clock_timestamp()+interval '15 seconds' where id=?",principal.sessionId());
         var before=state();String sessionBefore=sql().queryForObject(r.signature("account_sessions"),String.class);
         var service=f.app.getBean(InstitutionalAttemptReviewService.class);JdbcTemplate spy=spy(sql());
-        doAnswer(call->{Object value=call.callRealMethod();sql().update("update account_sessions set expires_at=clock_timestamp()-interval '1 second' where id=?",principal.sessionId());return value;})
+        var finished=new java.util.concurrent.atomic.AtomicBoolean();
+        doAnswer(call->{Object value=call.callRealMethod();finished.set(true);
+            long remaining=count("select greatest(0,ceil(extract(epoch from (expires_at-clock_timestamp()))*1000))::bigint from account_sessions where id=?",principal.sessionId());
+            Thread.sleep(remaining+50);return value;})
             .when(spy).queryForObject(contains(".finish_operation("),eq(Object.class),any(Object[].class));
         ReflectionTestUtils.setField(service,"jdbc",spy);
         try{assertThat(post(teacher,"/answers/"+answer,body(UUID.randomUUID(),"score",1)).statusCode()).isEqualTo(401);}
         finally{ReflectionTestUtils.setField(service,"jdbc",sql());}
-        assertThat(state()).isEqualTo(before);assertThat(sql().queryForObject(r.signature("account_sessions"),String.class)).isEqualTo(sessionBefore);grade();
+        assertThat(finished).isTrue();assertThat(state()).isEqualTo(before);assertThat(sql().queryForObject(r.signature("account_sessions"),String.class)).isEqualTo(sessionBefore);
+        teacher=f.login(f.otherTeacher);grade();
     }
     @Test void studentCorrectionRequiresGlobalClosureAndRemainsSafeBeforeIt() throws Exception {
         grade();command("/close");
@@ -306,9 +340,12 @@ class InstitutionalAttemptReviewDbTest {
             .when(spy).queryForObject(contains(".begin_save("),eq(Object.class),any(Object[].class));
         ReflectionTestUtils.setField(service,"jdbc",spy);var pool=Executors.newFixedThreadPool(2);
         try {
+            String editing=body(UUID.randomUUID(),"score",0);
             var close=pool.submit(()->post(teacher,"/close",body(UUID.randomUUID())));assertThat(locked.await(20,TimeUnit.SECONDS)).isTrue();
-            var edit=pool.submit(()->post(h.teacher,"/answers/"+answer,body(UUID.randomUUID(),"score",0)));
-            waitForInstitutionalWriter();release.countDown();ok(close.get(60,TimeUnit.SECONDS));forbidden(edit.get(60,TimeUnit.SECONDS));
+            var edit=pool.submit(()->post(h.teacher,"/answers/"+answer,editing));
+            waitForInstitutionalWriter();release.countDown();ok(close.get(60,TimeUnit.SECONDS));
+            var losing=edit.get(60,TimeUnit.SECONDS);assertThat(losing.statusCode()).as(losing.body()).isIn(403,503);
+            if(losing.statusCode()==503)forbidden(post(h.teacher,"/answers/"+answer,editing));else forbidden(losing);
             assertThat(read().path("openAnswers").get(0).path("pointsAwarded").asInt()).isEqualTo(1);
         }finally{release.countDown();pool.shutdownNow();ReflectionTestUtils.setField(service,"jdbc",sql());}
     }
