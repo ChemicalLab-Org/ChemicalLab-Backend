@@ -86,7 +86,7 @@ class InstitutionalAttemptLifecycleDbTest {
         assertThat(post(h.pupil,base(q)+"/"+attempt+"/submit",submitBody(UUID.randomUUID(),null)).statusCode()).isEqualTo(403);
         assertThat(count("select count(*) from evaluation_answers where attempt_id=?",attempt)).isZero();assertThat(receipts()).isEqualTo(1);
         finish(attempt,UUID.randomUUID(),List.of(answer(s.open,null,"Required answer")));
-        assertThat(count("select status='PENDING_MANUAL_REVIEW' from evaluation_attempts where id=?",attempt)).isEqualTo(1);
+        assertThat(count("select count(*) from evaluation_attempts where status='PENDING_MANUAL_REVIEW' and id=?",attempt)).isEqualTo(1);
     }
     @Test void expiredAcademicWindowClosesOnlySavedAnswersAndNeverMutatesOnGet() throws Exception {
         sql().update("update evaluation_questions set required=true where id=?",s.open);e.resolve(q);
@@ -189,4 +189,49 @@ class InstitutionalAttemptLifecycleDbTest {
         sql().update("update evaluations set title='Outside protocol' where id=?",q.evaluationId());
         h.forbidden(h.pupil,q);assertThat(post(h.pupil,base(q)+"/"+attempt+"/submit",submitBody(UUID.randomUUID(),null)).statusCode()).isEqualTo(403);
     }
+    @Test void additiveCertificationAndPhysicalRecoveryKeepNewAttemptTerminalAndReceipts() throws Exception {
+        UUID start=UUID.randomUUID();JsonNode first=begin(start);long attempt=first.path("attemptId").asLong();q=own(attempt);s.q=q;
+        UUID op=UUID.randomUUID();JsonNode terminal=finish(attempt,op,List.of(answer(s.open,null,"Durable answer"),answer(s.choice,s.option,null)));
+        sql().execute(r.script("t12d-v1"));
+        var tx=new org.springframework.transaction.support.TransactionTemplate(f.app.getBean(org.springframework.transaction.PlatformTransactionManager.class));
+        tx.executeWithoutResult(s->{sql().execute("alter table "+ctl+".saves disable trigger immutable");
+            assertThatThrownBy(()->sql().execute(rUncheckedScript())).isInstanceOf(org.springframework.dao.DataAccessException.class).hasMessageContaining("divergence");s.setRollbackOnly();});
+        java.nio.file.Path dir=java.nio.file.Files.createDirectories(java.nio.file.Path.of("target/t12d-recovery",f.schema)).toAbsolutePath();
+        String url=f.setting("spring.datasource.url"),port=url.substring(url.indexOf(':',18)+1,url.lastIndexOf('/'));
+        var args=List.of("-h","127.0.0.1","-p",port,"-U",f.setting("spring.datasource.username"));
+        sql().update("update authentication_limits set expires_at=greatest(expires_at,floor(extract(epoch from clock_timestamp())*1000)::bigint+3600000)");
+        Map<String,String> before=new TreeMap<>();
+        for(String schema:List.of(f.schema,"t06_"+f.schema.substring(4),"t12c_"+f.schema.substring(4),ctl))for(String table:sql().queryForList("select tablename from pg_tables where schemaname=? order by tablename",String.class,schema))
+            before.put(schema+"."+table,sql().queryForObject(r.signature(schema+"."+table),String.class));
+        var backup=dir.resolve("copy");
+        r.nativeTool("pg_basebackup",args,List.of("-D",backup.toString(),"--wal-method=stream","--checkpoint=fast"),dir);
+        r.nativeTool("pg_verifybackup",List.of(),List.of(backup.toString()),dir);
+        int copyPort=TransitionWalRecoveryFixture.port();
+        java.nio.file.Files.writeString(backup.resolve("postgresql.auto.conf"),"listen_addresses='127.0.0.1'\nport="+copyPort+"\nmax_connections=20\nmax_locks_per_transaction=512\nshared_buffers='16MB'\n");
+        boolean started=false;String sourceOrigin=f.origin;
+        org.springframework.context.ConfigurableApplicationContext copyApp=null;
+        try {
+            r.nativeTool("pg_ctl",List.of(),List.of("-D",backup.toString(),"-l",dir.resolve("copy-postgres.log").toString(),"-w","start"),dir);started=true;
+            String copyUrl="jdbc:postgresql://127.0.0.1:"+copyPort+"/chemicallab_t01_test";
+            try(Connection copy=DriverManager.getConnection(copyUrl,f.setting("spring.datasource.username"),f.setting("spring.datasource.password"));var statement=copy.createStatement()) {
+                statement.execute("set search_path to "+f.schema+",public");statement.execute(r.script("t12d-v1"));
+                Map<String,String> restored=new TreeMap<>();
+                for(String table:before.keySet())try(var rows=statement.executeQuery(r.signature(table))){rows.next();restored.put(table,rows.getString(1));}
+                assertThat(restored).isEqualTo(before);
+                java.nio.file.Files.writeString(dir.resolve("signatures.json"),f.json.writerWithDefaultPrettyPrinter().writeValueAsString(Map.of("before",before,"restored",restored,"copyPort",copyPort,"method","physical backup after institutional start and submit, not PITR")));
+                copyApp=f.startApp("--spring.datasource.url="+copyUrl+"?currentSchema="+f.schema,"--spring.jpa.hibernate.ddl-auto=none",
+                    "--app.evaluations.institutional.enabled=true","--app.evaluations.institutional.attempt-lifecycle-enabled=true","--app.evaluations.institutional.answer-save-enabled=true","--app.evaluations.institutional.fixture-schema="+f.schema);
+                f.origin=f.origin(copyApp);
+                assertThat(begin(start)).isEqualTo(first);
+                assertThat(finish(attempt,op,List.of(answer(s.open,null,"Durable answer"),answer(s.choice,s.option,null)))).isEqualTo(terminal);
+                assertThat(h.ok(h.pupil,q).path("answers").toString()).contains("Durable answer");
+                try(var rows=statement.executeQuery("select count(*) from "+ctl+".saves")){rows.next();assertThat(rows.getInt(1)).isEqualTo(2);}
+                try(var rows=statement.executeQuery("select count(*) from evaluation_attempts where id="+q.attemptId()+" and status='PENDING_MANUAL_REVIEW'")){rows.next();assertThat(rows.getInt(1)).isEqualTo(1);}
+            }
+        }finally{
+            f.origin=sourceOrigin;if(copyApp!=null)copyApp.close();
+            if(started)r.nativeTool("pg_ctl",List.of(),List.of("-D",backup.toString(),"-m","fast","-w","stop"),dir);
+        }
+    }
+    String rUncheckedScript(){try{return r.script("t12d-v1");}catch(Exception ex){throw new IllegalStateException(ex);}}
 }
