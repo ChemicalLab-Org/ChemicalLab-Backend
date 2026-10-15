@@ -2554,10 +2554,11 @@ END $p06$;
 
 -- T12-C fixture-only successor. This block follows the complete frozen B11 certifier.
 DO $t12c$
-DECLARE ctl text:='t12c_'||substr(current_schema(),5);installed boolean;actual text;expected text;
+DECLARE predecessor text;ctl text:='t12c_'||substr(current_schema(),5);installed boolean;actual text;expected text;
 BEGIN
  PERFORM t11b5_fixture();
  PERFORM pg_advisory_xact_lock(110011,1);
+ EXECUTE format('SELECT fingerprint FROM %I.schema_version WHERE version=1','t06_'||substr(current_schema(),5)) INTO predecessor;
  installed:=to_regnamespace(ctl) IS NOT NULL;
  IF NOT installed THEN
   EXECUTE format('CREATE SCHEMA %I',ctl);
@@ -2700,6 +2701,9 @@ BEGIN
 
    CREATE FUNCTION @ctl@.guard() RETURNS trigger LANGUAGE plpgsql AS $fn$
    BEGIN
+    IF TG_TABLE_NAME='schema_version' AND TG_OP='INSERT' THEN
+     IF NOT EXISTS(SELECT 1 FROM @ctl@.schema_version) THEN RETURN NEW;END IF;
+    END IF;
     IF TG_OP='INSERT' AND pg_trigger_depth()=1 AND TG_TABLE_NAME='saves' THEN
      IF NEW.xid=pg_current_xact_id()::text AND NEW.after_manifest IS NULL THEN RETURN NEW;END IF;
     ELSIF TG_OP='UPDATE' AND TG_TABLE_NAME='saves' AND OLD.after_manifest IS NULL AND NEW.after_manifest IS NOT NULL
@@ -2714,27 +2718,31 @@ BEGIN
     IF EXISTS(SELECT 1 FROM @ctl@.saves WHERE operation_id=NEW.operation_id AND (after_manifest IS NULL OR audit_id IS NULL OR result IS NULL)) THEN
       RAISE EXCEPTION 'T12-C incomplete operation';END IF;RETURN NULL;
    END $fn$;
+   CREATE TRIGGER immutable BEFORE INSERT OR UPDATE OR DELETE ON @ctl@.schema_version FOR EACH ROW EXECUTE FUNCTION @ctl@.guard();
+   CREATE TRIGGER no_truncate BEFORE TRUNCATE ON @ctl@.schema_version FOR EACH STATEMENT EXECUTE FUNCTION @ctl@.guard();
    CREATE TRIGGER immutable BEFORE INSERT OR UPDATE OR DELETE ON @ctl@.saves FOR EACH ROW EXECUTE FUNCTION @ctl@.guard();
-   CREATE TRIGGER immutable BEFORE TRUNCATE ON @ctl@.saves FOR EACH STATEMENT EXECUTE FUNCTION @ctl@.guard();
+   CREATE TRIGGER no_truncate BEFORE TRUNCATE ON @ctl@.saves FOR EACH STATEMENT EXECUTE FUNCTION @ctl@.guard();
    CREATE CONSTRAINT TRIGGER complete AFTER INSERT OR UPDATE ON @ctl@.saves DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION @ctl@.committed();
   $ddl$,'@ctl@',quote_ident(ctl));
  END IF;
  -- Certify the complete new schema, including functions, indexes, triggers and sequence settings.
  SELECT md5(string_agg(d,E'\n' ORDER BY d)) INTO actual FROM (
-  SELECT 'c:'||c.relname||':'||a.attnum||':'||a.attname||':'||format_type(a.atttypid,a.atttypmod)||':'||a.attnotnull||':'||a.attidentity||':'||coalesce(pg_get_expr(x.adbin,x.adrelid),'') d
+  SELECT 'c:'||c.relname||':'||a.attnum||':'||a.attname||':'||format_type(a.atttypid,a.atttypmod)||':'||a.attnotnull||':'||a.attidentity::text||':'||coalesce(pg_get_expr(x.adbin,x.adrelid),'') d
     FROM pg_class c JOIN pg_attribute a ON a.attrelid=c.oid LEFT JOIN pg_attrdef x ON x.adrelid=c.oid AND x.adnum=a.attnum
     WHERE c.relnamespace=ctl::regnamespace AND a.attnum>0 AND NOT a.attisdropped
   UNION ALL SELECT 'f:'||pg_get_functiondef(oid) FROM pg_proc WHERE pronamespace=ctl::regnamespace
-  UNION ALL SELECT 'k:'||r.relname||':'||c.conname||':'||pg_get_constraintdef(c.oid)||':'||c.convalidated FROM pg_constraint c JOIN pg_class r ON r.oid=c.conrelid WHERE r.relnamespace=ctl::regnamespace
+  UNION ALL SELECT 'k:'||r.relname||':'||c.conname||':'||t11p05_source_constraint(pg_get_constraintdef(c.oid))||':'||c.convalidated FROM pg_constraint c JOIN pg_class r ON r.oid=c.conrelid WHERE r.relnamespace=ctl::regnamespace
   UNION ALL SELECT 'i:'||indexdef FROM pg_indexes WHERE schemaname=ctl
-  UNION ALL SELECT 't:'||pg_get_triggerdef(t.oid)||':'||t.tgenabled FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid WHERE c.relnamespace=ctl::regnamespace AND NOT t.tgisinternal
+  UNION ALL SELECT 'r:'||relname||':'||relkind::text FROM pg_class WHERE relnamespace=ctl::regnamespace
+  UNION ALL SELECT 'j:'||i.relname||':'||x.indisvalid||':'||x.indisready FROM pg_index x JOIN pg_class r ON r.oid=x.indrelid JOIN pg_class i ON i.oid=x.indexrelid WHERE r.relnamespace=ctl::regnamespace
+  UNION ALL SELECT 't:'||pg_get_triggerdef(t.oid)||':'||t.tgenabled::text FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid WHERE c.relnamespace=ctl::regnamespace AND NOT t.tgisinternal
   UNION ALL SELECT 's:'||c.relname||':'||s.seqstart||':'||s.seqincrement||':'||s.seqmin||':'||s.seqmax||':'||s.seqcache||':'||s.seqcycle FROM pg_sequence s JOIN pg_class c ON c.oid=s.seqrelid WHERE c.relnamespace=ctl::regnamespace
  ) defs;
  IF installed THEN
   EXECUTE format('SELECT fingerprint FROM %I.schema_version WHERE version=1 AND revision=''t12c-v1'' AND predecessor_fingerprint=$1',ctl)
-   INTO expected USING (SELECT fingerprint FROM t11b10_schema_version);
+   INTO expected USING predecessor;
   IF expected IS DISTINCT FROM actual THEN RAISE EXCEPTION 'T12-C divergence; no repair';END IF;
  ELSE
-  EXECUTE format('INSERT INTO %I.schema_version VALUES(1,''t12c-v1'',$1,$2)',ctl) USING (SELECT fingerprint FROM t11b10_schema_version),actual;
+  EXECUTE format('INSERT INTO %I.schema_version VALUES(1,''t12c-v1'',$1,$2)',ctl) USING predecessor,actual;
  END IF;
 END $t12c$;
