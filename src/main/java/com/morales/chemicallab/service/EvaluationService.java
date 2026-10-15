@@ -1004,6 +1004,11 @@ public class EvaluationService {
                                                           ManualGradeRequest request) {
         TeacherProfile teacher = requireTeacher(username);
         EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
+        manualGradeAnswerMutation(attempt, teacher, answerId, request, true);
+        return toAttemptReview(attempt);
+    }
+
+    private void manualGradeAnswerMutation(EvaluationAttempt attempt, TeacherProfile teacher, Long answerId, ManualGradeRequest request, boolean legacyAudit) {
         requireGradedResult(attempt);
         requireNotClosed(attempt);
 
@@ -1016,7 +1021,7 @@ public class EvaluationService {
         if (question.getQuestionType() != QuestionType.OPEN_TEXT) {
             throw new IllegalArgumentException("Solo se califican manualmente las preguntas abiertas.");
         }
-        if (request.score() > question.getPoints()) {
+        if (request.score() == null || request.score() < 0 || request.score() > question.getPoints()) {
             throw new IllegalArgumentException("El puntaje no puede superar el máximo de la pregunta.");
         }
 
@@ -1030,15 +1035,15 @@ public class EvaluationService {
 
         Evaluation evaluation = attempt.getEvaluation();
         // Log seguro: nunca incluye el texto de la respuesta ni la retroalimentación.
-        auditLogService.recordInfo(LogEventType.EVALUATION_ANSWER_REVIEWED, TARGET_EVALUATION,
+        if (legacyAudit) auditLogService.recordInfo(LogEventType.EVALUATION_ANSWER_REVIEWED, TARGET_EVALUATION,
                 evaluation.getId(), evaluation.getTitle(), "Revisar respuesta abierta",
                 "El docente revisó una respuesta abierta de la evaluación «" + evaluation.getTitle() + "».",
                 "attemptId=" + attempt.getId() + ";answerId=" + answer.getId());
 
         if (recalculateAfterReview(attempt)) {
-            logReviewCompleted(attempt, evaluation);
+            if (legacyAudit) logReviewCompleted(attempt, evaluation);
         }
-        return toAttemptReview(attempt);
+        
     }
 
     /**
@@ -1049,6 +1054,11 @@ public class EvaluationService {
     public TeacherAttemptReviewResponse completeReview(String username, Long attemptId) {
         TeacherProfile teacher = requireTeacher(username);
         EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
+        completeReviewMutation(attempt, teacher, true);
+        return toAttemptReview(attempt);
+    }
+
+    private void completeReviewMutation(EvaluationAttempt attempt, TeacherProfile teacher, boolean legacyAudit) {
         requireGradedResult(attempt);
 
         requireNotClosed(attempt);
@@ -1067,9 +1077,9 @@ public class EvaluationService {
         attemptRepository.save(attempt);
 
         if (!wasGraded) {
-            logReviewCompleted(attempt, attempt.getEvaluation());
+            if (legacyAudit) logReviewCompleted(attempt, attempt.getEvaluation());
         }
-        return toAttemptReview(attempt);
+        
     }
 
     /**
@@ -1124,6 +1134,11 @@ public class EvaluationService {
                                                       CreateAdjustmentRequest request) {
         TeacherProfile teacher = requireTeacher(username);
         EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
+        addAdjustmentMutation(attempt, teacher, request, true);
+        return toAttemptReview(attempt);
+    }
+
+    private Long addAdjustmentMutation(EvaluationAttempt attempt, TeacherProfile teacher, CreateAdjustmentRequest request, boolean legacyAudit) {
         requireGradedResult(attempt);
         requireNotClosed(attempt);
 
@@ -1148,14 +1163,14 @@ public class EvaluationService {
         Evaluation evaluation = attempt.getEvaluation();
         // Log seguro: registra el tipo (enum) y los identificadores, nunca el monto exacto ni
         // el motivo escrito por el docente.
-        auditLogService.recordInfo(LogEventType.EVALUATION_ADJUSTMENT_ADDED, TARGET_EVALUATION,
+        if (legacyAudit) auditLogService.recordInfo(LogEventType.EVALUATION_ADJUSTMENT_ADDED, TARGET_EVALUATION,
                 evaluation.getId(), evaluation.getTitle(), "Agregar ajuste de puntaje",
                 "Se agregó un ajuste de puntaje al intento de la evaluación «"
                         + evaluation.getTitle() + "».",
                 "attemptId=" + attempt.getId() + ";adjustmentId=" + adjustment.getId()
                         + ";type=" + type.name());
 
-        return toAttemptReview(attempt);
+        return adjustment.getId();
     }
 
     /**
@@ -1167,6 +1182,11 @@ public class EvaluationService {
                                                          Long adjustmentId) {
         TeacherProfile teacher = requireTeacher(username);
         EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
+        deleteAdjustmentMutation(attempt, teacher, adjustmentId, true);
+        return toAttemptReview(attempt);
+    }
+
+    private void deleteAdjustmentMutation(EvaluationAttempt attempt, TeacherProfile teacher, Long adjustmentId, boolean legacyAudit) {
         requireGradedResult(attempt);
         requireNotClosed(attempt);
 
@@ -1183,13 +1203,13 @@ public class EvaluationService {
             attemptRepository.save(attempt);
 
             Evaluation evaluation = attempt.getEvaluation();
-            auditLogService.recordInfo(LogEventType.EVALUATION_ADJUSTMENT_REMOVED, TARGET_EVALUATION,
+            if (legacyAudit) auditLogService.recordInfo(LogEventType.EVALUATION_ADJUSTMENT_REMOVED, TARGET_EVALUATION,
                     evaluation.getId(), evaluation.getTitle(), "Anular ajuste de puntaje",
                     "Se anuló un ajuste de puntaje del intento de la evaluación «"
                             + evaluation.getTitle() + "».",
                     "attemptId=" + attempt.getId() + ";adjustmentId=" + adjustment.getId());
         }
-        return toAttemptReview(attempt);
+        
     }
 
     /**
@@ -1202,6 +1222,11 @@ public class EvaluationService {
                                                               UpdateAttemptFeedbackRequest request) {
         TeacherProfile teacher = requireTeacher(username);
         EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
+        updateOverallFeedbackMutation(attempt, teacher, request, true);
+        return toAttemptReview(attempt);
+    }
+
+    private void updateOverallFeedbackMutation(EvaluationAttempt attempt, TeacherProfile teacher, UpdateAttemptFeedbackRequest request, boolean legacyAudit) {
         requireGradedResult(attempt);
         requireNotClosed(attempt);
 
@@ -1210,13 +1235,13 @@ public class EvaluationService {
 
         Evaluation evaluation = attempt.getEvaluation();
         // Log seguro: nunca incluye el texto de la retroalimentación, solo el identificador.
-        auditLogService.recordInfo(LogEventType.EVALUATION_FEEDBACK_UPDATED, TARGET_EVALUATION,
+        if (legacyAudit) auditLogService.recordInfo(LogEventType.EVALUATION_FEEDBACK_UPDATED, TARGET_EVALUATION,
                 evaluation.getId(), evaluation.getTitle(), "Actualizar retroalimentación general",
                 "Se actualizó la retroalimentación general de un intento de la evaluación «"
                         + evaluation.getTitle() + "».",
                 "attemptId=" + attempt.getId());
 
-        return toAttemptReview(attempt);
+        
     }
 
     /**
@@ -1229,6 +1254,11 @@ public class EvaluationService {
     public TeacherAttemptReviewResponse closeGrade(String username, Long attemptId) {
         TeacherProfile teacher = requireTeacher(username);
         EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
+        closeGradeMutation(attempt, teacher, true);
+        return toAttemptReview(attempt);
+    }
+
+    private void closeGradeMutation(EvaluationAttempt attempt, TeacherProfile teacher, boolean legacyAudit) {
         requireGradedResult(attempt);
 
         if (Boolean.TRUE.equals(attempt.getGradeClosed())) {
@@ -1251,13 +1281,36 @@ public class EvaluationService {
         attemptRepository.save(attempt);
 
         Evaluation evaluation = attempt.getEvaluation();
-        auditLogService.recordInfo(LogEventType.EVALUATION_GRADE_CLOSED, TARGET_EVALUATION,
+        if (legacyAudit) auditLogService.recordInfo(LogEventType.EVALUATION_GRADE_CLOSED, TARGET_EVALUATION,
                 evaluation.getId(), evaluation.getTitle(), "Cerrar calificación",
                 "Se cerró la calificación de un intento de la evaluación «"
                         + evaluation.getTitle() + "».",
                 "attemptId=" + attempt.getId());
 
-        return toAttemptReview(attempt);
+        
+    }
+
+
+    /** Only called inside the institutional coordinator after T12-A resolves the exact
+     * recipient and teacher. This is shared academic logic, not creator authority. */
+    Long reviewInstitutionalAttempt(long actor, long attemptId, String operation, Long child,
+            Integer score, java.math.BigDecimal amount, String text) {
+        TeacherProfile teacher = teacherProfileRepository.findByUser_Id(actor)
+                .orElseThrow(() -> new EntityNotFoundException("Docente no disponible."));
+        EvaluationAttempt attempt = attemptRepository.findById(attemptId).orElseThrow();
+        accessLock.attempt(attempt);
+        requireGradedResult(attempt);
+        requireNotClosed(attempt);
+        switch (operation) {
+            case "GRADE" -> manualGradeAnswerMutation(attempt, teacher, child, new ManualGradeRequest(score,text), false);
+            case "COMPLETE" -> completeReviewMutation(attempt, teacher, false);
+            case "ADD" -> { return addAdjustmentMutation(attempt, teacher, new CreateAdjustmentRequest(amount,text), false); }
+            case "REMOVE" -> deleteAdjustmentMutation(attempt, teacher, child, false);
+            case "FEEDBACK" -> updateOverallFeedbackMutation(attempt, teacher, new UpdateAttemptFeedbackRequest(text), false);
+            case "CLOSE" -> closeGradeMutation(attempt, teacher, false);
+            default -> throw new IllegalArgumentException("Operación inválida.");
+        }
+        return child;
     }
 
     /** Impide modificar la calificación de un intento ya cerrado (no hay reapertura). */

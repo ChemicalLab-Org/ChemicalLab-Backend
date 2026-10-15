@@ -141,6 +141,16 @@ public class EvaluationDeliveryAccessService {
         }
     }
 
+    Context authorizeReview(SessionPrincipal principal, Request q) {
+        try {
+            require(valid(q) && q.contract()==Contract.LEGACY
+                && (q.action()==Action.REVIEW_ATTEMPT || q.action()==Action.GRADE_ATTEMPT));
+            return resolve(principal,q,true).context();
+        } catch(Denied failure) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Operación no autorizada.");
+        }
+    }
+
     private Decision resolve(SessionPrincipal principal, Request q, boolean readingRows) {
         // Retain the existing maintainer boundary. This read installs/mutates nothing.
         jdbc.execute("select t11b5_fixture()");
@@ -239,6 +249,9 @@ public class EvaluationDeliveryAccessService {
         if(q.attemptId()!=null)
             for(long id:jdbc.queryForList("select id from evaluation_answers where attempt_id=?",Long.class,q.attemptId()))
                 b10.get("evaluation_answers",id,true,q.recipientAccountId(),null);
+        if(q.attemptId()!=null && (q.action()==Action.REVIEW_ATTEMPT || q.action()==Action.GRADE_ATTEMPT))
+            for(long id:jdbc.queryForList("select id from evaluation_attempt_adjustments where attempt_id=?",Long.class,q.attemptId()))
+                b10.get("evaluation_attempt_adjustments",id,true,q.recipientAccountId(),null);
     }
 
     /** Shared stored-order parser: validation and projection consume exactly the same IDs.
@@ -288,7 +301,7 @@ public class EvaluationDeliveryAccessService {
                 where v.source_table=? and v.source_pk=jsonb_build_object(?::text,?::bigint)
                   and not exists(select 1 from t11b10_versions next where next.predecessor_id=v.id)
                 """, source, source.equals("t11b3_evaluation_resources") ? "evaluation_id" : "id", id);
-            if(rows.isEmpty() && (source.equals("evaluation_answers") || source.equals("evaluation_attempts")) && bridgeInstalled()) {
+            if(rows.isEmpty() && (source.equals("evaluation_answers") || source.equals("evaluation_attempts") || source.equals("evaluation_attempt_adjustments")) && bridgeInstalled()) {
                 // A new answer has no historical B10 version. Only an exact, committed
                 // receipt for the current approved root may supply its derived context.
                 require(rootVersion>0 && Boolean.TRUE.equals(freshness.get(rootProposal)));
@@ -329,10 +342,9 @@ public class EvaluationDeliveryAccessService {
     }
     private String control() {
         String schema=jdbc.queryForObject("select current_schema()",String.class);
-        String lifecycle=InstitutionalFixtureUnit.lifecycleControl(schema);
-        return exists("select to_regprocedure(?::text) is not null",lifecycle+".fresh(bigint)")?lifecycle:InstitutionalFixtureUnit.control(schema);
+        return InstitutionalFixtureUnit.writeControl(jdbc,schema);
     }
-    private boolean lifecycleBridgeInstalled() {return control().startsWith("t12d_");}
+    private boolean lifecycleBridgeInstalled() {return !control().startsWith("t12c_");}
     private boolean bridgeInstalled() {return exists("select to_regprocedure(?::text) is not null",control()+".fresh(bigint)");}
     private static boolean equal(JsonNode value, String key, long expected) {
         return value.path(key).isIntegralNumber() && value.path(key).canConvertToLong() && value.path(key).longValue() == expected;

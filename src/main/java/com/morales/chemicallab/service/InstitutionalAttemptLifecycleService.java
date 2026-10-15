@@ -74,7 +74,7 @@ public class InstitutionalAttemptLifecycleService {
             String input=encode(proof);
             return transaction.execute(status->{
                 InstitutionalFixtureUnit.lock(jdbc,schema,true);
-                String ctl=InstitutionalFixtureUnit.lifecycleControl(schema);
+                String ctl=InstitutionalFixtureUnit.writeControl(jdbc,schema);
                 if(!Boolean.TRUE.equals(jdbc.queryForObject("select to_regprocedure(?::text) is not null",Boolean.class,ctl+".fresh(bigint)")))
                     throw new ResponseStatusException(HttpStatus.NOT_FOUND,"Operación no habilitada.");
                 sessions.revalidate(principal);
@@ -82,6 +82,8 @@ public class InstitutionalAttemptLifecycleService {
                 // Resolve uncertain commit only AFTER coordination. Revalidate current access,
                 // but do not demand IN_PROGRESS from a receipt that itself closed the attempt.
                 var receipts=jdbc.queryForList("select request::text,result::text from "+ctl+".saves where operation_id=?",operation);
+                if(receipts.isEmpty() && ctl.startsWith("t12e_"))
+                    receipts=jdbc.queryForList("select request::text,result::text from "+InstitutionalFixtureUnit.lifecycleControl(schema)+".saves where operation_id=?",operation);
                 if(!receipts.isEmpty()) {
                     var old=receipts.get(0);
                     if(!jsonTree((String)old.get("request")).path("input").equals(jsonTree(input)))
