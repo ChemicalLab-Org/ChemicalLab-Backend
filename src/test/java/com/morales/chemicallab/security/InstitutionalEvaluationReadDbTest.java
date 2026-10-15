@@ -116,6 +116,38 @@ class InstitutionalEvaluationReadDbTest {
         e.resolve(q,"UNRESOLVED","t11b8_recipients");forbidden(pupil,q);
         e.resolve(q,"UNRESOLVED","t11b8_fixture_attempts");forbidden(pupil,q);
     }
+    @Test void suspendedEnrollmentAndClosedPeriodDenyThroughHttpInTheirOwnInstitution() throws Exception {
+        Request a=e.request(false,Action.READ_OWN_ATTEMPT),b=e.request(true,Action.READ_OWN_ATTEMPT);e.resolve(a);e.resolve(b);
+        ok(pupil,a);ok(pupil,b);
+        r.academic.transitionEnrollment(r.episode,Enrollment.Status.SUSPENDED,Instant.now());e.resolve(a);forbidden(pupil,a);ok(pupil,b);
+        long period=e.count("select period_id from academic_classes where id=?",r.foreignClass);
+        r.academic.transitionPeriod(period,AcademicPeriod.Status.CLOSED,Instant.now());e.resolve(b);forbidden(pupil,b);
+    }
+    @Test void enabledRouteStillRejectsAnActualDifferentDisposableDatabase() throws Exception {
+        Request q=e.request(false,Action.READ_DELIVERY);e.resolve(q);
+        String url=f.setting("spring.datasource.url").replace("/chemicallab_t01_test","/postgres");
+        try(Connection wrong=DriverManager.getConnection(url,f.setting("spring.datasource.username"),f.setting("spring.datasource.password"))) {
+            assertThat(f.schema).matches("t03_[a-f0-9]{32}");
+            try(var statement=wrong.createStatement()){statement.execute("create schema "+f.schema);statement.execute("set search_path to "+f.schema);}
+            try {
+                var dataSource=new org.springframework.jdbc.datasource.SingleConnectionDataSource(wrong,true);
+                ReflectionTestUtils.setField(e.access,"jdbc",new JdbcTemplate(dataSource));
+                forbidden(pupil,q);
+            } finally {
+                ReflectionTestUtils.setField(e.access,"jdbc",f.sql());
+                try(var statement=wrong.createStatement()){statement.execute("drop schema "+f.schema);}
+            }
+        }
+    }
+    @Test void realPersistenceFailureReturnsNoProjectionOrBusinessSuccess() throws Exception {
+        Request q=e.request(false,Action.READ_DELIVERY);e.resolve(q);var before=e.c.state();
+        var jdbc=spy(sql());doAnswer(call->{sql().execute("select 1/0");return null;}).when(jdbc).execute("select t11b5_fixture()");
+        ReflectionTestUtils.setField(e.access,"jdbc",jdbc);
+        try {
+            var response=get(pupil,q);assertThat(response.statusCode()).isEqualTo(503);assertNoSecrets(response.body());
+            var after=e.c.state();before.remove("system_logs");after.remove("system_logs");assertThat(after).isEqualTo(before);
+        } finally {ReflectionTestUtils.setField(e.access,"jdbc",f.sql());}
+    }
 
     String payload(String title){return """
         {"resource":{"title":"%s","max_attempts":3,"time_limit_minutes":30,"question_display_mode":"ALL_AT_ONCE",
