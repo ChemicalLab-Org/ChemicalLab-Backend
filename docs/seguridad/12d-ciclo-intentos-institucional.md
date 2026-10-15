@@ -199,9 +199,10 @@ repite ni se reatribuye el PITR/WAL histórico B11.
 
 Las ejecuciones y artefactos se conservan en `.codex-work/t12d-evidence/`,
 fuera del PR, con SHA/parche, comando, logs, exit y reportes por ejecución.
-Los fallos de desarrollo se conservan como tales. El resultado definitivo,
-SHA probado, suites completas, JAR y recuperación se registran tras completar
-la verificación; una compilación o selección parcial no acredita el total.
+Los fallos se conservan como tales, incluidos los de la primera ejecución
+completa. `verified-results.json` identifica ejecución, SHA y hash XML de cada
+suite aprobada; `verified-reports.zip` contiene esas once suites y su manifiesto.
+Una compilación o selección parcial no acredita el total.
 
 Ejecuciones de desarrollo independientes; pruebas/fallos/errores/omitidas:
 
@@ -232,6 +233,127 @@ ventanas HTTP, guardado/envío legacy, abiertas y concurrencia; también la
 regresión del filtro de entrada modificado. No se ejecuta toda la suite del
 repositorio. Se comprueban JAR, SQL congelados, flags y preservación de
 auditoría, documentos/evidencias previos, frontend y los 16 E2E.
+
+### Ejecuciones definitivas y atribución
+
+Entorno local Windows, Java `17.0.12+8-LTS-286`, Maven `3.9.15` offline,
+PostgreSQL `18.4`, zona America/Lima y perfil único `test`. Clúster propio
+desechable en `127.0.0.1:55447/chemicallab_t01_test`, rol ficticio
+`t12d_fixture`, max_connections=100, shared_buffers=32MB y
+max_locks_per_transaction=512. Los clientes HTTP sí se conectaron al servidor
+real y las pruebas DB usaron este PostgreSQL, no H2 ni mocks de persistencia.
+
+| Ejecución | SHA compilado/ejecutado | Resultado pruebas/fallos/errores/omitidas |
+| --- | --- | --- |
+| final-package | `6bf1c0a791bd80e468e08c3c2d9e5b4ff435f42a` | 229/0/2/0; BUILD FAILURE, exit 1; nueve suites completas aprobadas (181 pruebas); no produjo JAR |
+| affected-retry | `8a43e334d2d34d76d582968e15be51d2de941765` | 48/0/0/0; BUILD SUCCESS, exit 0; C y D completas |
+| jar-package | `8a43e334d2d34d76d582968e15be51d2de941765` | BUILD SUCCESS, exit 0; empaquetado posterior con pruebas omitidas explícitamente |
+
+`final-package` terminó el 15/10/2026 a las 16:33:26 -05:00 en 2 h 18 min.
+Conserva dos errores, sin presentarlo como una ejecución aprobada:
+
+- C: `sequentialRetryReturnsOriginalReceiptAndAdvancesExactlyOnce` terminó con
+  HttpTimeoutException; el XML registra unos 3626 segundos pese al timeout HTTP
+  configurado de 45 segundos. No se estableció la causa de esa demora. No se
+  incrementó el timeout ni se omitió el caso; la suite C completa volvió a pasar.
+- D: `finalizationQuotaFailureRollsBackNewAnswersGradesAndSubmissionEvent`
+  falló preparando el fixture, antes de enviar el cierre: una reconciliación
+  F08 redundante intentaba medir bajo el límite que el caso acababa de reducir.
+  `8a43e33` eliminó solo esa llamada del test. La procedencia del intento ya
+  estaba certificada por D; cambiar el límite no altera la firma de fuentes
+  B10. Se mantienen el límite bajo, la petición de cierre y todas las aserciones
+  de rollback de respuestas, nota, evento, recibo y auditoría.
+
+Las clases de `final-package` se compilaron en `6bf1c0a`; la corrección del test
+se editó después de esa compilación y no se atribuye a aquel resultado.
+`affected-retry` recompiló y ejecutó ambas suites completas, sin modificar
+código de aplicación, SQL ni POM. Terminó a las 17:20:34 -05:00 en 45 min 12 s.
+Entre ambos SHA solo cambia ese archivo de prueba dentro de `src`/POM; los
+otros commits son documentación. La identidad de `src/main` y POM se comprobó
+contra `6bf1c0a` también para el JAR. El commit posterior de entrega solo añade
+esta evidencia: no se le atribuye una nueva ejecución de pruebas.
+
+Once suites completas aprobadas, cada una contada una vez:
+
+| Suite | Pruebas aprobadas | Ejecución / SHA |
+| --- | ---: | --- |
+| EvaluationDeliveryAccessDbTest (T12-A) | 22 | final-package / `6bf1c0a` |
+| InstitutionalEvaluationReadDbTest (T12-B, P2 y startedAt) | 27 | final-package / `6bf1c0a` |
+| InstitutionalAnswerSaveDbTest (T12-C) | 21 | affected-retry / `8a43e33` |
+| InstitutionalAttemptLifecycleDbTest (T12-D) | 27 | affected-retry / `8a43e33` |
+| EvaluationWindowHttpDbTest | 10 | final-package / `6bf1c0a` |
+| ConcurrencyDbTest | 17 | final-package / `6bf1c0a` |
+| EvaluationServiceTest | 88 | final-package / `6bf1c0a` |
+| EvaluationOpenQuestionPersistenceDbTest | 5 | final-package / `6bf1c0a` |
+| EvaluationAccessPolicyTest | 4 | final-package / `6bf1c0a` |
+| TransportInputFilterTest | 3 | final-package / `6bf1c0a` |
+| InputBudgetsTest | 5 | final-package / `6bf1c0a` |
+| Total sin duplicar suites | 229 | 0 fallos / 0 errores / 0 omitidas en los reportes seleccionados |
+
+Las 27 pruebas D cubren el recorrido completo y GET puro; replays con pérdida
+simulada de respuesta y reautorización; dos instituciones, IDs cruzados y cuenta
+compartida; históricos inactivos/sin asignación, otra entrega y revisión; modo
+temporal, revocación y retiro de permisos; inicio anticipado/vencido; cierre
+vencido, opcionales, abiertas y ONE_BY_ONE; orden/cursor; corrección oculta;
+rollback de auditoría/cuota y deadline cruzado durante la unidad; última F08 y
+deriva directa; recibo C previo al sucesor; carreras de guardado, cierre,
+revocación y corrección aprobada; certificación/repetición y recuperación física.
+
+Comandos registrados completos en `*-command.txt`, ejecutados por los scripts
+con JAVA_HOME=JDK17 y el Maven local, sin descargas:
+
+```text
+mvn -o -Dspring.profiles.active=test <propiedades del PostgreSQL ficticio> -Dtest=EvaluationDeliveryAccessDbTest,InstitutionalEvaluationReadDbTest,InstitutionalAnswerSaveDbTest,InstitutionalAttemptLifecycleDbTest,EvaluationWindowHttpDbTest,ConcurrencyDbTest,EvaluationServiceTest,EvaluationOpenQuestionPersistenceDbTest,EvaluationAccessPolicyTest,TransportInputFilterTest,InputBudgetsTest clean package
+mvn -o -Dspring.profiles.active=test <mismas propiedades> -Dtest=InstitutionalAnswerSaveDbTest,InstitutionalAttemptLifecycleDbTest test
+mvn -o -Dspring.profiles.active=test -DskipTests package
+```
+
+El tercer comando terminó a las 17:44:40 -05:00. Es un empaquetado separado
+posterior a las pruebas aprobadas, no un `clean package` aprobado ni otra
+ejecución de JUnit. Se abrió el ZIP del JAR ejecutable y se comprobaron las
+clases nuevas, los tres flags false y los dieciséis SQL: los quince históricos
+son idénticos a develop y el único nuevo es D. También se comprobó el prefijo
+íntegro D→C→B11. Copia preservada: `verified-backend.jar`.
+
+| Artefacto definitivo | SHA-256 |
+| --- | --- |
+| verified-backend.jar | `102a0acfcf68a53abc32a6960fee7409314248714ec8042535aa0cd3542313df` |
+| verified-reports.zip | `368e6418f25a0b658352c3a41d4ccb2de770d9cb381b2e051578af5e1d4b633f` |
+| final-package.log (fallido, conservado) | `5164b86b2b6bbce247f882e2c6c29021348df76135a8cee5d42be2998ccf5122` |
+| affected-retry.log | `3cf4cb4c6f55a552cebe6327d1eb14e5e9287454524dc00bb6c0e72ff9b4b62b` |
+| jar-package.log | `db788019c28caa875578e1e3f7694d7d0386f388f21013dd05692c6834b6ddb4` |
+
+### Recuperación, carrera independiente y preservación
+
+Los artefactos nuevos de `affected-retry-native` se conservaron separados de
+los de la ejecución fallida. Las dos recuperaciones usan backup físico con WAL
+streaming y `pg_verifybackup` satisfactorio; arrancan copias, certifican y
+comparan todas las firmas antes/restauradas. D verifica además el intento
+terminal nuevo, lectura propia sin corrección y replay del recibo. No es PITR.
+
+| Protocolo | Tablas idénticas | Puerto copia | SHA-256 de signatures.json |
+| --- | ---: | ---: | --- |
+| C, después de guardar | 130 | 63229 | `dc43813088dbd72dfed625c883fb4f5b678402c072d3b3ed8d72d75984e0d53a` |
+| D, después de iniciar y finalizar | 132 | 62675 | `8d6c181eb7ac4af4e2a651f8f5f2034caa823aa298ffefeeea108758dea95960` |
+
+La última oportunidad se disputó entre dos JVM independientes (PID 32240 y
+16892) y el escritor HTTP legacy. La barrera observó tres escritores
+bloqueados; respuestas `[403,403,201]`, dos filas históricas totales (una previa
+y una nueva) y un solo activo. Ganó legacy; ambas peticiones institucionales
+rechazaron el contexto ya desactualizado. No se fuerza un ganador D ni se
+atribuye a una sola JVM una prueba entre procesos.
+
+La comprobación final de hashes/estado preservó 190 archivos previos, incluidos
+los 16 E2E, documentos, auditoría y SQL históricos, sin diferencias; también
+HEAD/estado de backend principal y frontend y HEAD de los otros 28 worktrees.
+Los logs fallidos y backups permanecen fuera del PR en el directorio de
+evidencia. No se borran ni se mezclan con los once XML aprobados.
+
+Entrega en [PR #83 en borrador](https://github.com/ChemicalLab-Org/ChemicalLab-Backend/pull/83)
+hacia develop. El HEAD publicado exacto se registra después del push en
+`published-head.txt` y `published-pr.json`, y en el mensaje de entrega; los SHA
+probados anteriores son inmutables y explícitos para evitar atribuir pruebas
+a un commit posterior de documentación.
 
 Bloqueos globales, escaneo completo y serialización pertenecen al sobre de
 fixtures existente. No acreditan rendimiento, capacidad real de escritores,
