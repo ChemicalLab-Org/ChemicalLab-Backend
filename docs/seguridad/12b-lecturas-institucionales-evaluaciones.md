@@ -199,6 +199,27 @@ ejecución final. Las selecciones y fallos diagnósticos se conservan separados
 en `.codex-work/t12b-evidence/`; no se suman a una suite completa ni se atribuyen
 al SHA final. El directorio local de evidencia y la DB no forman parte de la PR.
 
+| Ejecución independiente | Fuente y resultado pruebas/fallos/errores/omitidas |
+| --- | --- |
+| compile-1 | Worktree inicial sobre fae2895, sin commit: 4/0/0/0 T05; diagnóstico, sin atribución al SHA final |
+| selection-1 | Worktree inicial: error de compilación del arnés (helper de conexión no estático); sin ejecución JUnit |
+| selection-2 | Worktree previo a 345c7a1: 3/0/0/0 HTTP; diagnóstico, sin atribución al SHA final |
+| selection-3 | `345c7a183385133b3ddc8a8e7b18c713ab25ecb0`: 43/1/2/0. T12-A: 22/0/0/0; T05: 4/0/0/0; HTTP T12-B: 17/1/2/0. Se conservan log/XML originales |
+| selection-4 | `6ed31a492fe5388b17b7035e2bb6378c64532029`: 12/0/0/0. Casos corregidos y afectados; hijos B10 inciertos, DB incorrecta, fallo PostgreSQL, matrícula/período y corrección B10 concurrente |
+
+Los tres problemas de selection-3 pertenecen al arnés: una cuenta global
+ESTUDIANTE ya tenía ADMIN_INSTITUCION en el fixture B6 y recibía legítimamente
+metadatos, una revocación SQL omitía su motivo obligatorio y un grant histórico
+se solapaba con historia anterior. Se corrigen los casos sin ampliar permisos,
+deshabilitar constraints/triggers ni modificar los SQL congelados.
+
+Entorno propio: Windows, JDK 17.0.12, Maven 3.9.15 offline y PostgreSQL 18.4
+desechable en `127.0.0.1:55443`, DB `chemicallab_t01_test`, rol `t12b_fixture`,
+perfil test, locale C y 300 conexiones. La prueba de DB incorrecta crea un schema
+vacío en `postgres` de **esa misma instancia desechable**, comprueba el rechazo
+y lo elimina; no consulta bases reales. No acredita Linux/SCA, permisos runtime
+productivos, inventario real de escritores ni capacidad operativa.
+
 ## Superficies pendientes y entrega
 
 T12 integral/etapa 4, adopción de los demás consumidores/escritores, rutas legacy,
