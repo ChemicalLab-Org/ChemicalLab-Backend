@@ -152,11 +152,112 @@ no reemplaza WAL ni incluye escritores ajenos o archivos externos.
 
 ## Evidencia y pendientes
 
-Las ejecuciones y hashes definitivos se registrarán aquí al terminar la
-verificación. Los intentos fallidos se conservan separados en
-`.codex-work/t12c-evidence/`, con SHA, parche, comando, logs, exit y XML.
-No se atribuye evidencia histórica T12-A/B al código nuevo ni se suman
-selecciones a suites completas.
+Evidencia local fuera de la PR: `.codex-work/t12c-evidence/`, con SHA,
+parche, comando, logs, exit y XML por ejecución. Una selección se cuenta desde
+su resumen Maven, sin agregar XML residuales de otro test. El empaquetado
+definitivo limpia target antes de ejecutar las ocho clases completas:
+T12-A (`EvaluationDeliveryAccessDbTest`), T12-B (`InstitutionalEvaluationReadDbTest`),
+T12-C (`InstitutionalAnswerSaveDbTest`), `EvaluationServiceTest`,
+`EvaluationOpenQuestionPersistenceDbTest`, `EvaluationAccessPolicyTest`,
+`EvaluationWindowHttpDbTest` y `ConcurrencyDbTest`.
+No es la suite completa del repositorio; no se atribuyen aquí las ejecuciones
+históricas de 904/926 pruebas ni se suman selecciones a las suites completas.
+
+Intentos de desarrollo independientes, pruebas/fallos/errores/omitidas:
+
+| Ejecución | SHA de código, o base + parche conservado | Resultado y límite |
+| --- | --- | --- |
+| compile-1 | `70ee61f6250efdfac9ee758f26b2e9b066623852` + parche | 4/0/0/0; política T05, sin atribuir el parche a develop |
+| selection-1 | `9bbb6e8ac866b03d988189b9e0a8b23dc96f99cd` | 1/0/1/0; loopback bloqueado por sandbox |
+| selection-2 | `0361b2866551ac75f4174afd7d856f0b2682078f` | 1/0/1/0; dos triggers nuevos compartían nombre |
+| selection-3 | `e7c5b1074d475549e3cf7d36531f84075283580e` | 1/1/0/0; serialización horaria distinta de referencias B10 |
+| diagnostic-4 | `e7c5b1074d475549e3cf7d36531f84075283580e` + parche | Error de compilación del arnés: método origin no estático; sin JUnit |
+| diagnostic-5 | `e7c5b1074d475549e3cf7d36531f84075283580e` + parche | 1/1/0/0; confirma el rechazo de referencias, con instrumentación temporal ya retirada |
+| selection-6 | `76c97be872a914b13921f893b369f334460545d9` | 2/2/0/0; precedencia de operadores JSONB, corregida con paréntesis |
+| diagnostic-7 | `76c97be872a914b13921f893b369f334460545d9` + parche | 1/1/0/0; confirma ese diagnóstico |
+| selection-8 | `a264793dfa2a251f7b35134a96df9582493637d4` | 2/0/2/0; cliente de 15 s agotado por escaneos repetidos; se comparte la comprobación dentro del resolver y el cliente T12-C espera hasta 45 s |
+| candidate-c, T12-C completa anterior | `1735418005a30451fa72b4e06d40e749ec5bef6d` | 19/3/0/0; recuperación selectiva sin dependencia btree_gist, aserción incompatible con campos null legacy y contendiente con lock_timeout. Sin JAR exitoso |
+| critical-9 | `bdccb58ecdb4b2304637e04a8539db0eb5ffff3f` | 5/0/0/0; copia física/certificación/reintento, dos raíces/instituciones, ventana y carreras |
+| deadline-10 | `31cc7c175ab7f096f50453557d329b87b059ffca` | 2/0/0/0; plazo vence después de persistir respuesta/recibo aún no confirmados y clave reutilizada entre instituciones |
+
+Los fallos se conservan como fallos. No se deshabilitan restricciones ni se
+ajustan fingerprints para volverlos verdes. candidate-c informó también un
+carácter de una nueva cadena fuera de UTF-8: se corrigió su codificación antes
+de critical-9. La comprobación independiente lee estrictamente todas las
+fuentes Java como UTF-8. Los errores deliberados de auditoría/cuota/certificación
+y los timeouts de contendientes pueden producir logs ERROR esperados; el
+resultado JUnit verifica el rollback y el reintento, no se infiere de esos logs.
+
+El clúster propio comenzó con los valores conservadores que initdb pudo elegir
+en sandbox (20 conexiones/400 kB de shared_buffers). Se reinició para los ensayos
+posteriores con **100 conexiones, shared_buffers=32 MB y max_locks_per_transaction=512**.
+La primera conexión de preparación fue denegada por sandbox y un reintento de
+createdb informó que la base ficticia ya existía; no fueron ejecuciones JUnit.
+Los ensayos HTTP se ejecutan autorizados fuera de esa restricción, exclusivamente
+en 127.0.0.1:55446 / chemicallab_t01_test / t12c_fixture, perfil test.
+
+La recuperación definitiva usa pg_basebackup físico posterior al guardado y
+pg_verifybackup, arranca una **copia en puerto aleatorio propio**, certifica B11
+y T12-C, compara las tablas de t03/t06/t12c y repite HTTP con el mismo JWT y
+operationId. No altera el primario ni emplea Hibernate reparador. La copia se
+detiene en finally; firmas y logs nativos se archivan aparte. El dump selectivo
+anterior falló, y su dump/log se conserva. Esta nueva comprobación no es PITR ni
+se presenta como una reejecución de los ensayos WAL históricos B11.
+
+El empaquetado definitivo `final-package` ejecutó las ocho suites completas sobre
+`31cc7c175ab7f096f50453557d329b87b059ffca`, sin cambios de src/POM durante su
+ejecución. El commit posterior de documentación conserva exactamente esas
+fuentes y POM. Resultado: **194 pruebas, 0 fallos, 0 errores, 0 omitidas**.
+
+| Suite completa | Pruebas | Fallos | Errores | Omitidas |
+| --- | ---: | ---: | ---: | ---: |
+| EvaluationDeliveryAccessDbTest (T12-A) | 22 | 0 | 0 | 0 |
+| InstitutionalEvaluationReadDbTest (T12-B) | 27 | 0 | 0 | 0 |
+| InstitutionalAnswerSaveDbTest (T12-C) | 21 | 0 | 0 | 0 |
+| EvaluationWindowHttpDbTest | 10 | 0 | 0 | 0 |
+| ConcurrencyDbTest | 17 | 0 | 0 | 0 |
+| EvaluationServiceTest | 88 | 0 | 0 | 0 |
+| EvaluationOpenQuestionPersistenceDbTest | 5 | 0 | 0 | 0 |
+| EvaluationAccessPolicyTest | 4 | 0 | 0 | 0 |
+| **Total** | **194** | **0** | **0** | **0** |
+
+Comando del empaquetado (credencial exclusivamente ficticia):
+
+```powershell
+mvn -o -Dspring.profiles.active=test -Dspring.datasource.url=jdbc:postgresql://127.0.0.1:55446/chemicallab_t01_test -Dspring.datasource.username=t12c_fixture -Dspring.datasource.password=fictitious -Dtest=EvaluationDeliveryAccessDbTest,InstitutionalEvaluationReadDbTest,InstitutionalAnswerSaveDbTest,EvaluationWindowHttpDbTest,ConcurrencyDbTest,EvaluationServiceTest,EvaluationOpenQuestionPersistenceDbTest,EvaluationAccessPolicyTest clean package
+```
+
+Windows, JDK 17.0.12, Maven 3.9.15 offline, PostgreSQL 18.4 desechable,
+configuración de memoria/conexiones indicada arriba. Maven terminó con exit 0,
+**BUILD SUCCESS**, duración 45:58 min y marca final
+`2026-10-15T10:44:35-05:00`. Se generó y reempaquetó el JAR Spring Boot
+`chemical-lab-backend-0.0.1-SNAPSHOT.jar`. Se verificaron dentro del JAR las
+clases nuevas, flags desactivados, los catorce SQL históricos intactos
+(normalizando únicamente CRLF/LF para comparar el recurso empaquetado) y el
+decimoquinto SQL aditivo con el prefijo B11 congelado íntegro.
+
+La recuperación física de esta ejecución verificó el backup con pg_verifybackup,
+arrancó la copia en 127.0.0.1:59614, certificó y comparó **130 tablas** de
+t03/t06/t12c, y verificó lectura/reintento HTTP después de restaurar. Las firmas
+anteriores y restauradas coinciden. La copia se detuvo al finalizar.
+
+Artefactos locales conservados en `.codex-work/t12c-evidence/`; SHA-256:
+
+| Artefacto | SHA-256 |
+| --- | --- |
+| verified-backend.jar | `07d263a423471eb436f0203876114fa8ea965fe7dd724438b1f435d34f357506` |
+| verified-reports.zip (ocho XML y reportes) | `0d88c24cf0f4016fe730c90786662d6950ca69a8cecf4abff226edf5d331357c` |
+| final-package.log | `c2ef7cea162395d76bd72cd205d2f09f5a98ac3bf885ab18addbc9d9f967061d` |
+| signatures.json de recuperación | `37d818e9f318460c74a40fac702462f46cbaa348a7489d5136230f86e55e44e8` |
+| pg_verifybackup.log | `0754d7d15ec01e79210439c42400038c0590df438c3a0b0f404b47d782030ea3` |
+
+`verified-results.json` registra el detalle; `final-package-sha.txt`, comando,
+exit y parche vacío de src/POM permiten atribuir la ejecución. El control de
+preservación compara los 187 archivos previos protegidos (incluidos los 16 E2E),
+HEAD/estado de frontend y checkout principal, y HEAD de los otros 27 checkouts.
+Los documentos anteriores y los SQL históricos se comparan contra sus hashes
+previos; solo este documento es nuevo. Resultado final del control: cero
+diferencias, con los 187 archivos y los 27 HEAD ajenos preservados.
 
 Permanecen pendientes T12 integral y etapa 4, consumidores productivos,
 inventario/capacidad real de escritores, permisos operativos, T13/F03, P08,
