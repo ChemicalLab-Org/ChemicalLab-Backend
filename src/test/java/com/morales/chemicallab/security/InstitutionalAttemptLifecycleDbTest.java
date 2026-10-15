@@ -302,7 +302,9 @@ class InstitutionalAttemptLifecycleDbTest {
         assertThat(e.c.service.apply(proposal,UUID.randomUUID())).isEqualTo("APPLIED");
     }
     @Test void finalizationQuotaFailureRollsBackNewAnswersGradesAndSubmissionEvent() throws Exception {
-        long attempt=begun();e.c.b.service.limit(q.institutionId(),"ORIGINAL",1,1,UUID.randomUUID());e.resolve(q);
+        long attempt=begun();e.c.b.service.limit(q.institutionId(),"ORIGINAL",1,1,UUID.randomUUID());
+        // The confirmed D successor remains current. Reconciliation here would measure
+        // the start again under the lower limit and fail before exercising submission.
         assertThat(post(h.pupil,base(q)+"/"+attempt+"/submit",submitBody(UUID.randomUUID(),List.of(answer(s.choice,s.option,null)))).statusCode()).isEqualTo(503);
         assertThat(receipts()).isEqualTo(1);
         assertThat(count("select count(*) from evaluation_answers where attempt_id=?",attempt)).isZero();
