@@ -60,6 +60,7 @@ class InstitutionalAttemptLifecycleDbTest {
         assertThat(h.names(first)).containsExactlyInAnyOrder("operationId","attemptId","status","attemptNumber","startedAt","submittedAt");
         assertThat(first.path("attemptNumber").asInt()).isEqualTo(2);assertThat(begin(start)).isEqualTo(first);
         q=own(attempt);s.q=q;JsonNode recovered=h.ok(h.pupil,q);
+        assertThat(Instant.parse(recovered.path("startedAt").asText())).isEqualTo(LocalDateTime.parse(first.path("startedAt").asText()).atZone(EvaluationAccessPolicy.ACADEMIC_ZONE).toInstant());
         String before=sql().queryForObject(r.signature("evaluation_attempts"),String.class);
         assertThat(h.ok(h.pupil,q).path("questionOrder")).isEqualTo(recovered.path("questionOrder"));
         assertThat(sql().queryForObject(r.signature("evaluation_attempts"),String.class)).isEqualTo(before);
@@ -317,6 +318,26 @@ class InstitutionalAttemptLifecycleDbTest {
         finish(q.attemptId(),UUID.randomUUID(),null);
         assertThat(h.ok(h.pupil,q).path("answers").toString()).contains("Saved under C");
         assertThat(count("select count(*) from "+s.ctl+".saves")).isEqualTo(1);assertThat(receipts()).isEqualTo(1);
+    }
+    @Test void deadlineCrossedAfterPersistingSubmissionRollsBackItsEntireUnit() throws Exception {
+        long attempt=begun();
+        sql().update("update evaluation_assignments set due_at=(clock_timestamp() at time zone 'America/Lima')+interval '20 seconds' where id=?",r.assignment);e.resolve(q);
+        var service=f.app.getBean(InstitutionalAttemptLifecycleService.class);JdbcTemplate spy=spy(sql());
+        doAnswer(call->{
+            Object value=call.callRealMethod();
+            long remaining=count("select greatest(0,ceil(extract(epoch from ((due_at at time zone 'America/Lima')-clock_timestamp()))*1000))::bigint from evaluation_assignments where id=?",r.assignment);
+            assertThat(remaining).isPositive();Thread.sleep(remaining+50);return value;
+        }).when(spy).queryForObject(contains(".finish_operation("),eq(Object.class),any(Object[].class));
+        ReflectionTestUtils.setField(service,"jdbc",spy);
+        try {
+            assertThat(post(h.pupil,base(q)+"/"+attempt+"/submit",submitBody(UUID.randomUUID(),List.of(answer(s.open,null,"Late unit")))).statusCode()).isEqualTo(403);
+            assertThat(receipts()).isEqualTo(1);assertThat(count("select count(*) from evaluation_answers where attempt_id=?",attempt)).isZero();
+            assertThat(count("select count(*) from evaluation_attempt_events where attempt_id=? and event_type='ATTEMPT_SUBMITTED'",attempt)).isZero();
+            assertThat(count("select count(*) from system_logs where action in ('SUBMIT_INSTITUTIONAL_ATTEMPT','PENDING_INSTITUTIONAL_REVIEW')")).isZero();
+            assertThat(count("select count(*) from evaluation_attempts where id=? and status='IN_PROGRESS' and submitted_at is null",attempt)).isEqualTo(1);
+        }finally{ReflectionTestUtils.setField(service,"jdbc",sql());}
+        finish(attempt,UUID.randomUUID(),List.of(answer(s.open,null,"Ignored after timeout")));
+        assertThat(count("select count(*) from evaluation_answers where attempt_id=? and answer_text is not null",attempt)).isZero();
     }
     @Test void approvedF08CorrectionWaitsForCloseAndBecomesStaleInsteadOfTransferringIt() throws Exception {
         long attempt=begun();q=own(attempt);

@@ -26,7 +26,7 @@ Prefijo:
 Cada respuesta opcional de cierre contiene `questionId` positivo,
 `selectedOptionId` positivo opcional y `answerText` opcional de hasta 3000
 caracteres. El transporte acota los cuerpos institucionales a 1 MiB incluso
-sin Content-Length y aplica el parser estructural T07-A: profundidad, cadenas,
+sin Content-Length (o el máximo HTTP configurado si es menor) y aplica el parser estructural T07-A: profundidad, cadenas,
 propiedades, colecciones y detección de claves duplicadas. MVC valida además
 los 200 elementos y sus campos. Los duplicados de pregunta en un cuerpo que
 sí se vaya a procesar se rechazan. Un cuerpo ignorado por tiempo/ONE_BY_ONE
@@ -54,7 +54,10 @@ Activación incompleta: 404. Sesión inválida/revocada: 401. Modo temporal:
 mal formada/acotaciones MVC: 400; límite del transporte: 413. Fallo persistente,
 de auditoría, cuota o coordinación: 503 genérico, sin SQL ni datos académicos.
 
-La recuperación usa exclusivamente los GET T12-B existentes. No llama al
+La recuperación usa exclusivamente los GET T12-B existentes. La única ampliación
+de su DTO es startedAt (Instant): permite reconstruir el temporizador al
+recuperar. Para LEGACY convierte el timestamp persistido desde America/Lima;
+para la simulación NEW conserva su instante, sin habilitar su motor. No llama al
 `getAttempt` legacy, que puede finalizar y reparar un orden ausente. Los GET
 institucionales no crean, reparan, recalculan ni cierran intentos. Se conservan
 ID, inicio, orden, cursor, respuestas y consumo. P2 continúa validando cada ID

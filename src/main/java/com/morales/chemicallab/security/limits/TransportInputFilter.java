@@ -26,9 +26,9 @@ public class TransportInputFilter extends OncePerRequestFilter {
             if (!sockjs && !institutional && authentication != null && authentication.getPrincipal() instanceof SessionPrincipal principal)
                 traffic.take(principal.userId(), telemetry ? "telemetry" : "rest");
             String contentType = request.getContentType();
-            if (contentType != null && contentType.toLowerCase(java.util.Locale.ROOT).startsWith("multipart/")) { chain.doFilter(request, response); return; }
+            if (!institutional && contentType != null && contentType.toLowerCase(java.util.Locale.ROOT).startsWith("multipart/")) { chain.doFilter(request, response); return; }
             // Do not let a different Content-Type evade byte limits on affected JSON endpoints.
-            int max = institutional ? 1048576 : sockjs ? limits.getStompBytes() * 2 : telemetry ? limits.getTelemetryBytes() : limits.getHttpBytes();
+            int max = institutional ? Math.min(1048576,limits.getHttpBytes()) : sockjs ? limits.getStompBytes() * 2 : telemetry ? limits.getTelemetryBytes() : limits.getHttpBytes();
             if (request.getContentLengthLong() > max) throw InputRejectedException.size();
             byte[] bytes = request.getInputStream().readNBytes(max + 1);
             if (bytes.length > max) throw InputRejectedException.size();

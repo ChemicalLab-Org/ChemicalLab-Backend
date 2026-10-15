@@ -20,7 +20,7 @@ public final class InstitutionalEvaluationRead {
                            boolean randomizeQuestions, List<Question> questions, Instant observedAt) {}
     public record Answer(long questionId, Long selectedOptionId, String answerText) {}
     public record Attempt(Scope scope, long attemptId, String status, int attemptNumber,
-                          List<Long> questionOrder, Integer currentQuestionIndex,
+                          Instant startedAt, List<Long> questionOrder, Integer currentQuestionIndex,
                           List<Answer> answers, Instant observedAt) {}
     // expectedAnswer/private criteria never belong to the student correction contract either.
     public record AnswerCorrection(long questionId, String questionText, String questionType,
