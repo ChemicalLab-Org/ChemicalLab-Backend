@@ -168,6 +168,8 @@ intentos, consumos, presupuestos, revisiones, entregas, notas, cuotas, historia
 ni SUCCESS por leer. B3 no pasa a ser un saldo vivo; F09 y la autoridad legacy
 se conservan. F03 histórico tras baja sigue bajo T05 y corresponde a T13;
 una denegación de contexto vigente aquí no redefine ese derecho.
+Los rechazos/fallos HTTP conservan la evidencia técnica T08 y su presupuesto
+de rechazo existente; no se confunden con mutaciones o SUCCESS de negocio.
 
 **Las rutas legacy `/api/evaluations/**` conservan su contrato actual y todavía
 no están cubiertas por el aislamiento institucional de T12-B.** Esto incluye

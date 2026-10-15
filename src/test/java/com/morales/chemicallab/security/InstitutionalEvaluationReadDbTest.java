@@ -145,7 +145,10 @@ class InstitutionalEvaluationReadDbTest {
         ReflectionTestUtils.setField(e.access,"jdbc",jdbc);
         try {
             var response=get(pupil,q);assertThat(response.statusCode()).isEqualTo(503);assertNoSecrets(response.body());
-            var after=e.c.state();before.remove("system_logs");after.remove("system_logs");assertThat(after).isEqualTo(before);
+            var after=e.c.state();
+            // Existing T08 rejection evidence/budget is technical, never a business SUCCESS.
+            for(String technical:List.of("system_logs","audit_rejection_budget")){before.remove(technical);after.remove(technical);}
+            assertThat(after).isEqualTo(before);
         } finally {ReflectionTestUtils.setField(e.access,"jdbc",f.sql());}
     }
 
