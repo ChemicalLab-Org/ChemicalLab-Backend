@@ -423,13 +423,14 @@ public class EvaluationDeliveryAccessService {
     private record Attempt(boolean terminal, boolean closed, boolean correctionVisible) {}
     private Attempt legacyAttempt(Request q, Delivery delivery, Instant now) {
         var rows = jdbc.queryForList("""
-            select a.status,a.grade_closed,s.start_at from evaluation_attempts a join student_profiles p on p.id=a.student_id
+            select a.status,a.grade_closed,a.active,s.start_at from evaluation_attempts a join student_profiles p on p.id=a.student_id
               join evaluation_assignments s on s.id=a.assignment_id
             where a.id=? and a.evaluation_id=? and a.assignment_id=? and p.user_id=?
             """, q.attemptId(), q.evaluationId(), delivery.assignmentId(), q.recipientAccountId());
         require(rows.size() == 1);
         var row = rows.get(0);
         String status = (String) row.get("status");
+        if(q.action()==Action.SUBMIT_OWN_ATTEMPT) require(Boolean.TRUE.equals(row.get("active")));
         require(Set.of("IN_PROGRESS", "SUBMITTED", "GRADED", "PENDING_MANUAL_REVIEW").contains(status));
         boolean closed = Boolean.TRUE.equals(row.get("grade_closed"));
         var assignment = EvaluationAssignment.builder().startAt(row.get("start_at") == null ? null : ((Timestamp) row.get("start_at")).toLocalDateTime()).build();

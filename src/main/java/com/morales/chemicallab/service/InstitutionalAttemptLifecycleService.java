@@ -89,6 +89,8 @@ public class InstitutionalAttemptLifecycleService {
                     sessions.revalidate(principal);
                     return decode((String)old.get("result"));
                 }
+                if(Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from "+InstitutionalFixtureUnit.control(schema)+".saves where operation_id=?)",Boolean.class,operation)))
+                    throw new ResponseStatusException(HttpStatus.CONFLICT,"Operación incompatible.");
                 proof.put("input",jsonTree(input));
                 boolean accept=!starting && legacy.institutionalAnswersOpen(attempt)
                     && !"ONE_BY_ONE".equals(jdbc.queryForObject("select question_display_mode from evaluations where id=?",String.class,evaluation));

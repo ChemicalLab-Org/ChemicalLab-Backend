@@ -2909,7 +2909,7 @@ BEGIN
          IS DISTINCT FROM (raw-ARRAY['_relations','selected_option_id','answer_text','answered_at','reviewed','correct','points_awarded'])) THEN RAISE EXCEPTION 'T12-D restricted answer fields';END IF;
       IF kind='SAVE' THEN
        IF (raw->>'question_id')::bigint<>(s.request->>'question')::bigint THEN
-        IF o IS NULL OR (o->'snapshot'-'_relations') IS DISTINCT FROM (raw-'_relations') THEN RAISE EXCEPTION 'T12-D unrelated answer';END IF;
+        IF o IS NULL OR ((o->'snapshot')-'_relations') IS DISTINCT FROM (raw-'_relations') THEN RAISE EXCEPTION 'T12-D unrelated answer';END IF;
        ELSIF raw->'selected_option_id' IS DISTINCT FROM s.request->'option' OR raw->'answer_text' IS DISTINCT FROM s.request->'text'
         OR (o IS NOT NULL AND o->'snapshot'->'points_awarded' IS DISTINCT FROM raw->'points_awarded') THEN RAISE EXCEPTION 'T12-D save content mismatch';END IF;
       ELSE
@@ -2917,7 +2917,7 @@ BEGIN
        IF coalesce((s.request->>'acceptAnswers')::boolean,false) AND item IS NOT NULL THEN
         IF raw->'selected_option_id' IS DISTINCT FROM item->'option' OR raw->'answer_text' IS DISTINCT FROM item->'text' THEN RAISE EXCEPTION 'T12-D submission content mismatch';END IF;
        ELSIF o IS NOT NULL THEN
-        IF (o->'snapshot'-ARRAY['_relations','reviewed','correct','points_awarded']) IS DISTINCT FROM (raw-ARRAY['_relations','reviewed','correct','points_awarded']) THEN RAISE EXCEPTION 'T12-D late answer mutation';END IF;
+        IF ((o->'snapshot')-ARRAY['_relations','reviewed','correct','points_awarded']) IS DISTINCT FROM (raw-ARRAY['_relations','reviewed','correct','points_awarded']) THEN RAISE EXCEPTION 'T12-D late answer mutation';END IF;
        ELSIF raw->>'answer_text' IS NOT NULL OR raw->>'selected_option_id' IS NOT NULL
         OR NOT EXISTS(SELECT 1 FROM evaluation_questions WHERE id=(raw->>'question_id')::bigint AND question_type='OPEN_TEXT' AND active) THEN RAISE EXCEPTION 'T12-D invalid blank row';END IF;
       END IF;

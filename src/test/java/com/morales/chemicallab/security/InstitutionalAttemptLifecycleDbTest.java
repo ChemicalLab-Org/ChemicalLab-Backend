@@ -233,5 +233,106 @@ class InstitutionalAttemptLifecycleDbTest {
             if(started)r.nativeTool("pg_ctl",List.of(),List.of("-D",backup.toString(),"-m","fast","-w","stop"),dir);
         }
     }
+    @Test void secondDeliveryAndTechnicalRevisionNeverRefundTheLogicalAccountBudget() throws Exception {
+        long first=begun();finish(first,UUID.randomUUID(),null);
+        sql().update("update evaluation_assignments set grade='3',section='A' where id=?",r.secondAssignment);
+        long secondDelivery=count("select id from t11b3_evaluation_deliveries where legacy_assignment_id=?",r.secondAssignment);
+        Request original=q;
+        q=new Request(Contract.LEGACY,Action.READ_DELIVERY,r.institution,r.otherClass,r.evaluation,secondDelivery,
+            count("select revision_id from t11b3_evaluation_deliveries where id=?",secondDelivery),f.student.getId(),null);
+        e.resolve(q);var last=begin(UUID.randomUUID());assertThat(last.path("attemptNumber").asInt()).isEqualTo(3);
+        assertThat(count("select assignment_id from evaluation_attempts where id=?",last.path("attemptId").asLong())).isEqualTo(r.secondAssignment);
+        // Reassigning that active row to the first delivery would falsify provenance.
+        assertThat(post(h.pupil,base(original),startBody(UUID.randomUUID())).statusCode()).isEqualTo(403);
+        finish(last.path("attemptId").asLong(),UUID.randomUUID(),null);
+        r.service.technicalRevision(ResourceReconciliationService.SourceKind.EVALUATION,q.revisionId());e.resolve(q);
+        assertThat(post(h.pupil,base(q),startBody(UUID.randomUUID())).statusCode()).isEqualTo(403);
+        q=original;assertThat(post(h.pupil,base(q),startBody(UUID.randomUUID())).statusCode()).isEqualTo(403);
+        assertThat(count("select count(*) from evaluation_attempts where evaluation_id=?",r.evaluation)).isEqualTo(3);
+    }
+    @Test void twoInstitutionLegacyRootsKeepSharedAccountAndDerivedMeasurementsSeparate() throws Exception {
+        long first=begun();finish(first,UUID.randomUUID(),List.of(answer(s.open,null,"In A")));
+        Request a=own(first);
+        // A new explicit F08 correction of the root to B takes precedence over A receipts.
+        q=e.changed(a,r.foreign,r.foreignClass,a.evaluationId(),a.deliveryId(),a.revisionId(),f.student.getId(),null);e.resolve(q);
+        long second=begun();q=own(second);s.q=q;s.save(UUID.randomUUID(),s.open,null,"In B");finish(second,UUID.randomUUID(),null);
+        h.forbidden(h.pupil,a);assertThat(h.ok(h.pupil,q).path("answers").toString()).contains("In B").doesNotContain("In A");
+        assertThat(count("select count(*) from evaluation_attempts where evaluation_id=?",r.evaluation)).isEqualTo(3);
+        assertThat(post(h.pupil,base(q),startBody(UUID.randomUUID())).statusCode()).isEqualTo(403);
+    }
+    void raceMutation(String mutation,int subsequent) throws Exception {
+        long attempt=begun();q=own(attempt);
+        var service=f.app.getBean(InstitutionalAttemptLifecycleService.class);JdbcTemplate spy=spy(sql());
+        var locked=new CountDownLatch(1);var release=new CountDownLatch(1);
+        doAnswer(call->{Object value=call.callRealMethod();locked.countDown();assertThat(release.await(12,TimeUnit.SECONDS)).isTrue();return value;})
+            .when(spy).queryForObject(contains(".begin_save("),eq(Object.class),any(Object[].class));
+        ReflectionTestUtils.setField(service,"jdbc",spy);var threads=Executors.newFixedThreadPool(2);UUID op=UUID.randomUUID();
+        String body=submitBody(op,List.of(answer(s.open,null,"Before change")));
+        try(Connection writer=h.connection()) {
+            int pid;try(var st=writer.createStatement();var rows=st.executeQuery("select pg_backend_pid()")){rows.next();pid=rows.getInt(1);}
+            Future<HttpResponse<String>> closing=threads.submit(()->post(h.pupil,base(q)+"/"+attempt+"/submit",body));assertThat(locked.await(20,TimeUnit.SECONDS)).isTrue();
+            Future<?> change=threads.submit(()->{try(var st=writer.createStatement()){st.execute(mutation);}return null;});h.waitForBlocked(pid);
+            release.countDown();ok(closing.get(45,TimeUnit.SECONDS));change.get(25,TimeUnit.SECONDS);
+            assertThat(post(h.pupil,base(q)+"/"+attempt+"/submit",body).statusCode()).isEqualTo(subsequent);
+            assertThat(count("select count(*) from evaluation_attempt_events where attempt_id=? and event_type='ATTEMPT_SUBMITTED'",attempt)).isEqualTo(1);
+        } finally{release.countDown();threads.shutdownNow();ReflectionTestUtils.setField(service,"jdbc",sql());}
+    }
+    @Test void revocationWaitsForFinalizationAndThenRejectsItsReplay() throws Exception {
+        var principal=(SessionPrincipal)f.app.getBean(AccountSessionService.class).authenticate(h.pupil).getPrincipal();
+        raceMutation("update account_sessions set revoked_at=clock_timestamp() where id='"+principal.sessionId()+"'",401);
+    }
+    @Test void contextWriterWaitsForFinalizationAndThenInvalidatesSuccessor() throws Exception {
+        raceMutation("update evaluations set title='Concurrent context change' where id="+q.evaluationId(),403);
+    }
+    @Test void saveAndFinalizationSerializeWithoutLosingTheWinningSavedAnswer() throws Exception {
+        long attempt=begun();q=own(attempt);s.q=q;
+        var saves=f.app.getBean(InstitutionalAnswerSaveService.class);JdbcTemplate spy=spy(sql());
+        var locked=new CountDownLatch(1);var release=new CountDownLatch(1);
+        doAnswer(call->{Object value=call.callRealMethod();locked.countDown();assertThat(release.await(12,TimeUnit.SECONDS)).isTrue();return value;})
+            .when(spy).queryForObject(contains(".begin_save("),eq(String.class),any(Object[].class));
+        ReflectionTestUtils.setField(saves,"jdbc",spy);var threads=Executors.newFixedThreadPool(2);
+        try {
+            Future<?> saving=threads.submit(()->s.save(UUID.randomUUID(),s.open,null,"Winning answer"));assertThat(locked.await(20,TimeUnit.SECONDS)).isTrue();
+            Future<HttpResponse<String>> closing=threads.submit(()->post(h.pupil,base(q)+"/"+attempt+"/submit",submitBody(UUID.randomUUID(),null)));
+            long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(4);boolean blocked=false;
+            while(System.nanoTime()<until){blocked=Boolean.TRUE.equals(sql().queryForObject("select exists(select 1 from pg_stat_activity where wait_event_type='Lock' and query='lock table evaluations in exclusive mode')",Boolean.class));if(blocked)break;Thread.sleep(20);}
+            assertThat(blocked).isTrue();release.countDown();saving.get(45,TimeUnit.SECONDS);ok(closing.get(45,TimeUnit.SECONDS));
+            assertThat(h.ok(h.pupil,q).path("answers").toString()).contains("Winning answer");
+            assertThat(s.post(h.pupil,q,s.body(UUID.randomUUID(),s.open,null,"Too late")).statusCode()).isEqualTo(403);
+        }finally{release.countDown();threads.shutdownNow();ReflectionTestUtils.setField(saves,"jdbc",sql());}
+    }
+    @Test void lastOpportunityIsSharedByTwoIndependentJvmsAndLegacyWriter() throws Exception {
+        sql().update("update evaluations set max_attempts=2 where id=?",q.evaluationId());e.resolve(q);
+        var processes=new ArrayList<Process>();var stops=new ArrayList<java.nio.file.Path>();var origins=new ArrayList<String>();
+        var dir=java.nio.file.Files.createDirectories(java.nio.file.Path.of("target/t12d-processes",f.schema)).toAbsolutePath();
+        var threads=Executors.newFixedThreadPool(3);
+        try {
+            for(int i=1;i<=2;i++) {
+                var ready=dir.resolve(i+".ready");var stop=dir.resolve(i+".stop");stops.add(stop);
+                var command=List.of(java.nio.file.Path.of(System.getProperty("java.home"),"bin",System.getProperty("os.name").startsWith("Windows")?"java.exe":"java").toString(),"-Xmx384m","-Dspring.devtools.restart.enabled=false","-cp",System.getProperty("surefire.test.class.path",System.getProperty("java.class.path")),InstitutionalLifecycleServer.class.getName(),
+                    f.setting("spring.datasource.url"),f.setting("spring.datasource.username"),f.setting("spring.datasource.password"),f.schema,Base64.getEncoder().encodeToString(f.key),ready.toString(),stop.toString());
+                var child=new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(dir.resolve(i+".log").toFile()).start();processes.add(child);
+                long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(90);while(!java.nio.file.Files.exists(ready)&&child.isAlive()&&System.nanoTime()<until)Thread.sleep(50);
+                assertThat(java.nio.file.Files.exists(ready)).as("Child JVM ready: %s",dir).isTrue();origins.add(java.nio.file.Files.readString(ready));
+            }
+            UUID op=UUID.randomUUID();String command=startBody(op);String original=f.origin;
+            try(Connection barrier=h.connection()) {
+                barrier.setAutoCommit(false);barrier.createStatement().execute("lock table evaluations in exclusive mode");
+                var pending=new ArrayList<Future<HttpResponse<String>>>();
+                for(String origin:origins)pending.add(threads.submit(()->f.http.send(HttpRequest.newBuilder(java.net.URI.create(origin+base(q))).timeout(Duration.ofSeconds(60)).header("Authorization","Bearer "+h.pupil).header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString(command)).build(),HttpResponse.BodyHandlers.ofString())));
+                pending.add(threads.submit(()->post(h.pupil,"/api/evaluations/student/"+q.evaluationId()+"/attempts","{}")));
+                long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(4);long blocked=0;
+                while(System.nanoTime()<until){blocked=count("select count(*) from pg_stat_activity where wait_event_type='Lock' and query ilike '%evaluations%'");if(blocked>=3)break;Thread.sleep(20);}
+                assertThat(blocked).isGreaterThanOrEqualTo(3);barrier.rollback();
+                var results=new ArrayList<Integer>();for(var future:pending){var response=future.get(60,TimeUnit.SECONDS);h.assertNoSecrets(response.body());results.add(response.statusCode());}
+                assertThat(count("select count(*) from evaluation_attempts where evaluation_id=?",q.evaluationId())).isEqualTo(2);
+                assertThat(count("select count(*) from evaluation_attempts where evaluation_id=? and status='IN_PROGRESS'",q.evaluationId())).isEqualTo(1);
+                assertThat(count("select max(attempt_number) from evaluation_attempts where evaluation_id=?",q.evaluationId())).isEqualTo(2);
+                assertThat(results).anyMatch(code->code==200||code==201);
+                assertThat(receipts()).isLessThanOrEqualTo(1);
+                java.nio.file.Files.writeString(dir.resolve("evidence.json"),f.json.writeValueAsString(Map.of("osPids",processes.stream().map(Process::pid).toList(),"blocked",blocked,"statuses",results,"attempts",2,"active",1)));
+            }finally{f.origin=original;}
+        }finally{threads.shutdownNow();for(var stop:stops)java.nio.file.Files.writeString(stop,"stop");for(var child:processes)if(!child.waitFor(15,TimeUnit.SECONDS))child.destroyForcibly();}
+    }
     String rUncheckedScript(){try{return r.script("t12d-v1");}catch(Exception ex){throw new IllegalStateException(ex);}}
 }
