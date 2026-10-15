@@ -45,7 +45,10 @@ class InstitutionalAnswerSaveDbTest {
     String body(UUID op,long question,Long option,String text) throws Exception {
         Map<String,Object> b=new HashMap<>();b.put("operationId",op);b.put("questionId",question);b.put("selectedOptionId",option);b.put("answerText",text);return f.json.writeValueAsString(b);
     }
-    HttpResponse<String> post(String token,Request request,String body) throws Exception {var response=f.request("POST",path(request),token,body);h.assertNoSecrets(response.body());return response;}
+    HttpResponse<String> post(String token,Request request,String body) throws Exception {var builder=java.net.http.HttpRequest.newBuilder(java.net.URI.create(f.origin+path(request)))
+            .timeout(java.time.Duration.ofSeconds(45)).header("Content-Type","application/json");
+        if(token!=null)builder.header("Authorization","Bearer "+token);
+        var response=f.http.send(builder.POST(java.net.http.HttpRequest.BodyPublishers.ofString(body)).build(),HttpResponse.BodyHandlers.ofString());h.assertNoSecrets(response.body());return response;}
     JsonNode save(UUID op,long question,Long option,String text) throws Exception {var response=post(h.pupil,q,body(op,question,option,text));assertThat(response.statusCode()).as(response.body()).isEqualTo(200);assertThat(response.headers().firstValue("Cache-Control")).contains("no-store");return f.json.readTree(response.body());}
     long count(String query,Object...args){return e.count(query,args);}
     long receipts(){return count("select count(*) from "+ctl+".saves");}
@@ -102,6 +105,11 @@ class InstitutionalAnswerSaveDbTest {
             "update evaluation_assignments set due_at=(clock_timestamp() at time zone 'America/Lima')-interval '1 second' where id="+r.assignment)) {
             sql().update(mutation);e.resolve(q);h.ok(h.pupil,q);assertThat(post(h.pupil,q,command).statusCode()).isEqualTo(403);
         }
+        sql().update("update evaluation_assignments set due_at=(clock_timestamp() at time zone 'America/Lima')+interval '1 hour',start_at=(clock_timestamp() at time zone 'America/Lima')+interval '10 minutes' where id=?",r.assignment);
+        e.resolve(q);assertThat(post(h.pupil,q,command).statusCode()).isEqualTo(403);
+        sql().update("update evaluation_assignments set start_at=(clock_timestamp() at time zone 'America/Lima')-interval '1 hour' where id=?",r.assignment);
+        sql().update("update evaluation_attempts set started_at=clock_timestamp() at time zone 'America/Lima',active=false where id=?",q.attemptId());
+        e.resolve(q);assertThat(post(h.pupil,q,command).statusCode()).isEqualTo(403);
         assertThat(receipts()).isZero();
     }
     @Test void defaultOffRequiresEveryReadGateAndIndependentDatabaseGuard() throws Exception {
@@ -219,6 +227,25 @@ class InstitutionalAnswerSaveDbTest {
     }
     @Test void contextChangeWaitsForSaveAndMakesSuccessorStale() throws Exception {race("update evaluations set title='Outside protocol context' where id="+q.evaluationId(),403);}
     @Test void terminalWriterWaitsForSaveAndThenPreventsFurtherAnswers() throws Exception {race("update evaluation_attempts set status='GRADED' where id="+q.attemptId(),403);}
+    @Test void actualLegacySubmissionAndT12BReadSerializeWithInstitutionalSave() throws Exception {
+        var locked=new CountDownLatch(1);var release=new CountDownLatch(1);
+        var saves=f.app.getBean(InstitutionalAnswerSaveService.class);JdbcTemplate spy=spy(sql());
+        doAnswer(call->{Object result=call.callRealMethod();locked.countDown();assertThat(release.await(10,TimeUnit.SECONDS)).isTrue();return result;})
+            .when(spy).queryForObject(contains(".begin_save("),eq(String.class),any(Object[].class));
+        ReflectionTestUtils.setField(saves,"jdbc",spy);ExecutorService threads=Executors.newFixedThreadPool(3);
+        try {
+            Future<?> saving=threads.submit(()->save(UUID.randomUUID(),open,null,"Before submit"));assertThat(locked.await(15,TimeUnit.SECONDS)).isTrue();
+            Future<HttpResponse<String>> reading=threads.submit(()->h.get(h.pupil,q));
+            Future<HttpResponse<String>> submission=threads.submit(()->f.request("POST","/api/evaluations/student/attempts/"+q.attemptId()+"/submit",h.pupil,null));
+            long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(4);boolean waiting=false;
+            while(System.nanoTime()<until){waiting=Boolean.TRUE.equals(sql().queryForObject("select count(*)>=2 from pg_stat_activity where wait_event_type='Lock' and query ilike '%evaluations%'",Boolean.class));if(waiting)break;Thread.sleep(20);}
+            assertThat(waiting).isTrue();release.countDown();saving.get(35,TimeUnit.SECONDS);
+            var submitted=submission.get(25,TimeUnit.SECONDS);assertThat(submitted.statusCode()).as(submitted.body()).isEqualTo(200);h.assertNoSecrets(submitted.body());
+            var observed=reading.get(25,TimeUnit.SECONDS);assertThat(observed.statusCode()).isIn(200,403);h.assertNoSecrets(observed.body());
+            if(observed.statusCode()==200)assertThat(observed.body()).contains("Before submit");
+            assertThat(receipts()).isEqualTo(1);assertThat(count("select count(*) from evaluation_attempt_events where attempt_id=? and event_type='ATTEMPT_SUBMITTED'",q.attemptId())).isEqualTo(1);
+        }finally{release.countDown();threads.shutdownNow();ReflectionTestUtils.setField(saves,"jdbc",sql());}
+    }
     @Test void revocationCommittedFirstIsObservedAfterWaitingForTableLocks() throws Exception {
         ExecutorService thread=Executors.newSingleThreadExecutor();
         try(Connection writer=connection()) {

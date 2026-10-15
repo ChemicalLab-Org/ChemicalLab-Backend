@@ -266,6 +266,8 @@ public class EvaluationDeliveryAccessService {
     private final class CurrentContexts {
         private final Request q;
         private final Map<Long, Boolean> freshness = new HashMap<>();
+        private long rootVersion;
+        private long rootProposal;
         private CurrentContexts(Request q) { this.q = q; }
         private Resolved get(String source, long id, boolean classRequired, Long account, Long enrollment) {
             var rows = jdbc.queryForList("""
@@ -276,7 +278,10 @@ public class EvaluationDeliveryAccessService {
             if(rows.isEmpty() && source.equals("evaluation_answers") && bridgeInstalled()) {
                 // A new answer has no historical B10 version. Only an exact, committed
                 // receipt for the current approved root may supply its derived context.
-                String raw=jdbc.queryForObject("select "+control()+".answer_context(?,?)::text",String.class,q.evaluationId(),id);
+                require(rootVersion>0 && Boolean.TRUE.equals(freshness.get(rootProposal)));
+                // The same resolver already verified the complete current manifest above.
+                // Reuse that observation, not another ALLOW or a separately scanned snapshot.
+                String raw=jdbc.queryForObject("select answer_resolution::text from "+control()+".saves where root_version=? and answer_id=? and after_manifest is not null order by ordinal desc limit 1",String.class,rootVersion,id);
                 if(raw!=null) {
                     try {
                         JsonNode derived=JSON.readTree(raw);
@@ -290,6 +295,9 @@ public class EvaluationDeliveryAccessService {
             var row = rows.get(0);
             require(freshness.computeIfAbsent(number(row, "proposal_id"), proposal ->
                     (exists("select t11p05_fresh(?)", proposal) || (bridgeInstalled() && exists("select "+control()+".fresh(?)",proposal)))));
+            if(source.equals("evaluations")) {
+                rootVersion=number(row,"id");rootProposal=number(row,"proposal_id");
+            }
             JsonNode resolution;
             try { resolution = JSON.readTree((String) row.get("resolution")); }
             catch (Exception invalid) { throw new Denied(); }
