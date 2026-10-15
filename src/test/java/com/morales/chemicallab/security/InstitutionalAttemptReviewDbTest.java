@@ -8,6 +8,7 @@ import com.morales.chemicallab.service.*;
 import org.junit.jupiter.api.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.test.util.ReflectionTestUtils;
 import java.net.URI;
 import java.net.http.*;
 import java.sql.*;
@@ -17,6 +18,7 @@ import java.util.concurrent.*;
 import static com.morales.chemicallab.service.EvaluationDeliveryAccessService.*;
 import static com.morales.chemicallab.entity.institution.MembershipRoleGrant.InstitutionalRole.*;
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 /** Real HTTP, T02, disposable PostgreSQL and frozen B1-B11/C/D/E protocol. */
 class InstitutionalAttemptReviewDbTest {
@@ -125,7 +127,7 @@ class InstitutionalAttemptReviewDbTest {
     }
     @Test void crossInstitutionSelectorsForeignAnswersAndAdjustmentsDeny() throws Exception {
         Request other=e.request(true,Action.READ_OWN_ATTEMPT);e.resolve(other);
-        long foreignAnswer=count("insert into evaluation_answers(attempt_id,question_id,answer_text,reviewed) values(?,?,'Other',false) returning id",e.legacyAttempt,s.foreignQuestion);
+        long foreignAnswer=count("insert into evaluation_answers(attempt_id,question_id,answer_text,reviewed) values(?,?,'Other',false) returning id",e.legacyAttempt,s.open);
         long foreignAdjustment=count("insert into evaluation_attempt_adjustments(attempt_id,amount,type,reason,created_by,created_at,active) values(?,1,'BONUS','Other',?,clock_timestamp(),true) returning id",e.legacyAttempt,count("select id from teacher_profiles where user_id=?",f.teacher.getId()));
         e.resolve(q);var before=state();
         for(Request bad:List.of(other,e.changed(q,r.foreign,q.classId(),q.evaluationId(),q.deliveryId(),q.revisionId(),q.recipientAccountId(),q.attemptId()),e.changed(q,q.institutionId(),r.foreignClass,q.evaluationId(),q.deliveryId(),q.revisionId(),q.recipientAccountId(),q.attemptId()),e.changed(q,q.institutionId(),q.classId(),q.evaluationId(),other.deliveryId(),q.revisionId(),q.recipientAccountId(),q.attemptId()),e.changed(q,q.institutionId(),q.classId(),q.evaluationId(),q.deliveryId(),other.revisionId(),q.recipientAccountId(),q.attemptId())))
@@ -181,4 +183,174 @@ class InstitutionalAttemptReviewDbTest {
         assertThat(post(teacher,"/adjustments",body(UUID.randomUUID(),"amount",1,"reason","Quota fail")).statusCode()).isEqualTo(503);
         assertThat(state()).isEqualTo(before);read();
     }
+    @Test void mandatoryAuditFailureRollsBackClosureAndClosingActor() throws Exception {
+        grade();var before=state();
+        sql().execute("create function fixture_t12e_close_fail() returns trigger language plpgsql as $$ begin if NEW.action='CLOSE_INSTITUTIONAL_REVIEW' then raise exception 'fixture close audit failure';end if;return NEW;end $$");
+        sql().execute("create trigger fixture_t12e_close_fail before insert on system_logs for each row execute function fixture_t12e_close_fail()");
+        try{assertThat(post(teacher,"/close",body(UUID.randomUUID())).statusCode()).isEqualTo(503);}
+        finally{sql().execute("drop trigger fixture_t12e_close_fail on system_logs;drop function fixture_t12e_close_fail()");}
+        assertThat(state()).isEqualTo(before);assertThat(read().path("gradeClosed").asBoolean()).isFalse();
+    }
+    @Test void institutionalQuotaFailureRollsBackClosureAndClosingActor() throws Exception {
+        grade();e.c.b.service.limit(q.institutionId(),"ORIGINAL",1,1,UUID.randomUUID());var before=state();
+        assertThat(post(teacher,"/close",body(UUID.randomUUID())).statusCode()).isEqualTo(503);
+        assertThat(state()).isEqualTo(before);assertThat(read().path("gradeClosed").asBoolean()).isFalse();
+    }
+    @Test void finalSessionRevalidationRollsBackAlreadyFinishedJournalAndGrade() throws Exception {
+        var principal=(SessionPrincipal)f.app.getBean(AccountSessionService.class).authenticate(teacher).getPrincipal();
+        var before=state();String sessionBefore=sql().queryForObject(r.signature("account_sessions"),String.class);
+        var service=f.app.getBean(InstitutionalAttemptReviewService.class);JdbcTemplate spy=spy(sql());
+        doAnswer(call->{Object value=call.callRealMethod();sql().update("update account_sessions set expires_at=clock_timestamp()-interval '1 second' where id=?",principal.sessionId());return value;})
+            .when(spy).queryForObject(contains(".finish_operation("),eq(Object.class),any(Object[].class));
+        ReflectionTestUtils.setField(service,"jdbc",spy);
+        try{assertThat(post(teacher,"/answers/"+answer,body(UUID.randomUUID(),"score",1)).statusCode()).isEqualTo(401);}
+        finally{ReflectionTestUtils.setField(service,"jdbc",sql());}
+        assertThat(state()).isEqualTo(before);assertThat(sql().queryForObject(r.signature("account_sessions"),String.class)).isEqualTo(sessionBefore);grade();
+    }
+    @Test void studentCorrectionRequiresGlobalClosureAndRemainsSafeBeforeIt() throws Exception {
+        grade();command("/close");
+        Request correction=new Request(q.contract(),Action.READ_CORRECTION,q.institutionId(),q.classId(),q.evaluationId(),q.deliveryId(),q.revisionId(),f.student.getId(),q.attemptId());
+        h.forbidden(h.pupil,correction);h.assertNoSecrets(h.get(h.pupil,q).body());
+        // Other assignments include future, empty and undated groups. Individual
+        // grade closure cannot release any of them; T05's global due boundary can.
+        sql().update("update evaluation_assignments set start_at=(clock_timestamp() at time zone 'America/Lima')-interval '2 hours',due_at=(clock_timestamp() at time zone 'America/Lima')-interval '1 hour' where evaluation_id=?",q.evaluationId());
+        e.resolve(q);var result=h.ok(h.pupil,correction);
+        assertThat(result.path("finalScore").decimalValue()).isEqualByComparingTo("20");
+        assertThat(result.path("answers").toString()).contains("Teacher text").doesNotContain("PRIVATE-EXPECTED");
+        h.assertNoSecrets(h.get(h.pupil,q).body());
+    }
+    @Test void expiredAndRevokedDocenteGrantsCutReviewWithoutChangingAuthorship() throws Exception {
+        long member=count("select membership_id from teaching_assignments where id=?",responsible);
+        long grant=count("select id from membership_role_grants where membership_id=? and role='DOCENTE' and status='ACTIVE'",member);
+        r.institutions.revokeRole(grant,Instant.now());forbidden(send("GET",teacher,q,"",null));forbidden(post(teacher,"/close",body(UUID.randomUUID())));
+        r.institutions.grantRole(member,DOCENTE,Instant.now(),Instant.now().plusSeconds(1));
+        Thread.sleep(1100);forbidden(send("GET",teacher,q,"",null));assertThat(receipts()).isZero();
+    }
+    @Test void expiredTeachingAssignmentCannotReviewDespiteActiveDocenteGrant() throws Exception {
+        r.academic.transitionAssignment(responsible,TeachingAssignment.Status.ENDED,Instant.now());
+        long member=count("select membership_id from teaching_assignments where id=?",responsible);
+        Instant at=Instant.now();var next=r.academic.planAssignment(r.institution,r.classId,member,at,at.plusSeconds(1),at);
+        r.academic.transitionAssignment(next.id(),TeachingAssignment.Status.ACTIVE,at);
+        Thread.sleep(1100);forbidden(send("GET",teacher,q,"",null));forbidden(post(teacher,"/close",body(UUID.randomUUID())));
+    }
+    @Test void simultaneousAdjustmentRetriesCreateOneAdjustmentAndOneSuccess() throws Exception {
+        UUID op=UUID.randomUUID();String body=body(op,"amount",1,"reason","Concurrent");var pool=Executors.newFixedThreadPool(2);
+        try {
+            var a=pool.submit(()->post(teacher,"/adjustments",body));var b=pool.submit(()->post(teacher,"/adjustments",body));
+            var first=a.get(60,TimeUnit.SECONDS);var second=b.get(60,TimeUnit.SECONDS);
+            assertThat(first.statusCode()).as(first.body()).isIn(200,503);assertThat(second.statusCode()).as(second.body()).isIn(200,503);
+            assertThat(List.of(first.statusCode(),second.statusCode())).contains(200);
+            var retry=ok(post(teacher,"/adjustments",body));assertThat(retry).isEqualTo(ok(first.statusCode()==200?first:second));
+            assertThat(count("select count(*) from evaluation_attempt_adjustments where attempt_id=?",q.attemptId())).isEqualTo(1);
+            assertThat(count("select count(*) from system_logs where correlation_id=?",op)).isEqualTo(1);assertThat(receipts()).isEqualTo(1);
+        }finally{pool.shutdownNow();}
+    }
+    void raceMutation(String mutation,int nextStatus) throws Exception {
+        var service=f.app.getBean(InstitutionalAttemptReviewService.class);JdbcTemplate spy=spy(sql());
+        var locked=new CountDownLatch(1);var release=new CountDownLatch(1);
+        doAnswer(call->{Object value=call.callRealMethod();locked.countDown();assertThat(release.await(12,TimeUnit.SECONDS)).isTrue();return value;})
+            .when(spy).queryForObject(contains(".begin_save("),eq(Object.class),any(Object[].class));
+        ReflectionTestUtils.setField(service,"jdbc",spy);var pool=Executors.newFixedThreadPool(2);UUID id=UUID.randomUUID();String body=body(id,"score",1);
+        try(Connection writer=h.connection()) {
+            int pid;try(var st=writer.createStatement();var rows=st.executeQuery("select pg_backend_pid()")){rows.next();pid=rows.getInt(1);}
+            var grading=pool.submit(()->post(teacher,"/answers/"+answer,body));assertThat(locked.await(20,TimeUnit.SECONDS)).isTrue();
+            var changing=pool.submit(()->{try(var st=writer.createStatement()){st.execute(mutation);}return null;});h.waitForBlocked(pid);
+            release.countDown();ok(grading.get(60,TimeUnit.SECONDS));changing.get(30,TimeUnit.SECONDS);
+            assertThat(post(teacher,"/answers/"+answer,body).statusCode()).isEqualTo(nextStatus);assertThat(receipts()).isEqualTo(1);
+        }finally{release.countDown();pool.shutdownNow();ReflectionTestUtils.setField(service,"jdbc",sql());}
+    }
+    @Test void revocationWaitsForGradingAndNextReplayIsUnauthorized() throws Exception {
+        var principal=(SessionPrincipal)f.app.getBean(AccountSessionService.class).authenticate(teacher).getPrincipal();
+        raceMutation("update account_sessions set revoked_at=clock_timestamp() where id='"+principal.sessionId()+"'",401);
+    }
+    @Test void directContextWriterWaitsForGradingAndInvalidatesTheSuccessor() throws Exception {
+        raceMutation("update evaluations set title='Outside concurrent protocol' where id="+q.evaluationId(),403);
+    }
+    @Test void twoAssignedTeachersSerializeGradeClosureAndRejectTheLosingEdit() throws Exception {
+        long member=r.authorMember;var delegates=f.app.getBean(DelegationMaintenanceService.class);
+        var co=delegates.planCoTeacher(r.institution,r.classId,member,Instant.now(),r.until,Instant.now());
+        delegates.transitionCoTeacher(co.id(),TeachingAssignment.Status.ACTIVE,Instant.now());grade();
+        var service=f.app.getBean(InstitutionalAttemptReviewService.class);JdbcTemplate spy=spy(sql());
+        var locked=new CountDownLatch(1);var release=new CountDownLatch(1);
+        doAnswer(call->{Object value=call.callRealMethod();locked.countDown();assertThat(release.await(12,TimeUnit.SECONDS)).isTrue();return value;})
+            .when(spy).queryForObject(contains(".begin_save("),eq(Object.class),any(Object[].class));
+        ReflectionTestUtils.setField(service,"jdbc",spy);var pool=Executors.newFixedThreadPool(2);
+        try {
+            var close=pool.submit(()->post(teacher,"/close",body(UUID.randomUUID())));assertThat(locked.await(20,TimeUnit.SECONDS)).isTrue();
+            var edit=pool.submit(()->post(h.teacher,"/answers/"+answer,body(UUID.randomUUID(),"score",0)));
+            waitForInstitutionalWriter();release.countDown();ok(close.get(60,TimeUnit.SECONDS));forbidden(edit.get(60,TimeUnit.SECONDS));
+            assertThat(read().path("openAnswers").get(0).path("pointsAwarded").asInt()).isEqualTo(1);
+        }finally{release.countDown();pool.shutdownNow();ReflectionTestUtils.setField(service,"jdbc",sql());}
+    }
+    void waitForInstitutionalWriter() throws Exception {
+        long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(4);boolean blocked=false;
+        while(System.nanoTime()<until){blocked=Boolean.TRUE.equals(sql().queryForObject("select exists(select 1 from pg_stat_activity where wait_event_type='Lock' and query='lock table evaluations in exclusive mode')",Boolean.class));if(blocked)break;Thread.sleep(20);}
+        assertThat(blocked).isTrue();
+    }
+    @Test void approvedF08CorrectionWaitsForGradingAndCannotTransferItsResult() throws Exception {
+        long proposal=e.c.service.propose(e.c.root("evaluations",q.evaluationId()),e.c.mapping("evaluations",q.evaluationId(),r.foreign,r.foreignClass),"FIXTURE-TEACHER-CORRECTION",UUID.randomUUID());
+        e.c.approve(proposal,"PLATFORM",e.c.platform,e.c.platformGrant);e.c.approve(proposal,"INSTITUTION",e.c.school,e.c.schoolGrant);
+        var service=f.app.getBean(InstitutionalAttemptReviewService.class);JdbcTemplate spy=spy(sql());
+        var locked=new CountDownLatch(1);var release=new CountDownLatch(1);
+        doAnswer(call->{Object value=call.callRealMethod();locked.countDown();assertThat(release.await(12,TimeUnit.SECONDS)).isTrue();return value;})
+            .when(spy).queryForObject(contains(".begin_save("),eq(Object.class),any(Object[].class));
+        ReflectionTestUtils.setField(service,"jdbc",spy);var pool=Executors.newFixedThreadPool(2);
+        try {
+            var grading=pool.submit(()->post(teacher,"/answers/"+answer,body(UUID.randomUUID(),"score",1)));assertThat(locked.await(20,TimeUnit.SECONDS)).isTrue();
+            var correction=pool.submit(()->e.c.service.apply(proposal,UUID.randomUUID()));
+            long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(4);boolean blocked=false;
+            while(System.nanoTime()<until){blocked=Boolean.TRUE.equals(sql().queryForObject("select exists(select 1 from pg_stat_activity where wait_event_type='Lock' and query ilike '%t11p05%')",Boolean.class));if(blocked)break;Thread.sleep(20);}
+            assertThat(blocked).isTrue();release.countDown();ok(grading.get(60,TimeUnit.SECONDS));assertThat(correction.get(30,TimeUnit.SECONDS)).isEqualTo("STALE");
+            assertThat(count("select count(*) from t11b10_versions where proposal_id=?",proposal)).isZero();read();h.ok(h.pupil,q);
+        }finally{release.countDown();pool.shutdownNow();ReflectionTestUtils.setField(service,"jdbc",sql());}
+    }
+    @Test void additiveCertificationAndPhysicalRecoveryKeepTeacherAndStudentContextAndReceipts() throws Exception {
+        grade();command("/adjustments","amount",-1,"reason","Durable adjustment");
+        UUID op=UUID.randomUUID();JsonNode terminal=ok(post(teacher,"/close",body(op)));
+        UUID start=UUID.fromString(sql().queryForObject("select operation_id::text from "+d.ctl+".saves where request->>'operation'='START'",String.class));
+        JsonNode first=f.json.readTree(sql().queryForObject("select result::text from "+d.ctl+".saves where operation_id=?",String.class,start));
+        sql().execute(r.script("t12e-v1"));
+        String expansion=r.script("t12e-v1");
+        var tx=new org.springframework.transaction.support.TransactionTemplate(f.app.getBean(org.springframework.transaction.PlatformTransactionManager.class));
+        tx.executeWithoutResult(s->{sql().execute("alter table "+ctl+".saves disable trigger immutable");
+            assertThatThrownBy(()->sql().execute(expansion)).isInstanceOf(org.springframework.dao.DataAccessException.class).hasMessageContaining("divergence");s.setRollbackOnly();});
+        java.nio.file.Path dir=java.nio.file.Files.createDirectories(java.nio.file.Path.of("target/t12e-recovery",f.schema)).toAbsolutePath();
+        String url=f.setting("spring.datasource.url"),port=url.substring(url.indexOf(':',18)+1,url.lastIndexOf('/'));
+        var args=List.of("-h","127.0.0.1","-p",port,"-U",f.setting("spring.datasource.username"));
+        sql().update("update authentication_limits set expires_at=greatest(expires_at,floor(extract(epoch from clock_timestamp())*1000)::bigint+3600000)");
+        Map<String,String> before=new TreeMap<>();
+        for(String schema:List.of(f.schema,"t06_"+f.schema.substring(4),"t12c_"+f.schema.substring(4),d.ctl,ctl))for(String table:sql().queryForList("select tablename from pg_tables where schemaname=? order by tablename",String.class,schema))
+            before.put(schema+"."+table,sql().queryForObject(r.signature(schema+"."+table),String.class));
+        var backup=dir.resolve("copy");
+        r.nativeTool("pg_basebackup",args,List.of("-D",backup.toString(),"--wal-method=stream","--checkpoint=fast"),dir);
+        r.nativeTool("pg_verifybackup",List.of(),List.of(backup.toString()),dir);
+        int copyPort=TransitionWalRecoveryFixture.port();
+        java.nio.file.Files.writeString(backup.resolve("postgresql.auto.conf"),"listen_addresses='127.0.0.1'\nport="+copyPort+"\nmax_connections=20\nmax_locks_per_transaction=512\nshared_buffers='16MB'\n");
+        boolean started=false;String sourceOrigin=f.origin;
+        org.springframework.context.ConfigurableApplicationContext copyApp=null;
+        try {
+            r.nativeTool("pg_ctl",List.of(),List.of("-D",backup.toString(),"-l",dir.resolve("copy-postgres.log").toString(),"-w","start"),dir);started=true;
+            String copyUrl="jdbc:postgresql://127.0.0.1:"+copyPort+"/chemicallab_t01_test";
+            try(Connection copy=DriverManager.getConnection(copyUrl,f.setting("spring.datasource.username"),f.setting("spring.datasource.password"));var statement=copy.createStatement()) {
+                statement.execute("set search_path to "+f.schema+",public");statement.execute(r.script("t12e-v1"));
+                Map<String,String> restored=new TreeMap<>();
+                for(String table:before.keySet())try(var rows=statement.executeQuery(r.signature(table))){rows.next();restored.put(table,rows.getString(1));}
+                assertThat(restored).isEqualTo(before);
+                java.nio.file.Files.writeString(dir.resolve("signatures.json"),f.json.writerWithDefaultPrettyPrinter().writeValueAsString(Map.of("before",before,"restored",restored,"copyPort",copyPort,"method","physical backup after institutional teacher grade, adjustment and closure; not PITR")));
+                copyApp=f.startApp("--spring.datasource.url="+copyUrl+"?currentSchema="+f.schema,"--spring.jpa.hibernate.ddl-auto=none",
+                    "--app.evaluations.institutional.enabled=true","--app.evaluations.institutional.review-enabled=true","--app.evaluations.institutional.attempt-lifecycle-enabled=true","--app.evaluations.institutional.answer-save-enabled=true","--app.evaluations.institutional.fixture-schema="+f.schema);
+                f.origin=f.origin(copyApp);
+                assertThat(d.begin(start)).isEqualTo(first);
+                assertThat(ok(post(teacher,"/close",body(op)))).isEqualTo(terminal);
+                assertThat(read().path("gradeClosed").asBoolean()).isTrue();
+                assertThat(h.ok(h.pupil,q).path("answers").toString()).contains("Student text");
+                try(var rows=statement.executeQuery("select count(*) from "+ctl+".saves")){rows.next();assertThat(rows.getInt(1)).isEqualTo(3);}
+                try(var rows=statement.executeQuery("select count(*) from evaluation_attempts where id="+q.attemptId()+" and status='GRADED' and grade_closed")){rows.next();assertThat(rows.getInt(1)).isEqualTo(1);}
+            }
+        }finally{
+            f.origin=sourceOrigin;if(copyApp!=null)copyApp.close();
+            if(started)r.nativeTool("pg_ctl",List.of(),List.of("-D",backup.toString(),"-m","fast","-w","stop"),dir);
+        }
+    }
+
 }

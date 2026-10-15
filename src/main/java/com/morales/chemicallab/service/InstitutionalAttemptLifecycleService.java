@@ -75,7 +75,7 @@ public class InstitutionalAttemptLifecycleService {
             return transaction.execute(status->{
                 InstitutionalFixtureUnit.lock(jdbc,schema,true);
                 String ctl=InstitutionalFixtureUnit.writeControl(jdbc,schema);
-                if(!Boolean.TRUE.equals(jdbc.queryForObject("select to_regprocedure(?::text) is not null",Boolean.class,ctl+".fresh(bigint)")))
+                if(!Boolean.TRUE.equals(jdbc.queryForObject("select to_regprocedure(?::text) is not null",Boolean.class,InstitutionalFixtureUnit.lifecycleControl(schema)+".fresh(bigint)")))
                     throw new ResponseStatusException(HttpStatus.NOT_FOUND,"Operación no habilitada.");
                 sessions.revalidate(principal);
                 access.authorizeLifecycle(principal,request);

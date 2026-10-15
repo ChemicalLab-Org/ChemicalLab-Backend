@@ -224,6 +224,11 @@ public class EvaluationDeliveryAccessService {
      * Use the very same B10 resolver/cache as the decision; NEW JSON belongs to its exact revision row.
      */
     private void validateReadRows(Request q, CurrentContexts b10) {
+        if(q.attemptId()!=null) require(!exists("""
+            select exists(select 1 from evaluation_answers a join evaluation_questions x on x.id=a.question_id
+              left join evaluation_options o on o.id=a.selected_option_id where a.attempt_id=?
+              and (x.evaluation_id<>? or (a.selected_option_id is not null and o.question_id<>x.id)))
+            """,q.attemptId(),q.evaluationId()));
         if(q.action()==Action.READ_OWN_ATTEMPT || q.action()==Action.SAVE_OWN_ANSWER || q.action()==Action.SUBMIT_OWN_ATTEMPT) {
             String stored=jdbc.queryForObject("select question_order from evaluation_attempts where id=?",String.class,q.attemptId());
             // Historical order may contain inactive, unanswered questions. Check every ID,

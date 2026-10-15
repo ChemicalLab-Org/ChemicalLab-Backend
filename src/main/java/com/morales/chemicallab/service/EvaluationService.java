@@ -1004,11 +1004,11 @@ public class EvaluationService {
                                                           ManualGradeRequest request) {
         TeacherProfile teacher = requireTeacher(username);
         EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
-        manualGradeAnswerMutation(attempt, teacher, answerId, request, true);
+        manualGradeAnswerMutation(attempt, teacher, answerId, request, true, accessPolicy);
         return toAttemptReview(attempt);
     }
 
-    private void manualGradeAnswerMutation(EvaluationAttempt attempt, TeacherProfile teacher, Long answerId, ManualGradeRequest request, boolean legacyAudit) {
+    private void manualGradeAnswerMutation(EvaluationAttempt attempt, TeacherProfile teacher, Long answerId, ManualGradeRequest request, boolean legacyAudit, EvaluationAccessPolicy policy) {
         requireGradedResult(attempt);
         requireNotClosed(attempt);
 
@@ -1028,7 +1028,7 @@ public class EvaluationService {
         answer.setPointsAwarded(request.score());
         answer.setTeacherFeedback(trimOrNull(request.feedback()));
         answer.setReviewed(true);
-        answer.setReviewedAt(accessPolicy.now());
+        answer.setReviewedAt(policy.now());
         answer.setReviewedBy(teacher);
         answer.setCorrect(null);
         answerRepository.save(answer);
@@ -1040,7 +1040,7 @@ public class EvaluationService {
                 "El docente revisó una respuesta abierta de la evaluación «" + evaluation.getTitle() + "».",
                 "attemptId=" + attempt.getId() + ";answerId=" + answer.getId());
 
-        if (recalculateAfterReview(attempt)) {
+        if (recalculateAfterReview(attempt, policy)) {
             if (legacyAudit) logReviewCompleted(attempt, evaluation);
         }
         
@@ -1054,11 +1054,11 @@ public class EvaluationService {
     public TeacherAttemptReviewResponse completeReview(String username, Long attemptId) {
         TeacherProfile teacher = requireTeacher(username);
         EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
-        completeReviewMutation(attempt, teacher, true);
+        completeReviewMutation(attempt, teacher, true, accessPolicy);
         return toAttemptReview(attempt);
     }
 
-    private void completeReviewMutation(EvaluationAttempt attempt, TeacherProfile teacher, boolean legacyAudit) {
+    private void completeReviewMutation(EvaluationAttempt attempt, TeacherProfile teacher, boolean legacyAudit, EvaluationAccessPolicy policy) {
         requireGradedResult(attempt);
 
         requireNotClosed(attempt);
@@ -1071,7 +1071,7 @@ public class EvaluationService {
         gradeAttempt(attempt);
         attempt.setStatus(AttemptStatus.GRADED);
         if (attempt.getGradedAt() == null) {
-            attempt.setGradedAt(accessPolicy.now());
+            attempt.setGradedAt(policy.now());
         }
         recomputeFinalScore(attempt);
         attemptRepository.save(attempt);
@@ -1088,7 +1088,7 @@ public class EvaluationService {
      * Devuelve true solo cuando el intento <i>acaba</i> de pasar a GRADED (para registrar
      * el cierre una sola vez).
      */
-    private boolean recalculateAfterReview(EvaluationAttempt attempt) {
+    private boolean recalculateAfterReview(EvaluationAttempt attempt, EvaluationAccessPolicy policy) {
         boolean wasGraded = attempt.getStatus() == AttemptStatus.GRADED;
         gradeAttempt(attempt);
         if (hasPendingManualReview(attempt)) {
@@ -1103,7 +1103,7 @@ public class EvaluationService {
         // calificación de forma explícita para que el estudiante vea su nota final.
         attempt.setStatus(AttemptStatus.GRADED);
         if (attempt.getGradedAt() == null) {
-            attempt.setGradedAt(accessPolicy.now());
+            attempt.setGradedAt(policy.now());
         }
         recomputeFinalScore(attempt);
         attemptRepository.save(attempt);
@@ -1134,11 +1134,11 @@ public class EvaluationService {
                                                       CreateAdjustmentRequest request) {
         TeacherProfile teacher = requireTeacher(username);
         EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
-        addAdjustmentMutation(attempt, teacher, request, true);
+        addAdjustmentMutation(attempt, teacher, request, true, accessPolicy);
         return toAttemptReview(attempt);
     }
 
-    private Long addAdjustmentMutation(EvaluationAttempt attempt, TeacherProfile teacher, CreateAdjustmentRequest request, boolean legacyAudit) {
+    private Long addAdjustmentMutation(EvaluationAttempt attempt, TeacherProfile teacher, CreateAdjustmentRequest request, boolean legacyAudit, EvaluationAccessPolicy policy) {
         requireGradedResult(attempt);
         requireNotClosed(attempt);
 
@@ -1154,7 +1154,7 @@ public class EvaluationService {
 
         EvaluationAttemptAdjustment adjustment = EvaluationAttemptAdjustment.builder()
                 .attempt(attempt).amount(amount).type(type).reason(reason)
-                .createdBy(teacher).createdAt(accessPolicy.now()).active(true).build();
+                .createdBy(teacher).createdAt(policy.now()).active(true).build();
         adjustmentRepository.save(adjustment);
 
         recomputeFinalScore(attempt);
@@ -1182,11 +1182,11 @@ public class EvaluationService {
                                                          Long adjustmentId) {
         TeacherProfile teacher = requireTeacher(username);
         EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
-        deleteAdjustmentMutation(attempt, teacher, adjustmentId, true);
+        deleteAdjustmentMutation(attempt, teacher, adjustmentId, true, accessPolicy);
         return toAttemptReview(attempt);
     }
 
-    private void deleteAdjustmentMutation(EvaluationAttempt attempt, TeacherProfile teacher, Long adjustmentId, boolean legacyAudit) {
+    private void deleteAdjustmentMutation(EvaluationAttempt attempt, TeacherProfile teacher, Long adjustmentId, boolean legacyAudit, EvaluationAccessPolicy policy) {
         requireGradedResult(attempt);
         requireNotClosed(attempt);
 
@@ -1222,11 +1222,11 @@ public class EvaluationService {
                                                               UpdateAttemptFeedbackRequest request) {
         TeacherProfile teacher = requireTeacher(username);
         EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
-        updateOverallFeedbackMutation(attempt, teacher, request, true);
+        updateOverallFeedbackMutation(attempt, teacher, request, true, accessPolicy);
         return toAttemptReview(attempt);
     }
 
-    private void updateOverallFeedbackMutation(EvaluationAttempt attempt, TeacherProfile teacher, UpdateAttemptFeedbackRequest request, boolean legacyAudit) {
+    private void updateOverallFeedbackMutation(EvaluationAttempt attempt, TeacherProfile teacher, UpdateAttemptFeedbackRequest request, boolean legacyAudit, EvaluationAccessPolicy policy) {
         requireGradedResult(attempt);
         requireNotClosed(attempt);
 
@@ -1254,11 +1254,11 @@ public class EvaluationService {
     public TeacherAttemptReviewResponse closeGrade(String username, Long attemptId) {
         TeacherProfile teacher = requireTeacher(username);
         EvaluationAttempt attempt = requireOwnedAttemptForTeacher(attemptId, teacher);
-        closeGradeMutation(attempt, teacher, true);
+        closeGradeMutation(attempt, teacher, true, accessPolicy);
         return toAttemptReview(attempt);
     }
 
-    private void closeGradeMutation(EvaluationAttempt attempt, TeacherProfile teacher, boolean legacyAudit) {
+    private void closeGradeMutation(EvaluationAttempt attempt, TeacherProfile teacher, boolean legacyAudit, EvaluationAccessPolicy policy) {
         requireGradedResult(attempt);
 
         if (Boolean.TRUE.equals(attempt.getGradeClosed())) {
@@ -1271,7 +1271,7 @@ public class EvaluationService {
         gradeAttempt(attempt);
         attempt.setStatus(AttemptStatus.GRADED);
         recomputeFinalScore(attempt);
-        LocalDateTime now = accessPolicy.now();
+        LocalDateTime now = policy.now();
         if (attempt.getGradedAt() == null) {
             attempt.setGradedAt(now);
         }
@@ -1302,12 +1302,12 @@ public class EvaluationService {
         requireGradedResult(attempt);
         requireNotClosed(attempt);
         switch (operation) {
-            case "GRADE" -> manualGradeAnswerMutation(attempt, teacher, child, new ManualGradeRequest(score,text), false);
-            case "COMPLETE" -> completeReviewMutation(attempt, teacher, false);
-            case "ADD" -> { return addAdjustmentMutation(attempt, teacher, new CreateAdjustmentRequest(amount,text), false); }
-            case "REMOVE" -> deleteAdjustmentMutation(attempt, teacher, child, false);
-            case "FEEDBACK" -> updateOverallFeedbackMutation(attempt, teacher, new UpdateAttemptFeedbackRequest(text), false);
-            case "CLOSE" -> closeGradeMutation(attempt, teacher, false);
+            case "GRADE" -> manualGradeAnswerMutation(attempt, teacher, child, new ManualGradeRequest(score,text), false, institutionalPolicy());
+            case "COMPLETE" -> completeReviewMutation(attempt, teacher, false, institutionalPolicy());
+            case "ADD" -> { return addAdjustmentMutation(attempt, teacher, new CreateAdjustmentRequest(amount,text), false, institutionalPolicy()); }
+            case "REMOVE" -> deleteAdjustmentMutation(attempt, teacher, child, false, institutionalPolicy());
+            case "FEEDBACK" -> updateOverallFeedbackMutation(attempt, teacher, new UpdateAttemptFeedbackRequest(text), false, institutionalPolicy());
+            case "CLOSE" -> closeGradeMutation(attempt, teacher, false, institutionalPolicy());
             default -> throw new IllegalArgumentException("Operación inválida.");
         }
         return child;
