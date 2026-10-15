@@ -194,14 +194,14 @@ Otra barrera prueba cierre académico durante una corrección bloqueada; una
 conexión escritora que confirma primero prueba también la observación nueva.
 Los spies solo colocan barreras, sin simular permisos, datos, locks ni escritores.
 
-**SHA ejecutado en la suite completa y el empaquetado:**
+**Verificación histórica anterior a P2: SHA de la suite completa y empaquetado:**
 `fb002223d7a29a586e69c3c0dffb6d4261e44bf7`.
 `clean package` offline, sin filtros: **67 suites, 926 pruebas, cero fallos,
 errores u omisiones; BUILD SUCCESS y JAR generado**. Incluye los **22 casos HTTP
 T12-B**, los 22 T12-A y las demás regresiones; los 22 nuevos ya están incluidos
 en el total, no se suman selecciones. Finalizó el 15 de octubre de 2026 a las
 **02:24:26 America/Lima**; Maven informa duración `01:16 h`.
-El commit documental posterior conserva idénticos código, pruebas, configuración,
+El commit documental del cierre original (241a903) conserva idénticos código, pruebas, configuración,
 SQL y POM respecto del SHA ejecutado.
 
 Las selecciones y fallos diagnósticos se conservan separados en
@@ -277,3 +277,142 @@ documentos previos, frontend institucional ni los 16 E2E.
 Entrega con commits y PR backend **en borrador hacia develop**, adjunta al chat,
 detenida para revisión. Sin merge, despliegues, datos reales, rotaciones o
 activación productiva.
+
+
+## Corrección P2 de la revisión T12-B
+
+La revisión de `241a903d5e977d2d36ba5bf0d3d7d588891b2f97` detectó IDs emitidos
+por `questionOrder` legacy sin comprobar pertenencia ni contexto B10. Las
+preguntas inactivas sin respuestas quedaban fuera de la validación de hijos.
+Se corrige exclusivamente esta omisión en la misma rama y PR #81.
+
+Para READ_OWN_ATTEMPT legacy, `validateReadRows` interpreta el CSV persistido
+con el mismo parser que usa la proyección. Para cada ID exige una pregunta
+existente de la evaluación autorizada y consulta el mismo `CurrentContexts`
+que autorizó raíz/intento: cabeza vigente, propuesta fresca, INSTITUTION y
+ámbito solicitado. Todo ocurre dentro de la unidad coherente y sus locks,
+antes de construir el DTO. Una pregunta ajena, inexistente o UNRESOLVED
+provoca HTTP 403 completo; no se devuelve un prefijo válido del orden ni un
+DTO parcial. La sintaxis inválida conserva el rechazo 503 de la proyección.
+
+No se filtran ni reordenan IDs ni se escriben `question_order`, cursor o
+contextos. Las preguntas inactivas resueltas sin respuestas pueden conservar
+su posición histórica. Ante orden nulo/en blanco continúa el fallback al
+contenido activo, cuyos hijos ya valida el resolver compartido. El cambio
+solo se invoca para la lectura propia LEGACY de T12-B; `decide` de T12-A,
+contrato NEW, corrección, metadatos y demás políticas mantienen sus caminos.
+
+### Reproducción anterior a la corrección
+
+Sobre el HEAD revisado `241a903d5e977d2d36ba5bf0d3d7d588891b2f97`, con solo
+las nuevas regresiones sin commit y sin cambios de producción, se ejecutó:
+
+```powershell
+& .codex-work/t12b-p2-evidence/run.ps1 -Name red -Selection 'InstitutionalEvaluationReadDbTest#legacyOrderRejects*'
+```
+
+Resultado esperado de reproducción: **3 pruebas / 3 fallos / 0 errores /
+0 omitidas**: los tres HTTP devolvieron indebidamente **200** con pregunta
+ajena, ID inexistente y pregunta inactiva sin respuestas cuyo contexto se
+confirmó explícitamente UNRESOLVED tras propuesta APPLIED. Cada orden incluye
+primero un ID propio válido para detectar una eventual respuesta parcial.
+`red-sha.txt`, `red-uncommitted.patch`, `red.log` y el XML específico T12-B
+guardan separadamente la fuente y el resultado previo. Los otros informes
+copiados por el arnés red proceden del target anterior y no cuentan en esta
+reproducción; solo se ejecutaron esos tres casos.
+
+### Verificación de la corrección
+
+Las cinco regresiones HTTP nuevas comprueban los tres rechazos, la historia
+válida con pregunta inactiva resuelta sin respuestas y el fallback nulo/en
+blanco. Los éxitos conservan todas las firmas de filas y secuencias; los
+rechazos comprueban ausencia de campos del DTO, respuestas propias y
+mutaciones de negocio/contextos. Solo se permite la evidencia técnica T08
+de rechazo y su secuencia de logs, conforme al contrato existente.
+El caso previo de preservación ahora crea contenido legacy válido antes de
+leer el intento: los IDs sintéticos 17/23 del arnés de decisión T12-A no
+constituían preguntas legacy existentes. No se modifica el arnés T12-A.
+
+La primera ejecución completa de ambos bloques solicitó también el empaquetado:
+
+```powershell
+& .codex-work/t12b-p2-evidence/run.ps1 -Name green-package -Selection 'EvaluationDeliveryAccessDbTest,InstitutionalEvaluationReadDbTest' -Package
+# Equivalente desde el worktree con el JDK/Maven indicados:
+./mvnw.cmd -o '-Dspring.profiles.active=test' '-Dspring.datasource.url=jdbc:postgresql://127.0.0.1:55445/chemicallab_t01_test' '-Dspring.datasource.username=t12b_p2_fixture' '-Dspring.datasource.password=fictitious' '-Dtest=EvaluationDeliveryAccessDbTest,InstitutionalEvaluationReadDbTest' clean package
+```
+
+Entorno independiente: JDK 17.0.12, Maven 3.9.15, PostgreSQL 18.4, loopback
+127.0.0.1:55445, DB chemicallab_t01_test, rol t12b_p2_fixture, locale C,
+max_connections=20 y max_locks_per_transaction=512. Cada prueba crea/retira
+su schema ficticio. No se usa la base ni se sobrescriben los artefactos de
+las evidencias previas.
+
+Resultados y atribución separados (pruebas/fallos/errores/omitidas):
+
+| Ejecución | SHA | Alcance y resultado |
+| --- | --- | --- |
+| green-package, diagnóstico | `b7a6bb3d8f05e93c4f7304278ed468961f127f14` | T12-A **22/0/0/0**; T12-B 27/1/0/0; agregado 49/1/0/0, sin JAR |
+| fixture-check | `6f6f8aef0112f28cdbfb0bd9ef361e4a79fea815` | Caso de conservación **1/0/0/0**, no se suma a los totales |
+| final-package | `6f6f8aef0112f28cdbfb0bd9ef361e4a79fea815` | T12-B completa **27/0/0/0**, BUILD SUCCESS y JAR generado |
+
+El único fallo diagnóstico fue `readsPreserveAllBusinessRowsSequencesQuotasHistoryAndSuccess`:
+el cotejo de todas las tablas cambió exclusivamente en `authentication_limits`.
+La tarea real `AuthenticationLimitStore.cleanup()`, programada cada 60 segundos,
+retiró buckets de login expirados durante esa observación larga. El ajuste de
+fixture mantiene sus expiraciones al menos una hora hacia delante **antes** de
+capturar la firma. No se excluye la tabla, no se desactiva el mantenimiento ni
+se cambia el código de producción o la política de autenticación. Las cinco
+regresiones P2 ya habían pasado en la ejecución diagnóstica.
+
+Tras comprobar el caso afectado se repitió **completa T12-B**, con limpieza de
+informes previos y empaquetado:
+
+```powershell
+& .codex-work/t12b-p2-evidence/run.ps1 -Name fixture-check -Selection 'InstitutionalEvaluationReadDbTest#readsPreserveAllBusinessRowsSequencesQuotasHistoryAndSuccess'
+& .codex-work/t12b-p2-evidence/run.ps1 -Name final-package -Selection 'InstitutionalEvaluationReadDbTest' -Package
+# Equivalente del empaquetado definitivo desde el worktree:
+./mvnw.cmd -o '-Dspring.profiles.active=test' '-Dspring.datasource.url=jdbc:postgresql://127.0.0.1:55445/chemicallab_t01_test' '-Dspring.datasource.username=t12b_p2_fixture' '-Dspring.datasource.password=fictitious' '-Dtest=InstitutionalEvaluationReadDbTest' clean package
+```
+
+**Cobertura verde: T12-A completa (22) y T12-B completa (27), 49 casos distintos,
+en ejecuciones separadas**, con los SHA de la tabla. No se presenta el primer
+agregado 49/1/0/0 como verde ni se suman repeticiones. Entre ambos SHA ejecutados
+son idénticos `src/main`, configuración/POM y la clase T12-A; solo se ajustó el
+fixture de una prueba T12-B. Por ello el resultado T12-A sobre el código corregido
+sigue vigente y no se atribuye artificialmente su reejecución al SHA posterior.
+
+Empaquetado definitivo finalizado en `2026-10-15T08:35:39-05:00`; duración Maven
+`17:18 min`. `collect.py` comprueba cada XML y su SHA de ejecución, el log,
+los cambios solo de fixture entre ambos SHA y la ausencia de cambios de src/POM
+posteriores al empaquetado. Verifica el flag distribuido desactivado, las clases
+y los 14 SQL históricos empaquetados. El ZIP reúne los dos XML verdes con
+`execution-manifest.json`, que identifica sus ejecuciones independientes.
+
+| Artefacto en `.codex-work/t12b-p2-evidence/` | SHA-256 |
+| --- | --- |
+| verified-backend.jar | `74095d6d67bc18dabdb36e24f8f0bb537ba82cb76d0098f051d3f02577e53828` |
+| verified-reports.zip | `927c48ce4e4c869f525304c56bee16d6ca9cfe2350b774f6d11f28fdbb79ec83` |
+| final-package.log | `c9f9a3e12efe22348d1ec0352d8044ce3eb721bb70e0045e945902c7b521fccc` |
+
+`verified-results.json`, los archivos command/SHA/patch/log de cada ejecución,
+`green-package-reports`, `fixture-check-reports`, `final-package-reports` y
+`t12a-green.xml` conservan por separado resultados definitivos y diagnóstico.
+
+Las **926 pruebas** se conservan atribuidas exclusivamente al SHA histórico
+`fb002223d7a29a586e69c3c0dffb6d4261e44bf7`. **No se reejecutó esa suite sobre
+el código corregido.** Los resultados de esta sección corresponden solo a
+las suites completas T12-A y T12-B y se registran por separado en
+`.codex-work/t12b-p2-evidence/`. La revisión de alcance confirma que no hay
+cambios en otras políticas que requieran ampliar la regresión.
+
+Preservación nueva por SHA-256: **240 archivos protegidos intactos**, incluidas
+las evidencias anteriores y de revisión, SQL, auditoría/documentos protegidos y
+**16 E2E**. La única documentación anterior actualizada es esta ficha T12-B,
+autorizada para registrar la corrección. Los HEAD de los otros
+**26 checkouts** y el HEAD/estado previo del frontend permanecen iguales.
+`before.json`, `preserve.py` y `preservation.json` guardan el cotejo. El clúster
+ficticio P2 se detiene al terminar; no se toca el clúster de evidencia previo.
+
+Entrega de la corrección en la misma PR #81 abierta/en borrador para revisión;
+sin merge, despliegues, activación productiva, datos escolares, DDL/backfill
+real ni avance a otro bloque.
