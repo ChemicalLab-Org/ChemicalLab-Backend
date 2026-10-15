@@ -2953,11 +2953,11 @@ BEGIN
     -- Explicit latest F08 always wins. New rows retain attribution across roots and operations.
     SELECT jsonb_agg(coalesce((SELECT x||jsonb_build_object('scope',d->>'scope','owner_id',(d->>'institutionId')::bigint)
       FROM (
-       SELECT z d,s.ordinal FROM @ctl@.saves s CROSS JOIN LATERAL jsonb_array_elements(s.derived) z
-        JOIN t11b10_versions root ON root.id=s.root_version
-        WHERE s.after_manifest IS NOT NULL AND NOT EXISTS(SELECT 1 FROM t11b10_versions n WHERE n.predecessor_id=root.id)
-       UNION ALL SELECT s.answer_resolution||jsonb_build_object('source','evaluation_answers','pk',jsonb_build_object('id',s.answer_id)),-s.ordinal FROM @old@.saves s JOIN t11b10_versions root ON root.id=s.root_version
-        WHERE s.after_manifest IS NOT NULL AND NOT EXISTS(SELECT 1 FROM t11b10_versions n WHERE n.predecessor_id=root.id)
+       SELECT z d,prior.ordinal FROM @ctl@.saves prior CROSS JOIN LATERAL jsonb_array_elements(prior.derived) z
+        JOIN t11b10_versions root ON root.id=prior.root_version
+        WHERE prior.after_manifest IS NOT NULL AND NOT EXISTS(SELECT 1 FROM t11b10_versions n WHERE n.predecessor_id=root.id)
+       UNION ALL SELECT inherited_c.answer_resolution||jsonb_build_object('source','evaluation_answers','pk',jsonb_build_object('id',inherited_c.answer_id)),-inherited_c.ordinal FROM @old@.saves inherited_c JOIN t11b10_versions root ON root.id=inherited_c.root_version
+        WHERE prior.after_manifest IS NOT NULL AND NOT EXISTS(SELECT 1 FROM t11b10_versions n WHERE n.predecessor_id=root.id)
       ) inherited WHERE d->>'source'=x->>'source_table' AND d->'pk'=x->'source_pk'
        AND NOT EXISTS(SELECT 1 FROM t11b10_versions v WHERE v.source_table=x->>'source_table' AND v.source_pk=x->'source_pk')
        ORDER BY ordinal DESC LIMIT 1),x) ORDER BY x->>'source_table',(x->'source_pk')::text)
