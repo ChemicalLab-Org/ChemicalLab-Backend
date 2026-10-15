@@ -29,8 +29,8 @@ class InstitutionalAnswerSaveDbTest {
         sql().execute(r.script("t12c-v1"));ctl="t12c_"+f.schema.substring(4);
         h.activation.put("app.evaluations.institutional.answer-save-enabled",true);
         q=e.legacy(Action.READ_OWN_ATTEMPT);
-        open=question(q.evaluationId(),"OPEN_TEXT",0);choice=question(q.evaluationId(),"SINGLE_CHOICE",1);
-        option=option(choice);foreignQuestion=question(e.request(true,Action.READ_DELIVERY).evaluationId(),"SINGLE_CHOICE",0);foreignOption=option(foreignQuestion);
+        open=question(q.evaluationId(),"OPEN_TEXT",0);choice=question(q.evaluationId(),"MULTIPLE_CHOICE",1);
+        option=option(choice);foreignQuestion=question(e.request(true,Action.READ_DELIVERY).evaluationId(),"MULTIPLE_CHOICE",0);foreignOption=option(foreignQuestion);
         sql().update("update evaluation_attempts set status='IN_PROGRESS',grade_closed=false,question_order=?,current_question_index=0,started_at=clock_timestamp() at time zone 'America/Lima' where id=?",open+","+choice,q.attemptId());
         sql().update("update evaluation_assignments set due_at=(clock_timestamp() at time zone 'America/Lima')+interval '1 hour' where id=?",r.assignment);
         e.resolve(q);
@@ -182,3 +182,4 @@ class InstitutionalAnswerSaveDbTest {
         }finally{thread.shutdownNow();}
     }
 }
+
