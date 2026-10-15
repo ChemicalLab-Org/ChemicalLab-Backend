@@ -566,8 +566,7 @@ public class EvaluationService {
         EvaluationAttempt attempt = requireOwnedAttempt(attemptId, student);
         requireInProgress(attempt);
 
-        boolean pastTimeLimit = !accessPolicy.canWrite(attempt);
-        submitAttemptMutation(attempt,request,accessPolicy);
+        boolean pastTimeLimit = submitAttemptMutation(attempt,request,accessPolicy);
         boolean pendingReview = attempt.getStatus()==AttemptStatus.PENDING_MANUAL_REVIEW;
 
         // Solo se registra el envío del intento; nunca las respuestas individuales.
@@ -599,7 +598,7 @@ public class EvaluationService {
         return attempt;
     }
 
-    private void submitAttemptMutation(EvaluationAttempt attempt, SubmitEvaluationAttemptRequest request, EvaluationAccessPolicy policy) {
+    private boolean submitAttemptMutation(EvaluationAttempt attempt, SubmitEvaluationAttemptRequest request, EvaluationAccessPolicy policy) {
         // Si el envío llega fuera de la ventana autorizada se ignoran las
         // respuestas que vengan en el cuerpo: solo se califican las guardadas a tiempo. El
         // intento se cierra igualmente para no dejarlo abierto indefinidamente.
@@ -661,7 +660,7 @@ public class EvaluationService {
         recordLifecycleEvent(attempt, AttemptEventType.ATTEMPT_SUBMITTED,
                 "El estudiante envió el intento.",
                 pastTimeLimit ? "source=TIME_LIMIT" : "source=USER_SUBMIT",policy);
-
+        return pastTimeLimit;
     }
 
     /**

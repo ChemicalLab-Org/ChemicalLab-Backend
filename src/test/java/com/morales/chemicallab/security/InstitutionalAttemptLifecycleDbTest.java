@@ -259,6 +259,73 @@ class InstitutionalAttemptLifecycleDbTest {
         h.forbidden(h.pupil,a);assertThat(h.ok(h.pupil,q).path("answers").toString()).contains("In B").doesNotContain("In A");
         assertThat(count("select count(*) from evaluation_attempts where evaluation_id=?",r.evaluation)).isEqualTo(3);
         assertThat(post(h.pupil,base(q),startBody(UUID.randomUUID())).statusCode()).isEqualTo(403);
+        Request b=q;
+        var teacher=f.app.getBean(com.morales.chemicallab.repository.TeacherProfileRepository.class).findByUser(f.teacher).orElseThrow();
+        long root=f.app.getBean(com.morales.chemicallab.repository.EvaluationRepository.class).saveAndFlush(
+            Evaluation.builder().title("Independent legacy A").status(EvaluationStatus.PUBLISHED).maxAttempts(2).timeLimitMinutes(30).createdByTeacher(teacher).build()).getId();
+        long assignment=r.assignment(root,teacher,LocalDateTime.now(ZoneId.of("America/Lima")).plusHours(1));
+        long question=s.question(root,"OPEN_TEXT",0);
+        long prepared=r.approved(ResourceReconciliationService.SourceKind.EVALUATION,root,r.map(List.of(r.delivery(assignment,r.classId,r.episode)),List.of()));
+        assertThat(r.service.apply(prepared)).isEqualTo("APPLIED");
+        long delivery=count("select id from t11b3_evaluation_deliveries where legacy_assignment_id=?",assignment);
+        q=new Request(Contract.LEGACY,Action.READ_DELIVERY,r.institution,r.classId,root,delivery,
+            count("select revision_id from t11b3_evaluation_deliveries where id=?",delivery),f.student.getId(),null);e.resolve(q);
+        long independent=begun();q=own(independent);finish(independent,UUID.randomUUID(),List.of(answer(question,null,"Independent in A")));
+        assertThat(h.ok(h.pupil,q).path("answers").toString()).contains("Independent in A").doesNotContain("In B");
+        assertThat(h.ok(h.pupil,b).path("answers").toString()).contains("In B").doesNotContain("Independent in A");
+        assertThat(count("select (x->>'owner_id')::bigint from "+ctl+".saves receipt cross join lateral jsonb_array_elements(receipt.dataset) x where receipt.ordinal=(select max(ordinal) from "+ctl+".saves) and x->>'source_table'='evaluation_attempts' and x->'source_pk'=jsonb_build_object('id',?::bigint)",second)).isEqualTo(r.foreign);
+    }
+    @Test void startReplayCannotExposeAttemptMadeUncertainByLatestF08() throws Exception {
+        UUID op=UUID.randomUUID();long attempt=begin(op).path("attemptId").asLong();q=own(attempt);
+        // Delivery remains readable/start-authorized while this attempt alone is uncertain.
+        uncertainAttempts();
+        assertThat(post(h.pupil,base(q),startBody(op)).statusCode()).isEqualTo(403);
+        assertThat(receipts()).isEqualTo(1);
+    }
+    @Test void automaticChoiceGradingClosesWithoutRevealingCorrection() throws Exception {
+        sql().update("update evaluation_questions set active=false where id=?",s.open);e.resolve(q);
+        long attempt=begun();var result=finish(attempt,UUID.randomUUID(),List.of(answer(s.choice,s.option,null)));
+        assertThat(result.path("status").asText()).isEqualTo("GRADED");
+        assertThat(count("select count(*) from evaluation_attempts where id=? and grade_closed and score=1 and graded_at is not null",attempt)).isEqualTo(1);
+        q=own(attempt);h.ok(h.pupil,q);
+        Request correction=new Request(q.contract(),Action.READ_CORRECTION,q.institutionId(),q.classId(),q.evaluationId(),q.deliveryId(),q.revisionId(),f.student.getId(),attempt);
+        h.forbidden(h.pupil,correction);
+    }
+    void uncertainAttempts() throws Exception {
+        var map=f.json.readTree(e.c.mapping("evaluations",q.evaluationId(),q.institutionId(),q.classId()));
+        for(var item:map.get("resolutions"))if(Set.of("evaluation_attempts","evaluation_answers","evaluation_attempt_events","evaluation_attempt_adjustments").contains(item.path("source").asText())) {
+            var row=(com.fasterxml.jackson.databind.node.ObjectNode)item;row.remove(List.of("institutionId","classId","accountId","enrollmentId","sourceTimezone"));row.put("scope","UNRESOLVED");
+        }
+        long proposal=e.c.service.propose(e.c.root("evaluations",q.evaluationId()),map.toString(),"FIXTURE-UNCERTAIN-ATTEMPTS",UUID.randomUUID());
+        e.c.approve(proposal,"PLATFORM",e.c.platform,e.c.platformGrant);e.c.approve(proposal,"INSTITUTION",e.c.school,e.c.foreignSchoolGrant);
+        assertThat(e.c.service.apply(proposal,UUID.randomUUID())).isEqualTo("APPLIED");
+    }
+    @Test void finalizationQuotaFailureRollsBackNewAnswersGradesAndSubmissionEvent() throws Exception {
+        long attempt=begun();e.c.b.service.limit(q.institutionId(),"ORIGINAL",1,1,UUID.randomUUID());e.resolve(q);
+        assertThat(post(h.pupil,base(q)+"/"+attempt+"/submit",submitBody(UUID.randomUUID(),List.of(answer(s.choice,s.option,null)))).statusCode()).isEqualTo(503);
+        assertThat(receipts()).isEqualTo(1);
+        assertThat(count("select count(*) from evaluation_answers where attempt_id=?",attempt)).isZero();
+        assertThat(count("select count(*) from evaluation_attempts where id=? and status='IN_PROGRESS' and submitted_at is null and score is null",attempt)).isEqualTo(1);
+        assertThat(count("select count(*) from evaluation_attempt_events where attempt_id=? and event_type='ATTEMPT_SUBMITTED'",attempt)).isZero();
+    }
+    @Test void approvedF08CorrectionWaitsForCloseAndBecomesStaleInsteadOfTransferringIt() throws Exception {
+        long attempt=begun();q=own(attempt);
+        long proposal=e.c.service.propose(e.c.root("evaluations",q.evaluationId()),e.c.mapping("evaluations",q.evaluationId(),r.foreign,r.foreignClass),"FIXTURE-CONCURRENT-CORRECTION",UUID.randomUUID());
+        e.c.approve(proposal,"PLATFORM",e.c.platform,e.c.platformGrant);e.c.approve(proposal,"INSTITUTION",e.c.school,e.c.schoolGrant);
+        var service=f.app.getBean(InstitutionalAttemptLifecycleService.class);JdbcTemplate spy=spy(sql());
+        var locked=new CountDownLatch(1);var release=new CountDownLatch(1);
+        doAnswer(call->{Object value=call.callRealMethod();locked.countDown();assertThat(release.await(12,TimeUnit.SECONDS)).isTrue();return value;})
+            .when(spy).queryForObject(contains(".begin_save("),eq(Object.class),any(Object[].class));
+        ReflectionTestUtils.setField(service,"jdbc",spy);var threads=Executors.newFixedThreadPool(2);
+        try {
+            Future<?> closing=threads.submit(()->finish(attempt,UUID.randomUUID(),null));assertThat(locked.await(20,TimeUnit.SECONDS)).isTrue();
+            Future<String> correction=threads.submit(()->e.c.service.apply(proposal,UUID.randomUUID()));
+            long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(4);boolean blocked=false;
+            while(System.nanoTime()<until){blocked=Boolean.TRUE.equals(sql().queryForObject("select exists(select 1 from pg_stat_activity where wait_event_type='Lock' and query ilike '%t11p05%')",Boolean.class));if(blocked)break;Thread.sleep(20);}
+            assertThat(blocked).isTrue();release.countDown();closing.get(45,TimeUnit.SECONDS);
+            assertThat(correction.get(30,TimeUnit.SECONDS)).isEqualTo("STALE");h.ok(h.pupil,q);
+            assertThat(count("select count(*) from t11b10_versions where proposal_id=?",proposal)).isZero();
+        }finally{release.countDown();threads.shutdownNow();ReflectionTestUtils.setField(service,"jdbc",sql());}
     }
     void raceMutation(String mutation,int subsequent) throws Exception {
         long attempt=begun();q=own(attempt);
@@ -320,11 +387,17 @@ class InstitutionalAttemptLifecycleDbTest {
                 barrier.setAutoCommit(false);barrier.createStatement().execute("lock table evaluations in exclusive mode");
                 var pending=new ArrayList<Future<HttpResponse<String>>>();
                 for(String origin:origins)pending.add(threads.submit(()->f.http.send(HttpRequest.newBuilder(java.net.URI.create(origin+base(q))).timeout(Duration.ofSeconds(60)).header("Authorization","Bearer "+h.pupil).header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString(command)).build(),HttpResponse.BodyHandlers.ofString())));
-                pending.add(threads.submit(()->post(h.pupil,"/api/evaluations/student/"+q.evaluationId()+"/attempts","{}")));
+                pending.add(threads.submit(()->f.http.send(HttpRequest.newBuilder(java.net.URI.create(original+"/api/evaluations/student/"+q.evaluationId()+"/attempts")).timeout(Duration.ofSeconds(60)).header("Authorization","Bearer "+h.pupil).header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString("{}")).build(),HttpResponse.BodyHandlers.ofString())));
                 long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(4);long blocked=0;
                 while(System.nanoTime()<until){blocked=count("select count(*) from pg_stat_activity where wait_event_type='Lock' and query ilike '%evaluations%'");if(blocked>=3)break;Thread.sleep(20);}
                 assertThat(blocked).isGreaterThanOrEqualTo(3);barrier.rollback();
-                var results=new ArrayList<Integer>();for(var future:pending){var response=future.get(60,TimeUnit.SECONDS);h.assertNoSecrets(response.body());results.add(response.statusCode());}
+                var results=new ArrayList<Integer>();for(int index=0;index<pending.size();index++){
+                    var response=pending.get(index).get(60,TimeUnit.SECONDS);
+                    if(index<2)h.assertNoSecrets(response.body());
+                    else {assertThat(response.body()).doesNotContain("PRIVATE-EXPECTED-T12B-1937","PRIVATE-CORRECTION-T12B-64c9");
+                        if(response.statusCode()==201)assertThat(f.json.readTree(response.body()).path("score").isNull()).isTrue();}
+                    results.add(response.statusCode());
+                }
                 assertThat(count("select count(*) from evaluation_attempts where evaluation_id=?",q.evaluationId())).isEqualTo(2);
                 assertThat(count("select count(*) from evaluation_attempts where evaluation_id=? and status='IN_PROGRESS'",q.evaluationId())).isEqualTo(1);
                 assertThat(count("select max(attempt_number) from evaluation_attempts where evaluation_id=?",q.evaluationId())).isEqualTo(2);

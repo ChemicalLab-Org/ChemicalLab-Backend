@@ -86,8 +86,11 @@ public class InstitutionalAttemptLifecycleService {
                     var old=receipts.get(0);
                     if(!jsonTree((String)old.get("request")).path("input").equals(jsonTree(input)))
                         throw new ResponseStatusException(HttpStatus.CONFLICT,"Operación incompatible.");
+                    Receipt prior=decode((String)old.get("result"));
+                    access.authorizeLifecycle(principal,new Request(contract,Action.READ_OWN_ATTEMPT,institution,clazz,
+                        evaluation,delivery,revision,principal.userId(),prior.attemptId()));
                     sessions.revalidate(principal);
-                    return decode((String)old.get("result"));
+                    return prior;
                 }
                 if(Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from "+InstitutionalFixtureUnit.control(schema)+".saves where operation_id=?)",Boolean.class,operation)))
                     throw new ResponseStatusException(HttpStatus.CONFLICT,"Operación incompatible.");
@@ -126,6 +129,12 @@ public class InstitutionalAttemptLifecycleService {
                     .category(LogCategory.EVALUATION).severity(LogSeverity.INFO).actorUserId(principal.userId()).actorRole(principal.role())
                     .targetType("ContextResolution").targetId(evaluation).action(action).description(action).outcome("SUCCESS").correlationId(operation).build();
                 audit.persist(event);
+                if(!starting && changed.getStatus()==AttemptStatus.PENDING_MANUAL_REVIEW) {
+                    audit.persist(SystemLog.builder().eventType(LogEventType.EVALUATION_ATTEMPT_PENDING_REVIEW)
+                        .category(LogCategory.EVALUATION).severity(LogSeverity.INFO).actorUserId(principal.userId()).actorRole(principal.role())
+                        .targetType("ContextResolution").targetId(evaluation).action("PENDING_INSTITUTIONAL_REVIEW")
+                        .description("PENDING_INSTITUTIONAL_REVIEW").outcome("SUCCESS").correlationId(operation).build());
+                }
                 jdbc.execute("set local synchronous_commit=on");
                 jdbc.queryForObject("select "+ctl+".finish_operation(?,?,?::jsonb,?)",Object.class,operation,changed.getId(),encode(result),event.getId());
                 access.authorizeLifecycle(principal,request);

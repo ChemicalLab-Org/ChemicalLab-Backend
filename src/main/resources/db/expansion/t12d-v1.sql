@@ -2893,7 +2893,9 @@ BEGIN
          AND (x->'snapshot'->>'student_id')::bigint=student AND x->'snapshot'->>'status'='IN_PROGRESS')
         OR (raw->>'current_question_index')::int<>0 OR raw->>'question_order' IS NULL OR raw->>'started_at' IS NULL
         OR raw->>'submitted_at' IS NOT NULL OR raw->>'score' IS NOT NULL OR raw->>'final_score' IS NOT NULL
-        OR raw->>'overall_feedback' IS NOT NULL OR (raw->>'grade_closed')::boolean THEN RAISE EXCEPTION 'T12-D invalid new attempt';END IF;
+        OR raw->>'overall_feedback' IS NOT NULL OR raw->>'graded_at' IS NOT NULL OR raw->>'max_score' IS NOT NULL
+        OR raw->>'grade_closed_at' IS NOT NULL OR raw->>'grade_closed_by' IS NOT NULL
+        OR (raw->>'grade_closed')::boolean THEN RAISE EXCEPTION 'T12-D invalid new attempt';END IF;
       ELSIF kind='SAVE' THEN
        IF o IS NULL OR ((o->'snapshot')-ARRAY['_relations','question_order','current_question_index'])
         IS DISTINCT FROM (raw-ARRAY['_relations','question_order','current_question_index']) THEN RAISE EXCEPTION 'T12-D restricted save attempt';END IF;
@@ -2973,7 +2975,7 @@ BEGIN
      ELSIF (g.rows>oldrows AND g.rows>1000000) OR (g.bytes>oldbytes AND g.bytes>268435456) THEN
       RAISE EXCEPTION 'T12-D technical quota exceeded' USING ERRCODE='P7501';END IF;
     END LOOP;
-    UPDATE @ctl@.saves SET after_manifest=manifest,heads=t11p05_heads(manifest),answer_id=CASE WHEN kind='SAVE' THEN answer END,
+    UPDATE @ctl@.saves SET after_manifest=manifest,heads=t11p05_heads(manifest),answer_id=CASE WHEN kind='SAVE' THEN (SELECT id FROM evaluation_answers WHERE attempt_id=target AND question_id=(s.request->>'question')::bigint) END,
        answer_resolution=res,derived=contexts,result=projection,audit_id=audit,dataset=data WHERE operation_id=op;
     IF (SELECT count(*)>10000 OR coalesce(sum(octet_length(to_jsonb(x)::text)),0)>67108864 FROM @ctl@.saves x) THEN
       RAISE EXCEPTION 'T12-D control quota exceeded' USING ERRCODE='P7501';END IF;
