@@ -72,6 +72,8 @@ public class InstitutionalAnswerSaveService {
                 proof.put("inputOption",command.selectedOptionId());proof.put("inputText",command.answerText());
                 proof.put("option",option);proof.put("text",text);
                 String encoded=encode(proof);
+                if(Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from "+ctl+".saves where operation_id=? and request<>?::jsonb)",Boolean.class,command.operationId(),encoded)))
+                    throw new ResponseStatusException(HttpStatus.CONFLICT,"Operación incompatible.");
                 String prior=jdbc.queryForObject("select "+ctl+".begin_save(?,?::jsonb)::text",String.class,command.operationId(),encoded);
                 if(prior!=null) {
                     sessions.revalidate(principal);

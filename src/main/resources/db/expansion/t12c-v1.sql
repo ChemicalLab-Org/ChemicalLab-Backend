@@ -2617,6 +2617,10 @@ BEGIN
     IF NOT(t11p05_fresh(p.id) OR @ctl@.fresh(p.id)) OR t11p05_status(p.id)<>'APPLIED'
        OR (v.resolution->>'institutionId')::bigint IS DISTINCT FROM (req->>'institution')::bigint THEN
      RAISE EXCEPTION 'T12-C source not current';END IF;
+    IF EXISTS(SELECT 1 FROM t11b9_counters c FULL JOIN
+      (SELECT scope,owner_id,category,sum(rows_used) rows_used,sum(bytes_used) bytes_used FROM t11b9_items GROUP BY 1,2,3) i USING(scope,owner_id,category)
+      WHERE coalesce(c.rows_used,0)<>coalesce(i.rows_used,0) OR coalesce(c.bytes_used,0)<>coalesce(i.bytes_used,0)) THEN
+      RAISE EXCEPTION 'T12-C B9 counter divergence; no repair';END IF;
     manifest:=t11p05_manifest(p.root);
     SELECT operation_id INTO prior FROM @ctl@.saves WHERE proposal_id=p.id AND after_manifest IS NOT NULL ORDER BY ordinal DESC LIMIT 1;
     INSERT INTO @ctl@.saves(operation_id,request,proposal_id,root_version,predecessor,before_manifest,heads,references_snapshot,b10_measurement)
@@ -2647,13 +2651,13 @@ BEGIN
          OR (raw->>'question_id')::bigint<>(s.request->>'question')::bigint
          OR raw->'selected_option_id' IS DISTINCT FROM s.request->'option'
          OR raw->'answer_text' IS DISTINCT FROM s.request->'text' THEN RAISE EXCEPTION 'T12-C answer mismatch';END IF;
-      IF o IS NOT NULL AND (o->'snapshot'-ARRAY['_relations','selected_option_id','answer_text','answered_at','reviewed','correct'])
+      IF o IS NOT NULL AND ((o->'snapshot')-ARRAY['_relations','selected_option_id','answer_text','answered_at','reviewed','correct'])
          IS DISTINCT FROM (raw-ARRAY['_relations','selected_option_id','answer_text','answered_at','reviewed','correct']) THEN
        RAISE EXCEPTION 'T12-C restricted answer mutation';END IF;
      ELSIF n->>'source_table'='evaluation_attempts' AND (n->'source_pk'->>'id')::bigint=(s.request->>'attempt')::bigint THEN
-      IF o IS NULL OR (o->'snapshot'-ARRAY['_relations','question_order','current_question_index'])
-       IS DISTINCT FROM (n->'snapshot'-ARRAY['_relations','question_order','current_question_index']) THEN RAISE EXCEPTION 'T12-C restricted attempt mutation';END IF;
-     ELSIF o IS NULL OR (o->'snapshot'-'_relations') IS DISTINCT FROM (n->'snapshot'-'_relations') THEN
+      IF o IS NULL OR ((o->'snapshot')-ARRAY['_relations','question_order','current_question_index'])
+       IS DISTINCT FROM ((n->'snapshot')-ARRAY['_relations','question_order','current_question_index']) THEN RAISE EXCEPTION 'T12-C restricted attempt mutation';END IF;
+     ELSIF o IS NULL OR ((o->'snapshot')-'_relations') IS DISTINCT FROM ((n->'snapshot')-'_relations') THEN
       RAISE EXCEPTION 'T12-C mutation outside answer protocol';
      END IF;
     END LOOP;

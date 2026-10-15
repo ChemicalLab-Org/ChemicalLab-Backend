@@ -149,6 +149,7 @@ class InstitutionalAnswerSaveDbTest {
         java.nio.file.Path dir=java.nio.file.Files.createDirectories(java.nio.file.Path.of("target/t12c-recovery",f.schema));
         String url=f.setting("spring.datasource.url"),port=url.substring(url.indexOf(':',18)+1,url.lastIndexOf('/'));
         var args=List.of("-h","127.0.0.1","-p",port,"-U",f.setting("spring.datasource.username"));
+        sql().update("update authentication_limits set expires_at=greatest(expires_at,floor(extract(epoch from clock_timestamp())*1000)::bigint+3600000)");
         Map<String,String> before=new TreeMap<>();
         for(String schema:List.of(f.schema,"t06_"+f.schema.substring(4),ctl))for(String table:sql().queryForList("select tablename from pg_tables where schemaname=? order by tablename",String.class,schema))
             before.put(schema+"."+table,sql().queryForObject(r.signature(schema+"."+table),String.class));
