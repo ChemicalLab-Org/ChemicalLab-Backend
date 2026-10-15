@@ -308,6 +308,9 @@ class InstitutionalEvaluationReadDbTest {
     }
     @Test void readsPreserveAllBusinessRowsSequencesQuotasHistoryAndSuccess() throws Exception {
         academicContent();legacyContent();Request a=e.request(false,Action.READ_DELIVERY),b=e.request(true,Action.READ_DELIVERY),legacy=e.legacy(Action.READ_DELIVERY);e.resolve(a);e.resolve(b);e.resolve(legacy);
+        // Keep fixture login buckets unexpired during this long observation. The real
+        // scheduled expiry cleanup must not race the all-table GET mutation assertion.
+        sql().update("update authentication_limits set expires_at=greatest(expires_at,floor(extract(epoch from clock_timestamp())*1000)::bigint+3600000)");
         var before=e.c.state();var sequences=sequences();
         for(Request q:List.of(a,b,legacy)){ok(pupil,q);assertThat(f.request("GET",base(q)+"?recipientAccountId="+f.student.getId(),admin,null).statusCode()).isEqualTo(200);}
         ok(pupil,e.request(false,Action.READ_OWN_ATTEMPT));ok(pupil,e.legacy(Action.READ_OWN_ATTEMPT));
