@@ -205,7 +205,9 @@ public class EvaluationDeliveryAccessService {
             String stored=jdbc.queryForObject("select question_order from evaluation_attempts where id=?",String.class,q.attemptId());
             // Historical order may contain inactive, unanswered questions. Check every ID,
             // without filtering/reordering, with this decision's resolver and coherent locks.
-            for(long id:legacyQuestionOrder(stored)) {
+            List<Long> order=legacyQuestionOrder(stored);
+            if(q.action()==Action.SAVE_OWN_ANSWER)require(new HashSet<>(order).size()==order.size());
+            for(long id:order) {
                 require(exists("select exists(select 1 from evaluation_questions where id=? and evaluation_id=?)",id,q.evaluationId()));
                 b10.get("evaluation_questions",id,false,null,null);
             }

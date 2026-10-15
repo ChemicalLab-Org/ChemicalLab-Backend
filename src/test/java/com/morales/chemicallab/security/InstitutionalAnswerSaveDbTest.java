@@ -35,7 +35,10 @@ class InstitutionalAnswerSaveDbTest {
         sql().update("update evaluation_assignments set due_at=(clock_timestamp() at time zone 'America/Lima')+interval '1 hour' where id=?",r.assignment);
         e.resolve(q);
     }
-    @AfterEach void stop() throws Exception {if(h!=null)h.stop();}
+    @AfterEach void stop() throws Exception {
+        if(ctl!=null && f.app!=null && f.app.isActive())sql().execute("drop schema "+ctl+" cascade");
+        if(h!=null)h.stop();
+    }
     long question(long evaluation,String type,int order){return sql().queryForObject("insert into evaluation_questions(evaluation_id,question_text,question_type,points,order_index,required,active,expected_answer,explanation) values(?,'Synthetic question',?,1,?,false,true,'PRIVATE-EXPECTED-T12B-1937','PRIVATE-CORRECTION-T12B-64c9') returning id",Long.class,evaluation,type,order);}
     long option(long question){return sql().queryForObject("insert into evaluation_options(question_id,option_text,correct,order_index,active) values(?,'Synthetic option',true,0,true) returning id",Long.class,question);}
     String path(Request request){return h.base(request).replace("evaluation-reads","evaluation-writes")+"/own-attempts/"+request.attemptId()+"/answers";}
@@ -123,6 +126,50 @@ class InstitutionalAnswerSaveDbTest {
         assertThat(post(h.pupil,q,body(UUID.randomUUID(),choice,option,null)).statusCode()).isEqualTo(403);
         assertThat(receipts()).isEqualTo(1);
     }
+    @Test void originalWriterBeforeFirstReceiptIsStaleAndCannotBeAdoptedBySavingAgain() throws Exception {
+        sql().update("insert into evaluation_answers(attempt_id,question_id,answer_text,answered_at) values(?,?,'Unadopted',clock_timestamp() at time zone 'America/Lima')",q.attemptId(),open);
+        assertThat(h.get(h.pupil,q).statusCode()).isEqualTo(403);
+        assertThat(post(h.pupil,q,body(UUID.randomUUID(),open,null,"Institutional retry")).statusCode()).isEqualTo(403);
+        assertThat(receipts()).isZero();
+    }
+    @Test void existingInstitutionalQuotaRejectsGrowthAndRollsBackEverySaveEffect() throws Exception {
+        sequential();
+        e.c.b.service.limit(q.institutionId(),"ORIGINAL",1,1,UUID.randomUUID());e.resolve(q);
+        assertThat(post(h.pupil,q,body(UUID.randomUUID(),open,null,"Growing answer")).statusCode()).isEqualTo(503);
+        assertThat(receipts()).isZero();assertThat(count("select current_question_index from evaluation_attempts where id=?",q.attemptId())).isZero();
+        assertThat(count("select count(*) from evaluation_answers where attempt_id=?",q.attemptId())).isZero();
+        assertThat(count("select count(*) from system_logs where action='SAVE_INSTITUTIONAL_ANSWER'")).isZero();
+    }
+    @Test void additiveCertificationAndNativeRecoveryPreserveReceiptAndLostResponseRetry() throws Exception {
+        sequential();UUID op=UUID.randomUUID();JsonNode first=save(op,open,null,"Durable answer");
+        sql().execute(r.script("t12c-v1"));
+        var tx=new org.springframework.transaction.support.TransactionTemplate(f.app.getBean(org.springframework.transaction.PlatformTransactionManager.class));
+        tx.executeWithoutResult(s->{sql().execute("alter table "+ctl+".saves disable trigger immutable");
+            assertThatThrownBy(()->sql().execute(rUncheckedScript())).isInstanceOf(org.springframework.dao.DataAccessException.class).hasMessageContaining("divergence");s.setRollbackOnly();});
+        java.nio.file.Path dir=java.nio.file.Files.createDirectories(java.nio.file.Path.of("target/t12c-recovery",f.schema));
+        String url=f.setting("spring.datasource.url"),port=url.substring(url.indexOf(':',18)+1,url.lastIndexOf('/'));
+        var args=List.of("-h","127.0.0.1","-p",port,"-U",f.setting("spring.datasource.username"));
+        Map<String,String> before=new TreeMap<>();
+        for(String schema:List.of(f.schema,"t06_"+f.schema.substring(4),ctl))for(String table:sql().queryForList("select tablename from pg_tables where schemaname=? order by tablename",String.class,schema))
+            before.put(schema+"."+table,sql().queryForObject(r.signature(schema+"."+table),String.class));
+        r.nativeTool("pg_dump",args,List.of("-Fc","-n",f.schema,"-n","t06_"+f.schema.substring(4),"-n",ctl,"-d","chemicallab_t01_test","-f",dir.resolve("fixture.dump").toAbsolutePath().toString()),dir);
+        f.app.close();
+        try(var statement=f.control.createStatement()) {
+            statement.execute("drop schema "+ctl+" cascade;drop schema t06_"+f.schema.substring(4)+" cascade;drop schema "+f.schema+" cascade");
+        }
+        r.nativeTool("pg_restore",args,List.of("--single-transaction","--exit-on-error","-d","chemicallab_t01_test",dir.resolve("fixture.dump").toAbsolutePath().toString()),dir);
+        Map<String,String> restored=new TreeMap<>();
+        try(var statement=f.control.createStatement()) {
+            statement.execute("set search_path to "+f.schema+",public");statement.execute(r.script("t12c-v1"));
+            for(String table:before.keySet())try(var rows=statement.executeQuery(r.signature(table))){rows.next();restored.put(table,rows.getString(1));}
+        }
+        assertThat(restored).isEqualTo(before);
+        java.nio.file.Files.writeString(dir.resolve("signatures.json"),f.json.writerWithDefaultPrettyPrinter().writeValueAsString(Map.of("before",before,"restored",restored)));
+        f.app=f.startApp("--spring.jpa.hibernate.ddl-auto=none");f.origin=f.origin(f.app);
+        assertThat(save(op,open,null,"Durable answer")).isEqualTo(first);
+        assertThat(h.ok(h.pupil,q).path("answers").toString()).contains("Durable answer");assertThat(receipts()).isEqualTo(1);
+    }
+    String rUncheckedScript(){try{return r.script("t12c-v1");}catch(Exception ex){throw new IllegalStateException(ex);}}
     @Test void freshF08CorrectionPrecedesAllOldReceiptsAndNewSavesBindToNewMap() throws Exception {
         save(UUID.randomUUID(),open,null,"Original");long original=count("select proposal_id from "+ctl+".saves");
         e.resolve(q,"UNRESOLVED");assertThat(h.get(h.pupil,q).statusCode()).isEqualTo(403);
@@ -182,4 +229,5 @@ class InstitutionalAnswerSaveDbTest {
         }finally{thread.shutdownNow();}
     }
 }
+
 

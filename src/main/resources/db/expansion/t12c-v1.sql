@@ -2626,7 +2626,7 @@ BEGIN
    END $fn$;
 
    CREATE FUNCTION @ctl@.finish_save(op uuid,answer bigint,projection jsonb,audit bigint) RETURNS void
-    LANGUAGE plpgsql SET timezone='UTC' SET bytea_output='hex' SET datestyle='ISO, YMD' AS $fn$
+    LANGUAGE plpgsql AS $fn$
    DECLARE s @ctl@.saves%ROWTYPE;p t11b10_proposals%ROWTYPE;manifest jsonb;o jsonb;n jsonb;raw jsonb;res jsonb;
      previous jsonb;data jsonb;g record;l record;oldrows bigint;oldbytes bigint;
    BEGIN
