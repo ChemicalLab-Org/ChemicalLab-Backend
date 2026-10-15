@@ -4,6 +4,7 @@ import com.morales.chemicallab.entity.*;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import java.time.*;
+import java.util.List;
 
 /** Academic wall times are America/Lima, including existing timestamp-without-zone values. */
 @Component
@@ -76,5 +77,12 @@ public class EvaluationAccessPolicy {
     public boolean exposeCorrection(EvaluationAttempt attempt, boolean reviewAvailable) {
         return reviewAvailable && !beforeStart(attempt.getAssignment()) && attempt.getStatus() == AttemptStatus.GRADED
                 && Boolean.TRUE.equals(attempt.getGradeClosed());
+    }
+
+    /** T05 closes the whole evaluation, including future, empty and undated assignments. */
+    public boolean reviewAvailable(Evaluation evaluation, List<EvaluationAssignment> assignments) {
+        var active = assignments.stream().filter(a -> Boolean.TRUE.equals(a.getActive())).toList();
+        return !published(evaluation) || (!assignments.isEmpty() && active.isEmpty())
+                || (!active.isEmpty() && active.stream().allMatch(a -> a.getDueAt() != null && !now().isBefore(a.getDueAt())));
     }
 }

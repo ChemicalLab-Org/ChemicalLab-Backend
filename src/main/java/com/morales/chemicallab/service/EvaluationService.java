@@ -1608,12 +1608,9 @@ public class EvaluationService {
                 : null;
         boolean deadlineReached = deadlineAt != null && !accessPolicy.now().isBefore(deadlineAt);
 
-        boolean archived = !accessPolicy.published(evaluation);
-
         // No active assignment means no new opportunity; in-progress attempts also
         // cannot write under this policy. Deactivation and archive therefore close safely.
-        boolean reviewAvailable = deadlineReached || archived
-                || (!assignments.isEmpty() && activeAssignments.isEmpty());
+        boolean reviewAvailable = accessPolicy.reviewAvailable(evaluation, assignments);
 
         ReviewUnlockReason reason;
         if (reviewAvailable) {
