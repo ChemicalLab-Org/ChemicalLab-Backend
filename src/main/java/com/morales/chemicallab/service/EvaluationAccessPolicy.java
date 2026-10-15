@@ -74,6 +74,18 @@ public class EvaluationAccessPolicy {
         return deadline == null || now().isBefore(deadline);
     }
 
+    /** Closing may outlive only the academic deadline; withdrawn access still denies. */
+    public void requireFinish(EvaluationAttempt attempt) {
+        var assignment=attempt.getAssignment();
+        var student=attempt.getStudent();
+        var window=window(assignment);
+        if (attempt.getStatus()!=AttemptStatus.IN_PROGRESS || !Boolean.TRUE.equals(attempt.getActive())
+            || (window!=Window.AVAILABLE && window!=Window.EXPIRED)
+            || !Boolean.TRUE.equals(student.getUser().getActive())
+            || !assignment.getGrade().equals(student.getGrade()) || !assignment.getSection().equals(student.getSection()))
+            throw new IllegalArgumentException("Finalización no autorizada.");
+    }
+
     public boolean exposeCorrection(EvaluationAttempt attempt, boolean reviewAvailable) {
         return reviewAvailable && !beforeStart(attempt.getAssignment()) && attempt.getStatus() == AttemptStatus.GRADED
                 && Boolean.TRUE.equals(attempt.getGradeClosed());

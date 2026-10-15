@@ -443,7 +443,25 @@ public class EvaluationService {
         EvaluationAssignment assignment = requireActiveAssignmentForStudent(evaluationId, student);
         Evaluation evaluation = assignment.getEvaluation();
 
-        accessPolicy.requireStart(assignment);
+        EvaluationAttempt attempt = startAttemptMutation(student, assignment, accessPolicy);
+        auditLogService.recordInfo(LogEventType.EVALUATION_ATTEMPT_STARTED,TARGET_EVALUATION,evaluation.getId(),null,null,null,"attemptId="+attempt.getId());
+        return toAttemptResponse(attempt);
+    }
+
+    /** Exact delivery assignment is resolved by T12, never selected by section labels. */
+    EvaluationAttempt startInstitutionalAttempt(long account, long assignmentId) {
+        var student=studentProfileRepository.findByUser_Id(account).orElseThrow();
+        var assignment=assignmentRepository.findById(assignmentId).orElseThrow();
+        accessLock.assignment(assignment);
+        if(!Boolean.TRUE.equals(student.getUser().getActive())
+            || !assignment.getGrade().equals(student.getGrade()) || !assignment.getSection().equals(student.getSection()))
+            throw new IllegalArgumentException("Inicio no autorizado.");
+        return startAttemptMutation(student,assignment,institutionalPolicy());
+    }
+
+    private EvaluationAttempt startAttemptMutation(StudentProfile student, EvaluationAssignment assignment, EvaluationAccessPolicy policy) {
+        Evaluation evaluation=assignment.getEvaluation();
+        policy.requireStart(assignment);
 
         attemptRepository.findByEvaluationAndStudentAndStatus(evaluation, student, AttemptStatus.IN_PROGRESS)
                 .ifPresent(a -> { throw new IllegalArgumentException("Ya existe un intento en progreso."); });
@@ -463,7 +481,7 @@ public class EvaluationService {
                 .student(student)
                 .attemptNumber((int) used + 1)
                 .status(AttemptStatus.IN_PROGRESS)
-                .startedAt(accessPolicy.now())
+                .startedAt(policy.now())
                 .questionOrder(serializeOrder(order))
                 .currentQuestionIndex(0)
                 .active(true)
@@ -474,10 +492,9 @@ public class EvaluationService {
         // intento (no depende del frontend), como ancla de la línea de tiempo. Se registra
         // siempre, aunque la detección de salida de pestaña esté desactivada.
         recordLifecycleEvent(attempt, AttemptEventType.ATTEMPT_STARTED,
-                "El estudiante inició el intento.", null);
+                "El estudiante inició el intento.", null, policy);
 
-        auditLogService.recordInfo(LogEventType.EVALUATION_ATTEMPT_STARTED,TARGET_EVALUATION,evaluation.getId(),null,null,null,"attemptId="+attempt.getId());
-        return toAttemptResponse(attempt);
+        return attempt;
     }
 
     public AttemptResponse getAttempt(String username, Long attemptId) {
@@ -512,6 +529,14 @@ public class EvaluationService {
         if(!institutionalPolicy().canWrite(attempt)) throw new IllegalArgumentException("Guardado no autorizado.");
     }
 
+    boolean institutionalAnswersOpen(long attemptId) {
+        var attempt=attemptRepository.findById(attemptId).orElseThrow();
+        var policy=institutionalPolicy();
+        var deadline=policy.answerDeadline(attempt);
+        return policy.window(attempt.getAssignment())==EvaluationAccessPolicy.Window.AVAILABLE
+            && (deadline==null || policy.now().isBefore(deadline));
+    }
+
     private EvaluationAccessPolicy institutionalPolicy() {
         var now=java.time.Instant.ofEpochMilli(((Number)entityManager.createNativeQuery(
             "select (extract(epoch from clock_timestamp())*1000)::bigint").getSingleResult()).longValue());
@@ -532,7 +557,7 @@ public class EvaluationService {
                 throw new IllegalArgumentException("Debes responder las preguntas en orden.");
             }
         }
-        upsertAnswer(attempt,request);
+        upsertAnswer(attempt,request,policy);
         if(sequential) {attempt.setCurrentQuestionIndex(index+1);attemptRepository.save(attempt);}
     }
 
@@ -541,10 +566,43 @@ public class EvaluationService {
         EvaluationAttempt attempt = requireOwnedAttempt(attemptId, student);
         requireInProgress(attempt);
 
+        boolean pastTimeLimit = submitAttemptMutation(attempt,request,accessPolicy);
+        boolean pendingReview = attempt.getStatus()==AttemptStatus.PENDING_MANUAL_REVIEW;
+
+        // Solo se registra el envío del intento; nunca las respuestas individuales.
+        Evaluation evaluation = attempt.getEvaluation();
+        auditLogService.recordInfo(LogEventType.EVALUATION_ATTEMPT_SUBMITTED, TARGET_EVALUATION,
+                evaluation.getId(), evaluation.getTitle(), "Enviar intento",
+                "Se envió un intento de la evaluación «" + evaluation.getTitle() + "».",
+                "attemptId=" + attempt.getId() + (pastTimeLimit ? ";outOfTime=true" : ""));
+
+        // Si quedó pendiente de revisión manual, se deja constancia segura (sin respuestas).
+        if (pendingReview) {
+            auditLogService.recordInfo(LogEventType.EVALUATION_ATTEMPT_PENDING_REVIEW, TARGET_EVALUATION,
+                    evaluation.getId(), evaluation.getTitle(), "Intento pendiente de revisión",
+                    "Un intento de la evaluación «" + evaluation.getTitle()
+                            + "» quedó pendiente de revisión manual.",
+                    "attemptId=" + attempt.getId());
+        }
+
+        return toAttemptResponse(attempt);
+    }
+
+    EvaluationAttempt submitInstitutionalAttempt(long account,long attemptId,SubmitEvaluationAttemptRequest request) {
+        var student=studentProfileRepository.findByUser_Id(account).orElseThrow();
+        var attempt=requireOwnedAttempt(attemptId,student);
+        requireInProgress(attempt);
+        var policy=institutionalPolicy();
+        policy.requireFinish(attempt);
+        submitAttemptMutation(attempt,request,policy);
+        return attempt;
+    }
+
+    private boolean submitAttemptMutation(EvaluationAttempt attempt, SubmitEvaluationAttemptRequest request, EvaluationAccessPolicy policy) {
         // Si el envío llega fuera de la ventana autorizada se ignoran las
         // respuestas que vengan en el cuerpo: solo se califican las guardadas a tiempo. El
         // intento se cierra igualmente para no dejarlo abierto indefinidamente.
-        boolean pastTimeLimit = !accessPolicy.canWrite(attempt);
+        boolean pastTimeLimit = !policy.canWrite(attempt);
         // En el modo una por una las respuestas ya se guardaron al avanzar; reprocesar el
         // cuerpo del envío chocaría con el bloqueo de preguntas anteriores, así que se
         // ignora. En "todas juntas" sí se persisten las respuestas que lleguen (a tiempo).
@@ -553,7 +611,7 @@ public class EvaluationService {
 
         if (!pastTimeLimit && !sequential && request != null && request.answers() != null) {
             for (SubmitEvaluationAnswerRequest answer : request.answers()) {
-                upsertAnswer(attempt, answer);
+                upsertAnswer(attempt, answer,policy);
             }
         }
 
@@ -566,7 +624,7 @@ public class EvaluationService {
 
         // Cada pregunta abierta queda con una fila de respuesta (aunque vaya en blanco) para
         // que el docente pueda calificarla en la revisión manual.
-        ensureOpenAnswerRows(attempt);
+        ensureOpenAnswerRows(attempt,policy);
 
         gradeAttempt(attempt);
 
@@ -574,7 +632,7 @@ public class EvaluationService {
         // preguntas abiertas sin revisar, queda PENDING_MANUAL_REVIEW (puntaje parcial, sin
         // gradedAt); si no, queda directamente GRADED.
         boolean pendingReview = hasPendingManualReview(attempt);
-        LocalDateTime now = accessPolicy.now();
+        LocalDateTime now = policy.now();
         attempt.setSubmittedAt(now);
         if (pendingReview) {
             // Queda pendiente de revisión manual: la calificación no se cierra (el estudiante
@@ -597,29 +655,12 @@ public class EvaluationService {
         // de que el tiempo se agotó antes de marcar el envío. Nunca se registran respuestas.
         if (pastTimeLimit) {
             recordLifecycleEvent(attempt, AttemptEventType.TIME_EXPIRED,
-                    "El tiempo de la evaluación se agotó.", "source=TIME_LIMIT");
+                    "El tiempo de la evaluación se agotó.", "source=TIME_LIMIT",policy);
         }
         recordLifecycleEvent(attempt, AttemptEventType.ATTEMPT_SUBMITTED,
                 "El estudiante envió el intento.",
-                pastTimeLimit ? "source=TIME_LIMIT" : "source=USER_SUBMIT");
-
-        // Solo se registra el envío del intento; nunca las respuestas individuales.
-        Evaluation evaluation = attempt.getEvaluation();
-        auditLogService.recordInfo(LogEventType.EVALUATION_ATTEMPT_SUBMITTED, TARGET_EVALUATION,
-                evaluation.getId(), evaluation.getTitle(), "Enviar intento",
-                "Se envió un intento de la evaluación «" + evaluation.getTitle() + "».",
-                "attemptId=" + attempt.getId() + (pastTimeLimit ? ";outOfTime=true" : ""));
-
-        // Si quedó pendiente de revisión manual, se deja constancia segura (sin respuestas).
-        if (pendingReview) {
-            auditLogService.recordInfo(LogEventType.EVALUATION_ATTEMPT_PENDING_REVIEW, TARGET_EVALUATION,
-                    evaluation.getId(), evaluation.getTitle(), "Intento pendiente de revisión",
-                    "Un intento de la evaluación «" + evaluation.getTitle()
-                            + "» quedó pendiente de revisión manual.",
-                    "attemptId=" + attempt.getId());
-        }
-
-        return toAttemptResponse(attempt);
+                pastTimeLimit ? "source=TIME_LIMIT" : "source=USER_SUBMIT",policy);
+        return pastTimeLimit;
     }
 
     /**
@@ -1281,14 +1322,15 @@ public class EvaluationService {
      * del intento que aún no tenga una. Así toda pregunta abierta tiene un identificador de
      * respuesta que el docente puede calificar, incluso si el estudiante la dejó en blanco.
      */
-    private void ensureOpenAnswerRows(EvaluationAttempt attempt) {
+    private void ensureOpenAnswerRows(EvaluationAttempt attempt) { ensureOpenAnswerRows(attempt,accessPolicy); }
+    private void ensureOpenAnswerRows(EvaluationAttempt attempt, EvaluationAccessPolicy policy) {
         for (EvaluationQuestion question : openQuestionsOf(attempt.getEvaluation())) {
             if (answerRepository.findByAttemptAndQuestion(attempt, question).isEmpty()) {
                 answerRepository.save(EvaluationAnswer.builder()
                         .attempt(attempt)
                         .question(question)
                         .reviewed(false)
-                        .answeredAt(accessPolicy.now())
+                        .answeredAt(policy.now())
                         .build());
             }
         }
@@ -1737,12 +1779,16 @@ public class EvaluationService {
      */
     private void recordLifecycleEvent(EvaluationAttempt attempt, AttemptEventType type,
                                       String description, String metadata) {
+        recordLifecycleEvent(attempt,type,description,metadata,accessPolicy);
+    }
+    private void recordLifecycleEvent(EvaluationAttempt attempt, AttemptEventType type,
+                                      String description, String metadata, EvaluationAccessPolicy policy) {
         attemptEventRepository.save(EvaluationAttemptEvent.builder()
                 .attempt(attempt)
                 .eventType(type)
                 .description(description)
                 .metadata(metadata)
-                .occurredAt(accessPolicy.now())
+                .occurredAt(policy.now())
                 .build());
     }
 
@@ -2045,7 +2091,8 @@ public class EvaluationService {
      * Crea o actualiza la respuesta de una pregunta dentro de un intento, validando que
      * la pregunta pertenezca a la evaluación y que la alternativa pertenezca a la pregunta.
      */
-    private void upsertAnswer(EvaluationAttempt attempt, SubmitEvaluationAnswerRequest request) {
+    private void upsertAnswer(EvaluationAttempt attempt, SubmitEvaluationAnswerRequest request) { upsertAnswer(attempt,request,accessPolicy); }
+    private void upsertAnswer(EvaluationAttempt attempt, SubmitEvaluationAnswerRequest request, EvaluationAccessPolicy policy) {
         EvaluationQuestion question = questionRepository.findById(request.questionId())
                 .orElseThrow(() -> new EntityNotFoundException("La pregunta no existe."));
         if (!question.getEvaluation().getId().equals(attempt.getEvaluation().getId())) {
@@ -2058,7 +2105,7 @@ public class EvaluationService {
                         .question(question)
                         .build());
 
-        answer.setAnsweredAt(accessPolicy.now());
+        answer.setAnsweredAt(policy.now());
         if (question.getQuestionType() == QuestionType.OPEN_TEXT) {
             // Pregunta abierta: se guarda el texto del estudiante y queda pendiente de
             // revisión manual (sin alternativa ni corrección automática).

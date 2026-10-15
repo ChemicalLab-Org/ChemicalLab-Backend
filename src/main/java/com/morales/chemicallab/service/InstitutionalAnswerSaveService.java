@@ -53,7 +53,7 @@ public class InstitutionalAnswerSaveService {
             Request request=new Request(Contract.LEGACY,Action.SAVE_OWN_ANSWER,institution,clazz,evaluation,delivery,revision,principal.userId(),attempt);
             return transaction.execute(status->{
                 InstitutionalFixtureUnit.lock(jdbc,schema,true);
-                String ctl=InstitutionalFixtureUnit.control(schema);
+                String ctl=InstitutionalFixtureUnit.writeControl(jdbc,schema);
                 sessions.revalidate(principal);
                 access.authorizeSave(principal,request);
                 legacy.requireInstitutionalWindow(attempt);
@@ -65,6 +65,7 @@ public class InstitutionalAnswerSaveService {
                 Long option="OPEN_TEXT".equals(type)?null:command.selectedOptionId();
                 String text="OPEN_TEXT".equals(type)?trim(command.answerText()):null;
                 Map<String,Object> proof=new TreeMap<>();
+                if(ctl.startsWith("t12d_"))proof.put("operation","SAVE");
                 proof.put("actor",principal.userId());proof.put("institution",institution);proof.put("class",clazz);
                 proof.put("evaluation",evaluation);proof.put("delivery",delivery);proof.put("revision",revision);
                 proof.put("attempt",attempt);proof.put("question",command.questionId());

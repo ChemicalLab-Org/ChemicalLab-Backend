@@ -48,14 +48,15 @@ public class InstitutionalEvaluationReadService {
                 delivery, revision, account(principal), attempt), context -> {
             Content content = content(context);
             if (context.contract() == Contract.NEW) {
-                return jdbc.queryForObject("select status,attempt_number,question_order::text,answers::text from t11b8_fixture_attempts where id=?",
-                        (rs,n) -> new Attempt(scope(context), attempt, rs.getString("status"),rs.getInt("attempt_number"),
+                return jdbc.queryForObject("select status,attempt_number,started_at,question_order::text,answers::text from t11b8_fixture_attempts where id=?",
+                        (rs,n) -> new Attempt(scope(context), attempt, rs.getString("status"),rs.getInt("attempt_number"),rs.getTimestamp("started_at").toInstant(),
                                 order(tree(rs.getString("question_order")),content), null,
                                 academicAnswers(tree(rs.getString("answers")),content),context.observedAt()), attempt);
             }
             validateLegacyAnswers(context);
-            return jdbc.queryForObject("select status,attempt_number,question_order,current_question_index from evaluation_attempts where id=?",
+            return jdbc.queryForObject("select status,attempt_number,started_at,question_order,current_question_index from evaluation_attempts where id=?",
                     (rs,n) -> new Attempt(scope(context),attempt,rs.getString("status"),rs.getInt("attempt_number"),
+                            rs.getObject("started_at",java.time.LocalDateTime.class)==null?null:rs.getObject("started_at",java.time.LocalDateTime.class).atZone(EvaluationAccessPolicy.ACADEMIC_ZONE).toInstant(),
                             legacyOrder(rs.getString("question_order"),content),rs.getInt("current_question_index"),
                             jdbc.query("select question_id,selected_option_id,answer_text from evaluation_answers where attempt_id=? order by answered_at,id",
                                     (a,i) -> new Answer(a.getLong("question_id"),(Long)a.getObject("selected_option_id"),a.getString("answer_text")),attempt),

@@ -195,7 +195,7 @@ class InstitutionalEvaluationReadDbTest {
         for(JsonNode question:content.get("questions")){assertThat(names(question)).containsExactlyInAnyOrder("id","questionText","questionType","points","orderIndex","required","options");for(JsonNode option:question.get("options"))assertThat(names(option)).containsExactlyInAnyOrder("id","optionText","orderIndex");}
         JsonNode attempt=ok(pupil,e.request(false,Action.READ_OWN_ATTEMPT));assertNoSecrets(attempt.toString());
         assertThat(attempt.path("questionOrder").toString()).isEqualTo("[17,23]");assertThat(attempt.path("answers").toString()).contains("MY-ANSWER-T12B");
-        assertThat(names(attempt)).containsExactlyInAnyOrder("scope","attemptId","status","attemptNumber","questionOrder","currentQuestionIndex","answers","observedAt");
+        assertThat(names(attempt)).containsExactlyInAnyOrder("scope","attemptId","status","attemptNumber","startedAt","questionOrder","currentQuestionIndex","answers","observedAt");
         for(JsonNode answer:attempt.get("answers"))assertThat(names(answer)).containsExactlyInAnyOrder("questionId","selectedOptionId","answerText");
         var next=e.revisions.nextDraft(e.aRevision,e.op());next=e.revisions.edit(next.id(),1,payload("Successor must never replace exact T12B"),e.op());
         next=e.revisions.publish(next.id(),next.version(),e.op());e.resolve(q);
