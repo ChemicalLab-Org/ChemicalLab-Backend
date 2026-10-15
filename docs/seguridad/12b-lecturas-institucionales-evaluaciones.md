@@ -93,6 +93,10 @@ sin persistencia ni aleatorización. Se conserva el orden guardado y el índice;
 no se añaden permisos para responder/avanzar. Preguntas/opciones de entrega y
 preguntas de corrección mantienen visibilidad activa y orden por orderIndex.
 Se rechazan relaciones de respuesta/opción de otro recurso/pregunta.
+Antes de proyectar filas legacy, la misma instancia del resolver B10 de T12-A
+comprueba también sus preguntas, opciones y respuestas propias: una raíz vigente
+no resuelve un hijo UNRESOLVED/CONFLICT. NEW proyecta campos del JSON de una única
+fila de revisión validada; no los convierte en entidades de otro namespace.
 
 ## Unidad de consistencia y escritores
 

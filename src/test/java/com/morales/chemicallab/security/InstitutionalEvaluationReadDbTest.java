@@ -149,6 +149,19 @@ class InstitutionalEvaluationReadDbTest {
         } finally {ReflectionTestUtils.setField(e.access,"jdbc",f.sql());}
     }
 
+    @Test void resolvedRootCannotExposeUncertainLegacyQuestionOptionOrOwnAnswerRows() throws Exception {
+        legacyContent();
+        long question=sql().queryForObject("insert into evaluation_questions(evaluation_id,question_text,question_type,points,order_index,required,active) values(?,'Public choice','MULTIPLE_CHOICE',1,1,true,true) returning id",Long.class,r.evaluation);
+        sql().update("insert into evaluation_options(question_id,option_text,order_index,active,correct) values(?,'Public option',0,true,true)",question);
+        Request delivery=e.legacy(Action.READ_DELIVERY),attempt=e.legacy(Action.READ_OWN_ATTEMPT);
+        for(String source:List.of("evaluation_questions","evaluation_options","evaluation_answers")) {
+            Request q=source.equals("evaluation_answers")?attempt:delivery;
+            e.resolve(q,"UNRESOLVED",source);forbidden(pupil,q);
+            assertThat(f.request("GET",base(delivery)+"?recipientAccountId="+f.student.getId(),admin,null).statusCode()).isEqualTo(200);
+        }
+        e.resolve(attempt);assertThat(ok(pupil,attempt).path("answers").toString()).contains("OWN-LEGACY-T12B");
+    }
+
     String payload(String title){return """
         {"resource":{"title":"%s","max_attempts":3,"time_limit_minutes":30,"question_display_mode":"ALL_AT_ONCE",
           "randomize_questions":false,"private":{"criteria":"PRIVATE-CRITERIA-T12B-2fcd"}},

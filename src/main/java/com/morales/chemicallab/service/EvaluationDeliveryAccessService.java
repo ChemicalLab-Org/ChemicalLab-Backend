@@ -88,7 +88,7 @@ public class EvaluationDeliveryAccessService {
                 require(!tables.isEmpty());
                 jdbc.execute("lock table " + String.join(",", tables) + " in share mode");
                 sessions.revalidate(principal);
-                Decision decision = resolve(principal, request);
+                Decision decision = resolve(principal, request, true);
                 require(decision.allowed());
                 T result = projection.apply(decision.context());
                 sessions.revalidate(principal);
@@ -131,6 +131,10 @@ public class EvaluationDeliveryAccessService {
     }
 
     private Decision resolve(SessionPrincipal principal, Request q) {
+        return resolve(principal,q,false);
+    }
+
+    private Decision resolve(SessionPrincipal principal, Request q, boolean readingRows) {
         // Retain the existing maintainer boundary. This read installs/mutates nothing.
         jdbc.execute("select t11b5_fixture()");
         // One SQL statement fixes both the server instant and B8's time-dependent
@@ -187,10 +191,32 @@ public class EvaluationDeliveryAccessService {
             case READ_CORRECTION -> Projection.OWN_CORRECTION;
             case GRADE_ATTEMPT -> Projection.GRADE_PERMISSION_ONLY;
         };
+        if (readingRows && q.contract()==Contract.LEGACY && projection!=Projection.SUPERVISION_METADATA)
+            validateReadRows(q,b10);
         return new Decision(Outcome.ALLOW, q.action(), new Context(q.contract(),
                 q.contract() == Contract.LEGACY ? RevisionKind.TECHNICAL_SNAPSHOT : RevisionKind.PUBLISHED_ACADEMIC,
                 projection, q.institutionId(), q.classId(), q.evaluationId(), q.deliveryId(), q.revisionId(), q.recipientAccountId(),
                 q.attemptId(), root.version(), d.version(), now));
+    }
+
+    /** A resolved root does not resolve uncertain legacy content/answer rows.
+     * Use the very same B10 resolver/cache as the decision; NEW JSON belongs to its exact revision row.
+     */
+    private void validateReadRows(Request q, CurrentContexts b10) {
+        for(long id:jdbc.queryForList("""
+            select x.id from evaluation_questions x where x.evaluation_id=? and
+              (x.active or exists(select 1 from evaluation_answers a where a.question_id=x.id and a.attempt_id=?))
+            """,Long.class,q.evaluationId(),q.attemptId()))
+            b10.get("evaluation_questions",id,false,null,null);
+        for(long id:jdbc.queryForList("""
+            select o.id from evaluation_options o join evaluation_questions x on x.id=o.question_id
+            where x.evaluation_id=? and ((x.active and o.active) or exists
+              (select 1 from evaluation_answers a where a.selected_option_id=o.id and a.attempt_id=?))
+            """,Long.class,q.evaluationId(),q.attemptId()))
+            b10.get("evaluation_options",id,false,null,null);
+        if(q.attemptId()!=null)
+            for(long id:jdbc.queryForList("select id from evaluation_answers where attempt_id=?",Long.class,q.attemptId()))
+                b10.get("evaluation_answers",id,true,q.recipientAccountId(),null);
     }
 
     private record Resolved(long version, Long enrollment) {}
