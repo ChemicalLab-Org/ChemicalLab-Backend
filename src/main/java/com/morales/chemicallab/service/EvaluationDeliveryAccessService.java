@@ -26,7 +26,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class EvaluationDeliveryAccessService {
     public enum Contract { LEGACY, NEW }
-    public enum Action { READ_DELIVERY, READ_OWN_ATTEMPT, SUPERVISE, REVIEW_ATTEMPT, READ_CORRECTION, GRADE_ATTEMPT, SAVE_OWN_ANSWER }
+    public enum Action { READ_DELIVERY, READ_OWN_ATTEMPT, SUPERVISE, REVIEW_ATTEMPT, READ_CORRECTION, GRADE_ATTEMPT, SAVE_OWN_ANSWER, START_OWN_ATTEMPT, SUBMIT_OWN_ATTEMPT }
     public enum RevisionKind { TECHNICAL_SNAPSHOT, PUBLISHED_ACADEMIC }
     public enum Projection { DELIVERY_WITHOUT_CORRECTION, OWN_ATTEMPT_WITHOUT_CORRECTION, SUPERVISION_METADATA,
                              TEACHER_REVIEW, OWN_CORRECTION, GRADE_PERMISSION_ONLY }
@@ -115,7 +115,7 @@ public class EvaluationDeliveryAccessService {
         return q != null && q.contract() != null && q.action() != null && q.institutionId() > 0 && q.classId() > 0
                 && q.evaluationId() > 0 && q.deliveryId() > 0 && q.revisionId() > 0 && q.recipientAccountId() > 0
                 && (q.attemptId() == null || q.attemptId() > 0)
-                && (q.action() == Action.SUPERVISE || (q.action() == Action.READ_DELIVERY ? q.attemptId() == null : q.attemptId() != null));
+                && (q.action() == Action.SUPERVISE || ((q.action() == Action.READ_DELIVERY || q.action() == Action.START_OWN_ATTEMPT) ? q.attemptId() == null : q.attemptId() != null));
     }
 
     private Decision resolve(SessionPrincipal principal, Request q) {
@@ -128,6 +128,16 @@ public class EvaluationDeliveryAccessService {
             return resolve(principal,q,true).context();
         } catch(Denied failure) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Guardado no autorizado.");
+        }
+    }
+
+    Context authorizeLifecycle(SessionPrincipal principal, Request q) {
+        try {
+            require(valid(q) && q.contract()==Contract.LEGACY
+                && (q.action()==Action.START_OWN_ATTEMPT || q.action()==Action.SUBMIT_OWN_ATTEMPT || q.action()==Action.READ_OWN_ATTEMPT));
+            return resolve(principal,q,true).context();
+        } catch(Denied failure) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Operación no autorizada.");
         }
     }
 
@@ -174,6 +184,8 @@ public class EvaluationDeliveryAccessService {
         boolean permitted = switch (q.action()) {
             case READ_DELIVERY -> admin || teacher || (own && delivery.available());
             case READ_OWN_ATTEMPT -> own && delivery.started();
+            case START_OWN_ATTEMPT -> q.contract()==Contract.LEGACY && own && delivery.available();
+            case SUBMIT_OWN_ATTEMPT -> q.contract()==Contract.LEGACY && own && delivery.closable();
             case SAVE_OWN_ANSWER -> q.contract()==Contract.LEGACY && own && delivery.available() && !attempt.terminal();
             case SUPERVISE -> admin || teacher;
             case REVIEW_ATTEMPT -> teacher && principal.userId() != q.recipientAccountId() && attempt.terminal();
@@ -183,7 +195,8 @@ public class EvaluationDeliveryAccessService {
         require(permitted);
         Projection projection = switch (q.action()) {
             case READ_DELIVERY -> own && delivery.available() ? Projection.DELIVERY_WITHOUT_CORRECTION : Projection.SUPERVISION_METADATA;
-            case READ_OWN_ATTEMPT, SAVE_OWN_ANSWER -> Projection.OWN_ATTEMPT_WITHOUT_CORRECTION;
+            case START_OWN_ATTEMPT -> Projection.DELIVERY_WITHOUT_CORRECTION;
+            case READ_OWN_ATTEMPT, SAVE_OWN_ANSWER, SUBMIT_OWN_ATTEMPT -> Projection.OWN_ATTEMPT_WITHOUT_CORRECTION;
             case SUPERVISE -> Projection.SUPERVISION_METADATA;
             case REVIEW_ATTEMPT -> Projection.TEACHER_REVIEW;
             case READ_CORRECTION -> Projection.OWN_CORRECTION;
@@ -201,12 +214,12 @@ public class EvaluationDeliveryAccessService {
      * Use the very same B10 resolver/cache as the decision; NEW JSON belongs to its exact revision row.
      */
     private void validateReadRows(Request q, CurrentContexts b10) {
-        if(q.action()==Action.READ_OWN_ATTEMPT || q.action()==Action.SAVE_OWN_ANSWER) {
+        if(q.attemptId()!=null) {
             String stored=jdbc.queryForObject("select question_order from evaluation_attempts where id=?",String.class,q.attemptId());
             // Historical order may contain inactive, unanswered questions. Check every ID,
             // without filtering/reordering, with this decision's resolver and coherent locks.
             List<Long> order=legacyQuestionOrder(stored);
-            if(q.action()==Action.SAVE_OWN_ANSWER)require(new HashSet<>(order).size()==order.size());
+            if(q.action()==Action.SAVE_OWN_ANSWER || q.action()==Action.SUBMIT_OWN_ATTEMPT)require(new HashSet<>(order).size()==order.size());
             for(long id:order) {
                 require(exists("select exists(select 1 from evaluation_questions where id=? and evaluation_id=?)",id,q.evaluationId()));
                 b10.get("evaluation_questions",id,false,null,null);
@@ -275,18 +288,22 @@ public class EvaluationDeliveryAccessService {
                 where v.source_table=? and v.source_pk=jsonb_build_object(?::text,?::bigint)
                   and not exists(select 1 from t11b10_versions next where next.predecessor_id=v.id)
                 """, source, source.equals("t11b3_evaluation_resources") ? "evaluation_id" : "id", id);
-            if(rows.isEmpty() && source.equals("evaluation_answers") && bridgeInstalled()) {
+            if(rows.isEmpty() && (source.equals("evaluation_answers") || source.equals("evaluation_attempts")) && bridgeInstalled()) {
                 // A new answer has no historical B10 version. Only an exact, committed
                 // receipt for the current approved root may supply its derived context.
                 require(rootVersion>0 && Boolean.TRUE.equals(freshness.get(rootProposal)));
                 // The same resolver already verified the complete current manifest above.
                 // Reuse that observation, not another ALLOW or a separately scanned snapshot.
-                String raw=jdbc.queryForObject("select answer_resolution::text from "+control()+".saves where root_version=? and answer_id=? and after_manifest is not null order by ordinal desc limit 1",String.class,rootVersion,id);
+                String raw;
+                if(lifecycleBridgeInstalled()) raw=jdbc.queryForObject("select " + control()+".derived_context(?,?,?)::text",String.class,source,id,rootVersion);
+                else if(source.equals("evaluation_answers")) raw=jdbc.queryForObject("select answer_resolution::text from "+control()+".saves where root_version=? and answer_id=? and after_manifest is not null order by ordinal desc limit 1",String.class,rootVersion,id);
+                else raw=null;
                 if(raw!=null) {
                     try {
                         JsonNode derived=JSON.readTree(raw);
                         require(equal(derived,"institutionId",q.institutionId()) && equal(derived,"classId",q.classId())
-                            && account!=null && equal(derived,"accountId",account));
+                            && "INSTITUTION".equals(derived.path("scope").asText()) && account!=null && equal(derived,"accountId",account)
+                            && (enrollment==null || equal(derived,"enrollmentId",enrollment)));
                         return new Resolved(derived.path("version").asLong(),derived.path("enrollmentId").asLong());
                     } catch(java.io.IOException invalid) {throw new Denied();}
                 }
@@ -310,7 +327,12 @@ public class EvaluationDeliveryAccessService {
                     resolution.has("enrollmentId") ? resolution.get("enrollmentId").longValue() : null);
         }
     }
-    private String control() {return InstitutionalFixtureUnit.control(jdbc.queryForObject("select current_schema()",String.class));}
+    private String control() {
+        String schema=jdbc.queryForObject("select current_schema()",String.class);
+        String lifecycle=InstitutionalFixtureUnit.lifecycleControl(schema);
+        return exists("select to_regprocedure(?::text) is not null",lifecycle+".fresh(bigint)")?lifecycle:InstitutionalFixtureUnit.control(schema);
+    }
+    private boolean lifecycleBridgeInstalled() {return control().startsWith("t12d_");}
     private boolean bridgeInstalled() {return exists("select to_regprocedure(?::text) is not null",control()+".fresh(bigint)");}
     private static boolean equal(JsonNode value, String key, long expected) {
         return value.path(key).isIntegralNumber() && value.path(key).canConvertToLong() && value.path(key).longValue() == expected;
@@ -346,7 +368,7 @@ public class EvaluationDeliveryAccessService {
     }
 
     private record Delivery(String source, String revisionSource, String recipientSource, long recipientId,
-                            Long assignmentId, Long resourceId, boolean started, boolean available, boolean correctionAvailable) {}
+                            Long assignmentId, Long resourceId, boolean started, boolean available, boolean correctionAvailable, boolean closable) {}
     private Delivery legacy(Request q, CurrentContexts b10, Instant now) {
         var rows = jdbc.queryForList("""
             select d.legacy_assignment_id,r.id recipient_id from t11b3_evaluation_deliveries d
@@ -366,7 +388,8 @@ public class EvaluationDeliveryAccessService {
         var policy = policy(now);
         return new Delivery("t11b3_evaluation_deliveries", "t11b3_evaluation_revisions", "t11b3_evaluation_recipients",
                 number(row, "recipient_id"), assignmentId, null, !policy.beforeStart(assignment),
-                policy.window(assignment) == EvaluationAccessPolicy.Window.AVAILABLE, policy.reviewAvailable(evaluation, assignments));
+                policy.window(assignment) == EvaluationAccessPolicy.Window.AVAILABLE, policy.reviewAvailable(evaluation, assignments),
+                policy.window(assignment)==EvaluationAccessPolicy.Window.AVAILABLE || policy.window(assignment)==EvaluationAccessPolicy.Window.EXPIRED);
     }
 
     private Delivery academic(Request q, CurrentContexts b10, Observation observation) {
@@ -394,7 +417,7 @@ public class EvaluationDeliveryAccessService {
             select exists(select 1 from t11b8_fixture_attempts where resource_id=? and (status<>'FINAL' or not grade_closed))
             """, resource);
         return new Delivery("t11b8_deliveries", "t11b8_revisions", "t11b8_recipients", number(row, "recipient_id"),
-                null, resource, started, available, closed);
+                null, resource, started, available, closed, false);
     }
 
     private record Attempt(boolean terminal, boolean closed, boolean correctionVisible) {}

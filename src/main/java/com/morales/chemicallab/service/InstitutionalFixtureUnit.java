@@ -12,6 +12,11 @@ import java.util.List;
 final class InstitutionalFixtureUnit {
     private InstitutionalFixtureUnit() {}
     static String control(String schema) { return "t12c_" + schema.substring(4); }
+    static String lifecycleControl(String schema) { return "t12d_" + schema.substring(4); }
+    static String writeControl(JdbcTemplate jdbc,String schema) {
+        String lifecycle=lifecycleControl(schema);
+        return Boolean.TRUE.equals(jdbc.queryForObject("select to_regprocedure(?::text) is not null",Boolean.class,lifecycle+".fresh(bigint)"))?lifecycle:control(schema);
+    }
     static void lock(JdbcTemplate jdbc, String approvedSchema, boolean writing) {
         String schema=jdbc.queryForObject("select current_schema()",String.class);
         if(schema==null || !schema.matches("t03_[a-f0-9]{32}") || !schema.equals(approvedSchema)
