@@ -214,7 +214,7 @@ public class EvaluationDeliveryAccessService {
      * Use the very same B10 resolver/cache as the decision; NEW JSON belongs to its exact revision row.
      */
     private void validateReadRows(Request q, CurrentContexts b10) {
-        if(q.attemptId()!=null) {
+        if(q.action()==Action.READ_OWN_ATTEMPT || q.action()==Action.SAVE_OWN_ANSWER || q.action()==Action.SUBMIT_OWN_ATTEMPT) {
             String stored=jdbc.queryForObject("select question_order from evaluation_attempts where id=?",String.class,q.attemptId());
             // Historical order may contain inactive, unanswered questions. Check every ID,
             // without filtering/reordering, with this decision's resolver and coherent locks.

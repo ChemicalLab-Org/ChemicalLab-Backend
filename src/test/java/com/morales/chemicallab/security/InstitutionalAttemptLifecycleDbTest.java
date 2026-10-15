@@ -308,6 +308,16 @@ class InstitutionalAttemptLifecycleDbTest {
         assertThat(count("select count(*) from evaluation_attempts where id=? and status='IN_PROGRESS' and submitted_at is null and score is null",attempt)).isEqualTo(1);
         assertThat(count("select count(*) from evaluation_attempt_events where attempt_id=? and event_type='ATTEMPT_SUBMITTED'",attempt)).isZero();
     }
+    @Test void certifiedSuccessorRetainsPredecessorSaveReceiptAndItsNewAnswerContext() throws Exception {
+        sql().execute("drop schema "+ctl+" cascade");
+        sql().update("update evaluation_attempts set active=true,status='IN_PROGRESS' where id=?",q.attemptId());e.resolve(q);
+        UUID op=UUID.randomUUID();var prior=s.save(op,s.open,null,"Saved under C");
+        assertThat(count("select count(*) from "+s.ctl+".saves")).isEqualTo(1);
+        sql().execute(r.script("t12d-v1"));assertThat(s.save(op,s.open,null,"Saved under C")).isEqualTo(prior);
+        finish(q.attemptId(),UUID.randomUUID(),null);
+        assertThat(h.ok(h.pupil,q).path("answers").toString()).contains("Saved under C");
+        assertThat(count("select count(*) from "+s.ctl+".saves")).isEqualTo(1);assertThat(receipts()).isEqualTo(1);
+    }
     @Test void approvedF08CorrectionWaitsForCloseAndBecomesStaleInsteadOfTransferringIt() throws Exception {
         long attempt=begun();q=own(attempt);
         long proposal=e.c.service.propose(e.c.root("evaluations",q.evaluationId()),e.c.mapping("evaluations",q.evaluationId(),r.foreign,r.foreignClass),"FIXTURE-CONCURRENT-CORRECTION",UUID.randomUUID());
