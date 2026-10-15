@@ -16,6 +16,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.sql.Timestamp;
 import java.time.*;
 import java.util.*;
+import java.util.function.Function;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 /** T12-A: fixture-only, read-only, internal decision. No consumer may treat a result as a capability.
  * Every later access must resolve again and coordinate with its writers before using protected data.
@@ -43,6 +46,7 @@ public class EvaluationDeliveryAccessService {
     private final JdbcTemplate jdbc;
     private final AccountSessionService sessions;
     private final TransactionTemplate read;
+    private final TransactionTemplate coherentRead;
 
     public EvaluationDeliveryAccessService(JdbcTemplate jdbc, AccountSessionService sessions,
                                           PlatformTransactionManager transactions) {
@@ -53,6 +57,50 @@ public class EvaluationDeliveryAccessService {
         read.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
         read.setReadOnly(true);
         read.setTimeout(15);
+        coherentRead = new TransactionTemplate(transactions);
+        coherentRead.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        // LOCK SHARE needs a read/write transaction. This unit executes no business DML.
+        // READ_COMMITTED observes writers that committed while the lock was being acquired.
+        coherentRead.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
+        coherentRead.setTimeout(15);
+    }
+
+    /** T12-B only: authorization and fully materialized DTO inside one fixture lock interval.
+     * Package-private so consumers cannot reuse a previously returned ALLOW/context.
+     * Broad table locks deliberately match the fixture protocol, not a production lock design.
+     */
+    <T> T readCoherently(SessionPrincipal principal, Request request, String approvedSchema,
+                         Function<Context, T> projection) {
+        try {
+            require(principal != null && !principal.temporaryPassword() && valid(request));
+            return coherentRead.execute(status -> {
+                String schema = jdbc.queryForObject("select current_schema()", String.class);
+                require(schema != null && schema.matches("t03_[a-f0-9]{32}") && schema.equals(approvedSchema));
+                require(exists("select current_database()='chemicallab_t01_test' and inet_server_addr()='127.0.0.1'::inet"));
+                jdbc.execute("select t11b5_fixture()");
+                jdbc.execute("set local lock_timeout='5s'");
+                // Include all fixture sources, B10 freshness dependencies, sessions and inserts
+                // (phantoms), not merely the selected rows. Identifiers are quoted by PostgreSQL.
+                List<String> tables = jdbc.queryForList("""
+                    select format('%I.%I',schemaname,tablename) from pg_tables
+                    where schemaname=current_schema() order by tablename
+                    """, String.class);
+                require(!tables.isEmpty());
+                jdbc.execute("lock table " + String.join(",", tables) + " in share mode");
+                sessions.revalidate(principal);
+                Decision decision = resolve(principal, request, true);
+                require(decision.allowed());
+                T result = projection.apply(decision.context());
+                sessions.revalidate(principal);
+                return result;
+            });
+        } catch (Denied failure) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Lectura no autorizada.");
+        } catch (AuthenticationException failure) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sesión no vigente.");
+        } catch (DataAccessException | TransactionException failure) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Lectura no disponible.");
+        }
     }
 
     /** Principal must come from T02 authentication, never from a request body. Null/failure denies.
@@ -83,9 +131,16 @@ public class EvaluationDeliveryAccessService {
     }
 
     private Decision resolve(SessionPrincipal principal, Request q) {
+        return resolve(principal,q,false);
+    }
+
+    private Decision resolve(SessionPrincipal principal, Request q, boolean readingRows) {
         // Retain the existing maintainer boundary. This read installs/mutates nothing.
         jdbc.execute("select t11b5_fixture()");
-        Instant now = jdbc.queryForObject("select statement_timestamp()", Timestamp.class).toInstant();
+        // One SQL statement fixes both the server instant and B8's time-dependent
+        // global closure. Java T05/relationship windows use that exact same instant.
+        Observation observation = observe(q);
+        Instant now = observation.at();
         Timestamp at = Timestamp.from(now);
         long member = member(principal.userId(), q.institutionId(), at);
         require(exists("""
@@ -100,7 +155,7 @@ public class EvaluationDeliveryAccessService {
 
         var b10 = new CurrentContexts(q);
         Resolved root = b10.get("evaluations", q.evaluationId(), false, null, null);
-        Delivery delivery = q.contract() == Contract.LEGACY ? legacy(q, b10) : academic(q, b10);
+        Delivery delivery = q.contract() == Contract.LEGACY ? legacy(q, b10, now) : academic(q, b10, observation);
         Resolved d = b10.get(delivery.source(), q.deliveryId(), true, null, null);
         b10.get(delivery.revisionSource(), q.revisionId(), false, null, null);
         Resolved recipient = b10.get(delivery.recipientSource(), delivery.recipientId(), true, q.recipientAccountId(), null);
@@ -115,7 +170,7 @@ public class EvaluationDeliveryAccessService {
 
         Attempt attempt = null;
         if (q.attemptId() != null) {
-            attempt = q.contract() == Contract.LEGACY ? legacyAttempt(q, delivery) : academicAttempt(q, delivery);
+            attempt = q.contract() == Contract.LEGACY ? legacyAttempt(q, delivery, now) : academicAttempt(q, delivery);
             b10.get(q.contract() == Contract.LEGACY ? "evaluation_attempts" : "t11b8_fixture_attempts",
                     q.attemptId(), true, q.recipientAccountId(), recipient.enrollment());
         }
@@ -136,13 +191,75 @@ public class EvaluationDeliveryAccessService {
             case READ_CORRECTION -> Projection.OWN_CORRECTION;
             case GRADE_ATTEMPT -> Projection.GRADE_PERMISSION_ONLY;
         };
+        if (readingRows && q.contract()==Contract.LEGACY && projection!=Projection.SUPERVISION_METADATA)
+            validateReadRows(q,b10);
         return new Decision(Outcome.ALLOW, q.action(), new Context(q.contract(),
                 q.contract() == Contract.LEGACY ? RevisionKind.TECHNICAL_SNAPSHOT : RevisionKind.PUBLISHED_ACADEMIC,
                 projection, q.institutionId(), q.classId(), q.evaluationId(), q.deliveryId(), q.revisionId(), q.recipientAccountId(),
                 q.attemptId(), root.version(), d.version(), now));
     }
 
+    /** A resolved root does not resolve uncertain legacy content/answer rows.
+     * Use the very same B10 resolver/cache as the decision; NEW JSON belongs to its exact revision row.
+     */
+    private void validateReadRows(Request q, CurrentContexts b10) {
+        if(q.action()==Action.READ_OWN_ATTEMPT) {
+            String stored=jdbc.queryForObject("select question_order from evaluation_attempts where id=?",String.class,q.attemptId());
+            // Historical order may contain inactive, unanswered questions. Check every ID,
+            // without filtering/reordering, with this decision's resolver and coherent locks.
+            for(long id:legacyQuestionOrder(stored)) {
+                require(exists("select exists(select 1 from evaluation_questions where id=? and evaluation_id=?)",id,q.evaluationId()));
+                b10.get("evaluation_questions",id,false,null,null);
+            }
+        }
+        for(long id:jdbc.queryForList("""
+            select x.id from evaluation_questions x where x.evaluation_id=? and
+              (x.active or exists(select 1 from evaluation_answers a where a.question_id=x.id and a.attempt_id=?))
+            """,Long.class,q.evaluationId(),q.attemptId()))
+            b10.get("evaluation_questions",id,false,null,null);
+        for(long id:jdbc.queryForList("""
+            select o.id from evaluation_options o join evaluation_questions x on x.id=o.question_id
+            where x.evaluation_id=? and ((x.active and o.active) or exists
+              (select 1 from evaluation_answers a where a.selected_option_id=o.id and a.attempt_id=?))
+            """,Long.class,q.evaluationId(),q.attemptId()))
+            b10.get("evaluation_options",id,false,null,null);
+        if(q.attemptId()!=null)
+            for(long id:jdbc.queryForList("select id from evaluation_answers where attempt_id=?",Long.class,q.attemptId()))
+                b10.get("evaluation_answers",id,true,q.recipientAccountId(),null);
+    }
+
+    /** Shared stored-order parser: validation and projection consume exactly the same IDs.
+     * An absent order still uses the active-content fallback, validated above.
+     */
+    static List<Long> legacyQuestionOrder(String raw) {
+        if(raw==null || raw.isBlank()) return List.of();
+        var order=new ArrayList<Long>();
+        try {
+            for(String part:raw.split(",")) {
+                String value=part.trim();
+                if(!value.matches("[1-9][0-9]{0,18}")) throw new NumberFormatException();
+                order.add(Long.parseLong(value));
+            }
+        } catch(NumberFormatException invalid) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Proyección no disponible.");
+        }
+        return List.copyOf(order);
+    }
+
     private record Resolved(long version, Long enrollment) {}
+    private record Observation(Instant at, boolean rootClosed) {}
+    private Observation observe(Request q) {
+        if (q.contract() == Contract.LEGACY)
+            return new Observation(jdbc.queryForObject("select statement_timestamp()",Timestamp.class).toInstant(),false);
+        var rows = jdbc.query("""
+            select statement_timestamp() observed,t11b8_closed(d.resource_id) closed
+            from t11b8_deliveries d join t11b8_resources r on r.id=d.resource_id
+            where d.id=? and d.revision_id=? and r.evaluation_id=?
+            """,(rs,n)->new Observation(rs.getTimestamp("observed").toInstant(),rs.getBoolean("closed")),
+                q.deliveryId(),q.revisionId(),q.evaluationId());
+        require(rows.size()==1);
+        return rows.get(0);
+    }
     /** Same latest-head + fresh + INSTITUTION predicate as t11b10_current.
      * Freshness is shared only by rows of one proposal in this invocation's repeatable snapshot.
      */
@@ -207,7 +324,7 @@ public class EvaluationDeliveryAccessService {
 
     private record Delivery(String source, String revisionSource, String recipientSource, long recipientId,
                             Long assignmentId, Long resourceId, boolean started, boolean available, boolean correctionAvailable) {}
-    private Delivery legacy(Request q, CurrentContexts b10) {
+    private Delivery legacy(Request q, CurrentContexts b10, Instant now) {
         var rows = jdbc.queryForList("""
             select d.legacy_assignment_id,r.id recipient_id from t11b3_evaluation_deliveries d
               join t11b3_evaluation_revisions v on v.id=d.revision_id and v.evaluation_id=d.evaluation_id
@@ -223,21 +340,21 @@ public class EvaluationDeliveryAccessService {
         Evaluation evaluation = legacyEvaluation(q.evaluationId());
         var assignments = legacyAssignments(evaluation);
         EvaluationAssignment assignment = assignments.stream().filter(a -> a.getId() == assignmentId).findFirst().orElseThrow(Denied::new);
-        var policy = policy();
+        var policy = policy(now);
         return new Delivery("t11b3_evaluation_deliveries", "t11b3_evaluation_revisions", "t11b3_evaluation_recipients",
                 number(row, "recipient_id"), assignmentId, null, !policy.beforeStart(assignment),
                 policy.window(assignment) == EvaluationAccessPolicy.Window.AVAILABLE, policy.reviewAvailable(evaluation, assignments));
     }
 
-    private Delivery academic(Request q, CurrentContexts b10) {
+    private Delivery academic(Request q, CurrentContexts b10, Observation observation) {
         var rows = jdbc.queryForList("""
             select d.resource_id,d.starts_at,d.due_at,d.status,r.id recipient_id,s.availability
             from t11b8_deliveries d join t11b8_resources s on s.id=d.resource_id
               join t11b8_revisions v on v.id=d.revision_id and v.resource_id=s.id
               join t11b8_recipients r on r.delivery_id=d.id and r.resource_id=s.id
             where d.id=? and s.evaluation_id=? and d.revision_id=? and s.creation='EXPLICIT_NEW'
-              and v.status='PUBLISHED' and v.published_at<=statement_timestamp() and r.account_id=? and r.status='ADMITTED'
-            """, q.deliveryId(), q.evaluationId(), q.revisionId(), q.recipientAccountId());
+              and v.status='PUBLISHED' and v.published_at<=? and r.account_id=? and r.status='ADMITTED'
+            """, q.deliveryId(), q.evaluationId(), q.revisionId(), Timestamp.from(observation.at()), q.recipientAccountId());
         require(rows.size() == 1);
         var row = rows.get(0);
         long resource = number(row, "resource_id");
@@ -245,8 +362,8 @@ public class EvaluationDeliveryAccessService {
         // The DRAFT evaluation is a technical anchor, not a second published academic revision or engine.
         require(!exists("select exists(select 1 from evaluation_assignments where evaluation_id=?) or exists(select 1 from evaluation_attempts where evaluation_id=?)",
                 q.evaluationId(), q.evaluationId()));
-        boolean rootClosed = exists("select t11b8_closed(?)", resource);
-        Instant now = jdbc.queryForObject("select statement_timestamp()", Timestamp.class).toInstant();
+        boolean rootClosed = observation.rootClosed();
+        Instant now = observation.at();
         boolean started = !now.isBefore(((Timestamp) row.get("starts_at")).toInstant());
         boolean available = started && !rootClosed && "OPEN".equals(row.get("status")) && "AVAILABLE".equals(row.get("availability"))
                 && (row.get("due_at") == null || now.isBefore(((Timestamp) row.get("due_at")).toInstant()));
@@ -258,7 +375,7 @@ public class EvaluationDeliveryAccessService {
     }
 
     private record Attempt(boolean terminal, boolean closed, boolean correctionVisible) {}
-    private Attempt legacyAttempt(Request q, Delivery delivery) {
+    private Attempt legacyAttempt(Request q, Delivery delivery, Instant now) {
         var rows = jdbc.queryForList("""
             select a.status,a.grade_closed,s.start_at from evaluation_attempts a join student_profiles p on p.id=a.student_id
               join evaluation_assignments s on s.id=a.assignment_id
@@ -271,7 +388,7 @@ public class EvaluationDeliveryAccessService {
         boolean closed = Boolean.TRUE.equals(row.get("grade_closed"));
         var assignment = EvaluationAssignment.builder().startAt(row.get("start_at") == null ? null : ((Timestamp) row.get("start_at")).toLocalDateTime()).build();
         var metadata = EvaluationAttempt.builder().status(AttemptStatus.valueOf(status)).gradeClosed(closed).assignment(assignment).build();
-        return new Attempt(!"IN_PROGRESS".equals(status), closed, policy().exposeCorrection(metadata, delivery.correctionAvailable()));
+        return new Attempt(!"IN_PROGRESS".equals(status), closed, policy(now).exposeCorrection(metadata, delivery.correctionAvailable()));
     }
     private Attempt academicAttempt(Request q, Delivery delivery) {
         var rows = jdbc.queryForList("""
@@ -285,8 +402,7 @@ public class EvaluationDeliveryAccessService {
         return new Attempt(terminal, closed, terminal && closed && delivery.started() && delivery.correctionAvailable());
     }
 
-    private EvaluationAccessPolicy policy() {
-        Instant now = jdbc.queryForObject("select statement_timestamp()", Timestamp.class).toInstant();
+    private EvaluationAccessPolicy policy(Instant now) {
         return new EvaluationAccessPolicy(Clock.fixed(now, ZoneOffset.UTC));
     }
     private Evaluation legacyEvaluation(long id) {
