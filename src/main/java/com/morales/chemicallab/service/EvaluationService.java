@@ -48,6 +48,8 @@ import java.util.stream.Collectors;
 @Transactional
 public class EvaluationService {
 
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager entityManager;
     private final EvaluationRepository evaluationRepository;
     private final EvaluationQuestionRepository questionRepository;
     private final EvaluationOptionRepository optionRepository;
@@ -492,53 +494,46 @@ public class EvaluationService {
     public AttemptResponse saveAnswer(String username, Long attemptId, SubmitEvaluationAnswerRequest request) {
         StudentProfile student = requireStudent(username);
         EvaluationAttempt attempt = requireOwnedAttempt(attemptId, student);
-        requireInProgress(attempt);
-
-        // El tiempo se protege en el backend, no solo en el frontend: una vez vencido el
-        // límite exclusivo ya no se aceptan respuestas nuevas.
-        if (!accessPolicy.canWrite(attempt)) {
-            throw new IllegalArgumentException("La ventana para responder ya cerró. Finaliza con las respuestas guardadas.");
-        }
-
-        Evaluation evaluation = attempt.getEvaluation();
-        if (evaluation.getQuestionDisplayMode() == QuestionDisplayMode.ONE_BY_ONE) {
-            return saveAnswerSequential(attempt, request);
-        }
-
-        upsertAnswer(attempt, request);
+        saveAnswerMutation(attempt, request, accessPolicy);
         return toAttemptResponse(attempt);
     }
 
-    /**
-     * Guarda la respuesta en el flujo secuencial (ONE_BY_ONE): solo se puede responder la
-     * pregunta actual del orden del intento. Las anteriores quedan bloqueadas (sin
-     * retroceso) y no se puede saltar a una futura. Tras guardar, se avanza a la siguiente.
-     * El bloqueo se valida en el backend: el frontend no es la única protección.
+    /** T12-C enters with fixture table locks and freshly resolved institutional authority.
+     * Same legacy rows, lock hierarchy and academic mutation; no AttemptResponse projection.
      */
-    private AttemptResponse saveAnswerSequential(EvaluationAttempt attempt,
-                                                 SubmitEvaluationAnswerRequest request) {
-        List<Long> order = ensureAttemptOrder(attempt);
-        int index = attempt.getCurrentQuestionIndex() == null ? 0 : attempt.getCurrentQuestionIndex();
+    void saveInstitutionalAnswer(long account, long attemptId, SubmitEvaluationAnswerRequest request) {
+        var student=studentProfileRepository.findByUser_Id(account).orElseThrow();
+        EvaluationAttempt attempt=requireOwnedAttempt(attemptId,student);
+        saveAnswerMutation(attempt,request,institutionalPolicy());
+    }
 
-        if (index >= order.size()) {
-            throw new IllegalArgumentException("Ya respondiste todas las preguntas de este intento.");
-        }
+    void requireInstitutionalWindow(long attemptId) {
+        var attempt=attemptRepository.findById(attemptId).orElseThrow();
+        if(!institutionalPolicy().canWrite(attempt)) throw new IllegalArgumentException("Guardado no autorizado.");
+    }
 
-        Long expectedId = order.get(index);
-        if (!expectedId.equals(request.questionId())) {
-            int requestedPos = order.indexOf(request.questionId());
-            if (requestedPos >= 0 && requestedPos < index) {
-                throw new IllegalArgumentException(
-                        "No puedes volver a una pregunta anterior en el modo una por una.");
+    private EvaluationAccessPolicy institutionalPolicy() {
+        var now=java.time.Instant.ofEpochMilli(((Number)entityManager.createNativeQuery(
+            "select (extract(epoch from clock_timestamp())*1000)::bigint").getSingleResult()).longValue());
+        return new EvaluationAccessPolicy(java.time.Clock.fixed(now,java.time.ZoneOffset.UTC));
+    }
+
+    private void saveAnswerMutation(EvaluationAttempt attempt, SubmitEvaluationAnswerRequest request, EvaluationAccessPolicy policy) {
+        requireInProgress(attempt);
+        if(!policy.canWrite(attempt)) throw new IllegalArgumentException("La ventana para responder ya cerró. Finaliza con las respuestas guardadas.");
+        boolean sequential=attempt.getEvaluation().getQuestionDisplayMode()==QuestionDisplayMode.ONE_BY_ONE;
+        int index=attempt.getCurrentQuestionIndex()==null?0:attempt.getCurrentQuestionIndex();
+        if(sequential) {
+            List<Long> order=ensureAttemptOrder(attempt);
+            if(index<0 || index>=order.size()) throw new IllegalArgumentException("Ya respondiste todas las preguntas de este intento.");
+            if(!order.get(index).equals(request.questionId())) {
+                if(order.indexOf(request.questionId())>=0 && order.indexOf(request.questionId())<index)
+                    throw new IllegalArgumentException("No puedes volver a una pregunta anterior en el modo una por una.");
+                throw new IllegalArgumentException("Debes responder las preguntas en orden.");
             }
-            throw new IllegalArgumentException("Debes responder las preguntas en orden.");
         }
-
-        upsertAnswer(attempt, request);
-        // La pregunta actual queda bloqueada: se avanza a la siguiente.
-        attempt.setCurrentQuestionIndex(index + 1);
-        attemptRepository.save(attempt);
-        return toAttemptResponse(attempt);
+        upsertAnswer(attempt,request);
+        if(sequential) {attempt.setCurrentQuestionIndex(index+1);attemptRepository.save(attempt);}
     }
 
     public AttemptResponse submitAttempt(String username, Long attemptId, SubmitEvaluationAttemptRequest request) {

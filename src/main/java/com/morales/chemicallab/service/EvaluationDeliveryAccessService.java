@@ -26,7 +26,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class EvaluationDeliveryAccessService {
     public enum Contract { LEGACY, NEW }
-    public enum Action { READ_DELIVERY, READ_OWN_ATTEMPT, SUPERVISE, REVIEW_ATTEMPT, READ_CORRECTION, GRADE_ATTEMPT }
+    public enum Action { READ_DELIVERY, READ_OWN_ATTEMPT, SUPERVISE, REVIEW_ATTEMPT, READ_CORRECTION, GRADE_ATTEMPT, SAVE_OWN_ANSWER }
     public enum RevisionKind { TECHNICAL_SNAPSHOT, PUBLISHED_ACADEMIC }
     public enum Projection { DELIVERY_WITHOUT_CORRECTION, OWN_ATTEMPT_WITHOUT_CORRECTION, SUPERVISION_METADATA,
                              TEACHER_REVIEW, OWN_CORRECTION, GRADE_PERMISSION_ONLY }
@@ -74,19 +74,7 @@ public class EvaluationDeliveryAccessService {
         try {
             require(principal != null && !principal.temporaryPassword() && valid(request));
             return coherentRead.execute(status -> {
-                String schema = jdbc.queryForObject("select current_schema()", String.class);
-                require(schema != null && schema.matches("t03_[a-f0-9]{32}") && schema.equals(approvedSchema));
-                require(exists("select current_database()='chemicallab_t01_test' and inet_server_addr()='127.0.0.1'::inet"));
-                jdbc.execute("select t11b5_fixture()");
-                jdbc.execute("set local lock_timeout='5s'");
-                // Include all fixture sources, B10 freshness dependencies, sessions and inserts
-                // (phantoms), not merely the selected rows. Identifiers are quoted by PostgreSQL.
-                List<String> tables = jdbc.queryForList("""
-                    select format('%I.%I',schemaname,tablename) from pg_tables
-                    where schemaname=current_schema() order by tablename
-                    """, String.class);
-                require(!tables.isEmpty());
-                jdbc.execute("lock table " + String.join(",", tables) + " in share mode");
+                InstitutionalFixtureUnit.lock(jdbc, approvedSchema, false);
                 sessions.revalidate(principal);
                 Decision decision = resolve(principal, request, true);
                 require(decision.allowed());
@@ -134,6 +122,15 @@ public class EvaluationDeliveryAccessService {
         return resolve(principal,q,false);
     }
 
+    Context authorizeSave(SessionPrincipal principal, Request q) {
+        try {
+            require(valid(q) && q.action()==Action.SAVE_OWN_ANSWER);
+            return resolve(principal,q,true).context();
+        } catch(Denied failure) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Guardado no autorizado.");
+        }
+    }
+
     private Decision resolve(SessionPrincipal principal, Request q, boolean readingRows) {
         // Retain the existing maintainer boundary. This read installs/mutates nothing.
         jdbc.execute("select t11b5_fixture()");
@@ -177,6 +174,7 @@ public class EvaluationDeliveryAccessService {
         boolean permitted = switch (q.action()) {
             case READ_DELIVERY -> admin || teacher || (own && delivery.available());
             case READ_OWN_ATTEMPT -> own && delivery.started();
+            case SAVE_OWN_ANSWER -> q.contract()==Contract.LEGACY && own && delivery.available() && !attempt.terminal();
             case SUPERVISE -> admin || teacher;
             case REVIEW_ATTEMPT -> teacher && principal.userId() != q.recipientAccountId() && attempt.terminal();
             case GRADE_ATTEMPT -> teacher && principal.userId() != q.recipientAccountId() && attempt.terminal() && !attempt.closed();
@@ -185,7 +183,7 @@ public class EvaluationDeliveryAccessService {
         require(permitted);
         Projection projection = switch (q.action()) {
             case READ_DELIVERY -> own && delivery.available() ? Projection.DELIVERY_WITHOUT_CORRECTION : Projection.SUPERVISION_METADATA;
-            case READ_OWN_ATTEMPT -> Projection.OWN_ATTEMPT_WITHOUT_CORRECTION;
+            case READ_OWN_ATTEMPT, SAVE_OWN_ANSWER -> Projection.OWN_ATTEMPT_WITHOUT_CORRECTION;
             case SUPERVISE -> Projection.SUPERVISION_METADATA;
             case REVIEW_ATTEMPT -> Projection.TEACHER_REVIEW;
             case READ_CORRECTION -> Projection.OWN_CORRECTION;
@@ -203,11 +201,13 @@ public class EvaluationDeliveryAccessService {
      * Use the very same B10 resolver/cache as the decision; NEW JSON belongs to its exact revision row.
      */
     private void validateReadRows(Request q, CurrentContexts b10) {
-        if(q.action()==Action.READ_OWN_ATTEMPT) {
+        if(q.action()==Action.READ_OWN_ATTEMPT || q.action()==Action.SAVE_OWN_ANSWER) {
             String stored=jdbc.queryForObject("select question_order from evaluation_attempts where id=?",String.class,q.attemptId());
             // Historical order may contain inactive, unanswered questions. Check every ID,
             // without filtering/reordering, with this decision's resolver and coherent locks.
-            for(long id:legacyQuestionOrder(stored)) {
+            List<Long> order=legacyQuestionOrder(stored);
+            if(q.action()==Action.SAVE_OWN_ANSWER)require(new HashSet<>(order).size()==order.size());
+            for(long id:order) {
                 require(exists("select exists(select 1 from evaluation_questions where id=? and evaluation_id=?)",id,q.evaluationId()));
                 b10.get("evaluation_questions",id,false,null,null);
             }
@@ -266,6 +266,8 @@ public class EvaluationDeliveryAccessService {
     private final class CurrentContexts {
         private final Request q;
         private final Map<Long, Boolean> freshness = new HashMap<>();
+        private long rootVersion;
+        private long rootProposal;
         private CurrentContexts(Request q) { this.q = q; }
         private Resolved get(String source, long id, boolean classRequired, Long account, Long enrollment) {
             var rows = jdbc.queryForList("""
@@ -273,10 +275,29 @@ public class EvaluationDeliveryAccessService {
                 where v.source_table=? and v.source_pk=jsonb_build_object(?::text,?::bigint)
                   and not exists(select 1 from t11b10_versions next where next.predecessor_id=v.id)
                 """, source, source.equals("t11b3_evaluation_resources") ? "evaluation_id" : "id", id);
+            if(rows.isEmpty() && source.equals("evaluation_answers") && bridgeInstalled()) {
+                // A new answer has no historical B10 version. Only an exact, committed
+                // receipt for the current approved root may supply its derived context.
+                require(rootVersion>0 && Boolean.TRUE.equals(freshness.get(rootProposal)));
+                // The same resolver already verified the complete current manifest above.
+                // Reuse that observation, not another ALLOW or a separately scanned snapshot.
+                String raw=jdbc.queryForObject("select answer_resolution::text from "+control()+".saves where root_version=? and answer_id=? and after_manifest is not null order by ordinal desc limit 1",String.class,rootVersion,id);
+                if(raw!=null) {
+                    try {
+                        JsonNode derived=JSON.readTree(raw);
+                        require(equal(derived,"institutionId",q.institutionId()) && equal(derived,"classId",q.classId())
+                            && account!=null && equal(derived,"accountId",account));
+                        return new Resolved(derived.path("version").asLong(),derived.path("enrollmentId").asLong());
+                    } catch(java.io.IOException invalid) {throw new Denied();}
+                }
+            }
             require(rows.size() == 1);
             var row = rows.get(0);
             require(freshness.computeIfAbsent(number(row, "proposal_id"), proposal ->
-                    exists("select t11p05_fresh(?)", proposal)));
+                    (exists("select t11p05_fresh(?)", proposal) || (bridgeInstalled() && exists("select "+control()+".fresh(?)",proposal)))));
+            if(source.equals("evaluations")) {
+                rootVersion=number(row,"id");rootProposal=number(row,"proposal_id");
+            }
             JsonNode resolution;
             try { resolution = JSON.readTree((String) row.get("resolution")); }
             catch (Exception invalid) { throw new Denied(); }
@@ -289,6 +310,8 @@ public class EvaluationDeliveryAccessService {
                     resolution.has("enrollmentId") ? resolution.get("enrollmentId").longValue() : null);
         }
     }
+    private String control() {return InstitutionalFixtureUnit.control(jdbc.queryForObject("select current_schema()",String.class));}
+    private boolean bridgeInstalled() {return exists("select to_regprocedure(?::text) is not null",control()+".fresh(bigint)");}
     private static boolean equal(JsonNode value, String key, long expected) {
         return value.path(key).isIntegralNumber() && value.path(key).canConvertToLong() && value.path(key).longValue() == expected;
     }

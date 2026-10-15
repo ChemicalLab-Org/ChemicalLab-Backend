@@ -336,7 +336,7 @@ class InstitutionalEvaluationReadDbTest {
         var locked=new CountDownLatch(1);var release=new CountDownLatch(1);
         boolean afterAuthorization=q.contract()==Contract.NEW;
         JdbcTemplate spy=spy(sql());
-        doAnswer(call->{String statement=call.getArgument(0);call.callRealMethod();if(!afterAuthorization&&statement.startsWith("lock table ")){locked.countDown();assertThat(release.await(8,TimeUnit.SECONDS)).isTrue();}return null;}).when(spy).execute(anyString());
+        doAnswer(call->{String statement=call.getArgument(0);call.callRealMethod();if(!afterAuthorization&&statement.startsWith("lock table ")&&!statement.startsWith("lock table evaluations ")){locked.countDown();assertThat(release.await(8,TimeUnit.SECONDS)).isTrue();}return null;}).when(spy).execute(anyString());
         ReflectionTestUtils.setField(e.access,"jdbc",spy);
         var reads=f.app.getBean(InstitutionalEvaluationReadService.class);
         if(afterAuthorization) {
