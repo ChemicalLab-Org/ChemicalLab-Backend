@@ -3179,8 +3179,8 @@ BEGIN
         IS DISTINCT FROM (raw-ARRAY['_relations','status','graded_at','score','max_score','final_score','overall_feedback','grade_closed','grade_closed_at','grade_closed_by']) THEN
         RAISE EXCEPTION 'T12-E immutable attempt identity';END IF;
        IF kind<>'FEEDBACK' AND o->'snapshot'->'overall_feedback' IS DISTINCT FROM raw->'overall_feedback' THEN RAISE EXCEPTION 'T12-E unrelated feedback';END IF;
-       IF kind='FEEDBACK' AND raw->'overall_feedback' IS DISTINCT FROM to_jsonb(nullif(btrim(s.request->>'text'),''))
-        AND NOT(raw->'overall_feedback'='null'::jsonb AND nullif(btrim(s.request->>'text'),'') IS NULL) THEN RAISE EXCEPTION 'T12-E feedback content';END IF;
+       IF kind='FEEDBACK' AND raw->'overall_feedback' IS DISTINCT FROM to_jsonb(nullif(btrim(s.request->>'normalizedText'),''))
+        AND NOT(raw->'overall_feedback'='null'::jsonb AND nullif(btrim(s.request->>'normalizedText'),'') IS NULL) THEN RAISE EXCEPTION 'T12-E feedback content';END IF;
        IF kind<>'CLOSE' AND ((o->'snapshot')-ARRAY['_relations','status','graded_at','score','max_score','final_score','overall_feedback'])
         IS DISTINCT FROM (raw-ARRAY['_relations','status','graded_at','score','max_score','final_score','overall_feedback']) THEN RAISE EXCEPTION 'T12-E unrelated closure';END IF;
        IF kind IN('ADD','REMOVE','FEEDBACK') AND ((o->'snapshot')-ARRAY['_relations','final_score','overall_feedback'])
@@ -3218,7 +3218,7 @@ BEGIN
          AND question_type='OPEN_TEXT' AND (raw->>'points_awarded')::int BETWEEN 0 AND points)
         OR raw->'points_awarded' IS DISTINCT FROM s.request->'score' OR NOT (raw->>'reviewed')::boolean OR raw->>'reviewed_at' IS NULL
         OR NOT EXISTS(SELECT 1 FROM teacher_profiles WHERE id=(raw->>'reviewed_by')::bigint AND user_id=(s.request->>'actor')::bigint)
-        OR raw->>'teacher_feedback' IS DISTINCT FROM nullif(btrim(s.request->>'text'),'') THEN RAISE EXCEPTION 'T12-E restricted answer grade';END IF;
+        OR raw->>'teacher_feedback' IS DISTINCT FROM nullif(btrim(s.request->>'normalizedText'),'') THEN RAISE EXCEPTION 'T12-E restricted answer grade';END IF;
       ELSIF EXISTS(SELECT 1 FROM evaluation_questions WHERE id=(raw->>'question_id')::bigint AND question_type='MULTIPLE_CHOICE') THEN
        IF ((o->'snapshot')-ARRAY['_relations','reviewed','correct','points_awarded']) IS DISTINCT FROM (raw-ARRAY['_relations','reviewed','correct','points_awarded']) THEN
         RAISE EXCEPTION 'T12-E restricted automatic grade';END IF;
@@ -3227,7 +3227,7 @@ BEGIN
       IF kind='ADD' AND o IS NULL THEN
        IF (raw->>'amount')::numeric IS DISTINCT FROM round((s.request->>'amount')::numeric,2)
         OR (raw->>'amount')::numeric=0 OR abs((raw->>'amount')::numeric)>20 OR NOT (raw->>'active')::boolean
-        OR raw->>'reason' IS DISTINCT FROM nullif(btrim(s.request->>'text'),'') OR raw->>'reason' IS NULL
+        OR raw->>'reason' IS DISTINCT FROM nullif(btrim(s.request->>'normalizedText'),'') OR raw->>'reason' IS NULL
         OR NOT EXISTS(SELECT 1 FROM teacher_profiles WHERE id=(raw->>'created_by')::bigint AND user_id=(s.request->>'actor')::bigint)
         OR (projection->>'childId')::bigint IS DISTINCT FROM (raw->>'id')::bigint THEN RAISE EXCEPTION 'T12-E invalid new adjustment';END IF;
       ELSIF kind='REMOVE' AND (raw->>'id')::bigint=(s.request->>'child')::bigint THEN

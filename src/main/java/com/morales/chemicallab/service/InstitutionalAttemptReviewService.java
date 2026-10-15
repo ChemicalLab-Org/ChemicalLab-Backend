@@ -104,6 +104,7 @@ public class InstitutionalAttemptReviewService {
             proof.put("institution",institution);proof.put("class",clazz);proof.put("evaluation",evaluation);
             proof.put("delivery",delivery);proof.put("revision",revision);proof.put("attempt",attempt);proof.put("child",child);
             proof.put("score",score);proof.put("amount",amount);proof.put("text",text);
+            proof.put("normalizedText",text==null || text.trim().isEmpty()?null:text.trim());
             String encoded=encode(proof);
             var old=jdbc.queryForList("select request::text,result::text from "+ctl+".saves where operation_id=?",id);
             if(!old.isEmpty()) {
@@ -128,18 +129,21 @@ public class InstitutionalAttemptReviewService {
             LogEventType type=switch(operation){case "GRADE"->LogEventType.EVALUATION_ANSWER_REVIEWED;case "COMPLETE"->LogEventType.EVALUATION_REVIEW_COMPLETED;
                 case "ADD"->LogEventType.EVALUATION_ADJUSTMENT_ADDED;case "REMOVE"->LogEventType.EVALUATION_ADJUSTMENT_REMOVED;
                 case "FEEDBACK"->LogEventType.EVALUATION_FEEDBACK_UPDATED;default->LogEventType.EVALUATION_GRADE_CLOSED;};
-            SystemLog event=event(actor,type,operation,evaluation,id);audit.persist(event);
+            SystemLog event=event(actor,type,operation,institution,evaluation,attempt,changed,id);audit.persist(event);
             if(operation.equals("GRADE") && !previous.equals("GRADED") && result.status().equals("GRADED"))
-                audit.persist(event(actor,LogEventType.EVALUATION_REVIEW_COMPLETED,"REVIEW_COMPLETED",evaluation,id));
+                audit.persist(event(actor,LogEventType.EVALUATION_REVIEW_COMPLETED,"REVIEW_COMPLETED",institution,evaluation,attempt,null,id));
             jdbc.execute("set local synchronous_commit=on");
             jdbc.queryForObject("select "+ctl+".finish_operation(?,?,?::jsonb,?)",Object.class,id,attempt,encode(result),event.getId());
             access.authorizeReview(actor,q);sessions.revalidate(actor);return result;
         }));
     }
-    private SystemLog event(SessionPrincipal actor,LogEventType type,String action,long evaluation,UUID id) {
+    private SystemLog event(SessionPrincipal actor,LogEventType type,String action,long institution,long evaluation,long attempt,Long child,UUID id) {
+        String ids="institutionId="+institution+";attemptId="+attempt;
+        if(child!=null)ids+=(action.equals("GRADE")?";answerId=":";adjustmentId=")+child;
         return SystemLog.builder().eventType(type).category(LogCategory.EVALUATION).severity(LogSeverity.INFO)
             .actorUserId(actor.userId()).actorRole(actor.role()).targetType("ContextResolution").targetId(evaluation)
-            .action(action+"_INSTITUTIONAL_REVIEW").description(action+"_INSTITUTIONAL_REVIEW").outcome("SUCCESS").correlationId(id).build();
+            .action(action+"_INSTITUTIONAL_REVIEW").description(action+"_INSTITUTIONAL_REVIEW")
+            .metadata(com.morales.chemicallab.security.audit.AuditSafety.metadata(ids)).outcome("SUCCESS").correlationId(id).build();
     }
     private <T>T guarded(Supplier<T> work) {
         try{return work.get();}

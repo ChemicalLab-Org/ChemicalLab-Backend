@@ -63,7 +63,7 @@ class InstitutionalAttemptReviewDbTest {
     JsonNode ok(HttpResponse<String> response) throws Exception {assertThat(response.statusCode()).as(response.body()).isEqualTo(200);assertThat(response.headers().firstValue("Cache-Control")).contains("no-store");return f.json.readTree(response.body());}
     JsonNode read() throws Exception{return ok(send("GET",teacher,q,"",null));}
     JsonNode command(String suffix,Object...fields) throws Exception{return ok(post(teacher,suffix,body(UUID.randomUUID(),fields)));}
-    JsonNode grade() throws Exception{return command("/answers/"+answer,"score",1,"feedback","Teacher text");}
+    JsonNode grade() throws Exception{return command("/answers/"+answer,"score",1,"feedback"," \tTeacher text\n ");}
     Map<String,String> state(){return e.c.b.b8.previous.previous.signatures("evaluation_attempts","evaluation_answers","evaluation_attempt_adjustments","evaluation_attempt_events","system_logs","t11b9_counters",ctl+".saves");}
     long receipts(){return count("select count(*) from "+ctl+".saves");}
     void forbidden(HttpResponse<String> response){assertThat(response.statusCode()).as(response.body()).isEqualTo(403);h.assertNoSecrets(response.body());}
@@ -75,11 +75,11 @@ class InstitutionalAttemptReviewDbTest {
         assertThat(review.path("openAnswers").get(0).path("expectedAnswer").asText()).isEqualTo("PRIVATE-EXPECTED-T12B-1937");
         forbidden(post(teacher,"/complete",body(UUID.randomUUID())));
         grade();command("/complete");assertThat(read().path("gradeClosed").asBoolean()).isFalse();
-        UUID add=UUID.randomUUID();String addBody=body(add,"amount",-1.235,"reason","Private reason");
+        UUID add=UUID.randomUUID();String addBody=body(add,"amount",-1.235,"reason"," \tPrivate reason\n ");
         var adjustment=ok(post(teacher,"/adjustments",addBody));assertThat(ok(post(teacher,"/adjustments",addBody))).isEqualTo(adjustment);
         assertThat(read().path("finalScore").decimalValue()).isEqualByComparingTo("18.76");
         command("/adjustments/"+adjustment.path("childId").asLong()+"/void");
-        command("/feedback","overallFeedback","General teacher text");
+        command("/feedback","overallFeedback"," \tGeneral teacher text\n ");
         UUID close=UUID.randomUUID();String closeBody=body(close);var closed=ok(post(teacher,"/close",closeBody));
         assertThat(ok(post(teacher,"/close",closeBody))).isEqualTo(closed);
         review=read();assertThat(review.path("gradeClosedByAccountId").asLong()).isEqualTo(f.otherTeacher.getId());
@@ -102,7 +102,6 @@ class InstitutionalAttemptReviewDbTest {
         var delegation=f.app.getBean(DelegationMaintenanceService.class);
         long member=count("select id from institution_memberships where institution_id=? and account_id=?",r.institution,e.c.school.getId());
         r.institutions.grantRole(member,DOCENTE,r.from.plusSeconds(20),null);
-        f.app.getBean(TeacherProfileRepository.class).saveAndFlush(TeacherProfile.builder().user(e.c.school).names("Fixture").lastNames("Co teacher").build());
         var co=delegation.planCoTeacher(r.institution,r.classId,member,r.from.plusSeconds(30),r.until,r.from.plusSeconds(21));
         delegation.transitionCoTeacher(co.id(),TeachingAssignment.Status.ACTIVE,r.from.plusSeconds(30));
         ok(send("GET",h.admin,q,"",null));ok(post(h.admin,"/answers/"+answer,body(UUID.randomUUID(),"score",1)));
@@ -160,6 +159,37 @@ class InstitutionalAttemptReviewDbTest {
         e.resolve(q,"UNRESOLVED","evaluation_attempt_adjustments");forbidden(send("GET",teacher,q,"",null));forbidden(post(teacher,"/adjustments",body));
         e.resolve(q);read();sql().update("update evaluation_answers set answer_text='Outside protocol' where id=?",answer);
         forbidden(send("GET",teacher,q,"",null));forbidden(post(teacher,"/close",body(UUID.randomUUID())));
+    }
+    @Test void originalCReceiptReplaysAfterEAndItsAnswerRetainsStudentProvenance(TestInfo info) throws Exception {
+        var original=new InstitutionalAnswerSaveDbTest();original.start(info);
+        String successor=null,lifecycle=null;
+        try {
+            UUID id=UUID.randomUUID();var saved=original.save(id,original.open,null,"Original C answer");
+            String frozen=original.sql().queryForObject(original.r.signature(original.ctl+".saves"),String.class);
+            original.sql().execute(original.r.script("t12d-v1"));lifecycle="t12d_"+original.f.schema.substring(4);
+            original.sql().execute(original.r.script("t12e-v1"));successor="t12e_"+original.f.schema.substring(4);
+            original.h.activation.put("app.evaluations.institutional.attempt-lifecycle-enabled",true);
+            original.h.activation.put("app.evaluations.institutional.review-enabled",true);
+            assertThat(original.save(id,original.open,null,"Original C answer")).isEqualTo(saved);
+            assertThat(original.sql().queryForObject(original.r.signature(original.ctl+".saves"),String.class)).isEqualTo(frozen);
+            Request target=original.q;
+            String submit=original.h.base(target).replace("evaluation-reads","evaluation-writes")+"/own-attempts/"+target.attemptId()+"/submit";
+            var builder=HttpRequest.newBuilder(URI.create(original.f.origin+submit)).timeout(Duration.ofSeconds(60))
+                .header("Content-Type","application/json").header("Authorization","Bearer "+original.h.pupil);
+            var submitted=original.f.http.send(builder.POST(HttpRequest.BodyPublishers.ofString(body(UUID.randomUUID()))).build(),HttpResponse.BodyHandlers.ofString());
+            assertThat(submitted.statusCode()).as(submitted.body()).isEqualTo(200);
+            String review=original.h.base(target).replace("evaluation-reads","evaluation-writes")+"/attempts/"+target.attemptId()+"/review";
+            var response=original.f.http.send(HttpRequest.newBuilder(URI.create(original.f.origin+review)).timeout(Duration.ofSeconds(60)).header("Authorization","Bearer "+original.h.teacher).GET().build(),HttpResponse.BodyHandlers.ofString());
+            assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
+            assertThat(original.f.json.readTree(response.body()).path("recipientAccountId").asLong()).isEqualTo(original.f.student.getId());
+            assertThat(response.body()).contains("Original C answer");
+            original.h.ok(original.h.pupil,target);
+            assertThat(original.sql().queryForObject(original.r.signature(original.ctl+".saves"),String.class)).isEqualTo(frozen);
+        }finally {
+            if(successor!=null)original.sql().execute("drop schema "+successor+" cascade");
+            if(lifecycle!=null)original.sql().execute("drop schema "+lifecycle+" cascade");
+            original.stop();
+        }
     }
     @Test void defaultFlagsProfileSchemaAndTransportBoundsRemainIndependent() throws Exception {
         h.activation.remove("app.evaluations.institutional.review-enabled");assertThat(send("GET",teacher,q,"",null).statusCode()).isEqualTo(404);
@@ -268,7 +298,7 @@ class InstitutionalAttemptReviewDbTest {
     }
     @Test void twoAssignedTeachersSerializeGradeClosureAndRejectTheLosingEdit() throws Exception {
         long member=r.authorMember;var delegates=f.app.getBean(DelegationMaintenanceService.class);
-        var co=delegates.planCoTeacher(r.institution,r.classId,member,Instant.now(),r.until,Instant.now());
+        Instant at=Instant.now();var co=delegates.planCoTeacher(r.institution,r.classId,member,at,r.until,at);
         delegates.transitionCoTeacher(co.id(),TeachingAssignment.Status.ACTIVE,Instant.now());grade();
         var service=f.app.getBean(InstitutionalAttemptReviewService.class);JdbcTemplate spy=spy(sql());
         var locked=new CountDownLatch(1);var release=new CountDownLatch(1);
