@@ -242,16 +242,27 @@ class InstitutionalAnswerSaveDbTest {
     }
     @Test void windowExpiringAfterAuthorizationRollsBackAnswerReceiptCursorAndSuccess() throws Exception {
         sequential();
-        sql().update("update evaluation_assignments set due_at=(clock_timestamp() at time zone 'America/Lima')+interval '20 seconds' where id=?",r.assignment);e.resolve(q);
         var saves=f.app.getBean(InstitutionalAnswerSaveService.class);JdbcTemplate spy=spy(sql());
+        var finished=new java.util.concurrent.atomic.AtomicBoolean();
+        var remainingAtFinish=new java.util.concurrent.atomic.AtomicLong(-1);
+        var expiredBeforeRevalidation=new java.util.concurrent.atomic.AtomicBoolean();
         doAnswer(call->{
             Object result=call.callRealMethod();
             long remaining=sql().queryForObject("select greatest(0,ceil(extract(epoch from ((due_at at time zone 'America/Lima')-clock_timestamp()))*1000))::bigint from evaluation_assignments where id=?",Long.class,r.assignment);
-            assertThat(remaining).isPositive();Thread.sleep(remaining+50);return result;
+            finished.set(true);remainingAtFinish.set(remaining);
+            // Expiration during finish_save is also after initial authorization.
+            Thread.sleep(remaining+50);
+            expiredBeforeRevalidation.set(Boolean.TRUE.equals(sql().queryForObject("select clock_timestamp()>=(due_at at time zone 'America/Lima') from evaluation_assignments where id=?",Boolean.class,r.assignment)));
+            return result;
         }).when(spy).queryForObject(contains(".finish_save("),eq(Object.class),any(Object[].class));
         ReflectionTestUtils.setField(saves,"jdbc",spy);
         try {
-            assertThat(post(h.pupil,q,body(UUID.randomUUID(),open,null,"Late commit")).statusCode()).isEqualTo(403);
+            // Prepare instrumentation before starting the short academic window.
+            sql().update("update evaluation_assignments set due_at=(clock_timestamp() at time zone 'America/Lima')+interval '20 seconds' where id=?",r.assignment);e.resolve(q);
+            var response=post(h.pupil,q,body(UUID.randomUUID(),open,null,"Late commit"));
+            System.out.printf("T12C-WINDOW finished=%s remainingMs=%s expiredBeforeRevalidation=%s status=%s%n",finished.get(),remainingAtFinish.get(),expiredBeforeRevalidation.get(),response.statusCode());
+            assertThat(response.statusCode()).as("finished=%s; remainingMs=%s; expired=%s; %s",finished.get(),remainingAtFinish.get(),expiredBeforeRevalidation.get(),response.body()).isEqualTo(403);
+            assertThat(finished).isTrue();assertThat(expiredBeforeRevalidation).isTrue();
             assertThat(receipts()).isZero();assertThat(count("select count(*) from evaluation_answers where attempt_id=?",q.attemptId())).isZero();
             assertThat(count("select current_question_index from evaluation_attempts where id=?",q.attemptId())).isZero();
             assertThat(count("select count(*) from system_logs where action='SAVE_INSTITUTIONAL_ANSWER'")).isZero();

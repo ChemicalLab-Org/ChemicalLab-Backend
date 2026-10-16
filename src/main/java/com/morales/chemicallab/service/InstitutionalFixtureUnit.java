@@ -13,7 +13,10 @@ final class InstitutionalFixtureUnit {
     private InstitutionalFixtureUnit() {}
     static String control(String schema) { return "t12c_" + schema.substring(4); }
     static String lifecycleControl(String schema) { return "t12d_" + schema.substring(4); }
+    static String reviewControl(String schema) { return "t12e_" + schema.substring(4); }
     static String writeControl(JdbcTemplate jdbc,String schema) {
+        String review=reviewControl(schema);
+        if(Boolean.TRUE.equals(jdbc.queryForObject("select to_regprocedure(?::text) is not null",Boolean.class,review+".fresh(bigint)")))return review;
         String lifecycle=lifecycleControl(schema);
         return Boolean.TRUE.equals(jdbc.queryForObject("select to_regprocedure(?::text) is not null",Boolean.class,lifecycle+".fresh(bigint)"))?lifecycle:control(schema);
     }
