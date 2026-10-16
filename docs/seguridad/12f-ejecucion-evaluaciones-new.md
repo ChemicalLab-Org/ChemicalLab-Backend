@@ -245,6 +245,22 @@ se conservan y las selecciones no se suman a suites completas. La comprobación
 de preservación abarca 192 archivos anteriores, incluidos los 16 E2E, documentos,
 evidencias y auditoría, además de los checkouts principal/frontend y pares.
 
+Los 21 casos de `NewEvaluationExecutionDbTest` cubren el recorrido HTTP y las
+fronteras siguientes. El XML de cada ejecución conserva nombre, duración y
+resultado de cada caso; esta tabla no suma selecciones como otra suite.
+
+| Frontera | Demostración en la suite F |
+| --- | --- |
+| Publicación exacta y recuperación | Recorrido completo, dos publicaciones y cambios de borrador, orden persistido y GET sin DML |
+| Consumo compartido | Clases/entregas/revisiones, readmisión con otro episodio y última oportunidad entre dos JVM |
+| Namespaces e identidad | Simulación B8/NEW/LEGACY con IDs coincidentes, dos instituciones y selectores manipulados |
+| Respuestas y plazos | Pregunta/opción/revisión exactas, abiertas obligatorias, ONE_BY_ONE, vencimiento real y cruce de ventana durante inicio |
+| Revisión y exposición | Co-docencia, revocación, administrador solo, autocalificación, nota cerrada y cierre global con entregas futuras/vacías/sin plazo |
+| Reintentos y atomicidad | Petición/actor/sesión vinculados, replays tras transición, fallo de auditoría/cuota y revocación final con rollback del recibo completo |
+| Procedencia y compatibilidad | Última F08, cambios ajenos al protocolo, cuota compartida con recibo C original sin reescritura histórica |
+| Instalación y recuperación | Certificación y repetición del SQL, rechazo de deriva y backup físico/WAL con comparación de tablas y HTTP/replays restaurados |
+| Desactivación y transporte | Flags, fixture, tipos publicados incompatibles y cuerpos/colecciones/tipos HTTP acotados |
+
 ## Evidencia de desarrollo y pendientes
 
 Entorno local Windows, JDK 17.0.12 y Maven 3.9.15 offline, PostgreSQL 18.4
@@ -268,11 +284,17 @@ Zona académica America/Lima, perfil único test. No H2 ni persistencia simulada
 | transport-final | `bd7c0ad` | 11/1/0/0; pasan dos casos F y InputBudgets completa; falla una aserción del test de transporte que confundía el nombre answerText con el valor Text |
 | transport-2 | `9852993` | 10/0/0/0; TransportInputFilterTest e InputBudgetsTest completas y selección de inicio que cruza la ventana. BUILD SUCCESS en 1 min 33 s |
 | new-complete-2 | `9852993` | 21/0/0/0; suite F completa, BUILD SUCCESS en 31 min 49 s. No se atribuye al endurecimiento de escala posterior |
+| scale-guard | `cffa48a` | 9/0/0/0; TransportInputFilterTest (4) e InputBudgetsTest (5) completas, incluido rechazo de exponentes extremos antes del redondeo |
+| final-package | `cffa48a` | Interrumpida sin exit registrado, causa no determinada; al retomar estaban ausentes Maven y el clúster propio. AcademicRevisionDbTest (34) y ConcurrencyDbTest (17) tienen XML completos 0/0/0; no se atribuye éxito a las demás clases ni al empaquetado |
+| final-resume | `cffa48a` | EvaluationDeliveryAccessDbTest (22) y EvaluationWindowHttpDbTest (10) completas, 0/0/0. Corte planificado de la JVM propia verificada después de conservar esos XML para continuar las diez clases restantes con dos forks; salida Maven 1 por esa parada, sin empaquetado aprobado |
+| final-two-forks / ciclo | `cffa48a` | InstitutionalAttemptLifecycleDbTest completa: 27/1/0/0. La carrera SAVE/SUBMIT recibe 503 donde esperaba 200; PostgreSQL confirma lock_timeout de 5 s en `lock table evaluations in exclusive mode` a las 09:44:24 Lima. No se relaja el límite ni se cuenta esta clase como aprobada. Se conserva el XML y se repite completa de forma secuencial tras las demás suites |
 
 El fallo temporal se corrigió normalizando solo snapshots académicos F mediante
 su inventario UTC. No se cambian referencias, SQL ni fingerprints previos.
-Las ejecuciones posteriores, suites completas, JAR y publicación se registrarán
-con sus SHA reales. Aún no se atribuye a esta nota aprobación de toda la suite.
+Las ejecuciones posteriores, suites completas, JAR y publicación se registran
+con sus SHA reales. Los reportes de clases completas se conservan aunque la
+ejecución conjunta haya sido interrumpida; nunca se completa una clase sumando
+selecciones parciales.
 El fixture de vencimiento se amplió a 40 s sin cambiar el límite académico ni
 el timeout de operaciones HTTP; sigue esperando el vencimiento real. La
 readmisión usa la transición existente WITHDRAWN. No se omiten esas verificaciones.
@@ -282,3 +304,19 @@ Un sondeo aislado con JDK17 y heap de 32 MiB confirmó OutOfMemoryError al
 redondear 1e-100000000. Se conserva su log y se acotó el exponente mediante la
 escala F antes de llegar al cálculo. Los contratos anteriores permanecen
 intactos. La ejecución conjunta final vuelve a incluir la suite F completa.
+
+## Pendientes para etapas posteriores
+
+La coordinación conserva locks de tablas del fixture y escaneos completos de
+inventario/contexto. Serializa operaciones de recursos distintos y no acredita
+capacidad, latencia ni concurrencia productiva. Cambiar ese protocolo requiere
+su propio diseño y ensayos; no se reduce la coordinación para acelerar estas
+pruebas.
+
+El contrato ejecutable admite solo el subconjunto publicado validado arriba.
+No convierte simulaciones B8 ni migra intentos existentes. Una raíz simulada o
+ambigua necesita una decisión de migración fuera de esta entrega. Permanecen
+pendientes la creación/publicación externa, interfaces, activación y operación
+real. La recuperación física F con WAL streaming no constituye un nuevo ensayo
+PITR histórico ni certifica escritores externos. T12 integral y etapa 4 siguen
+abiertos; el PR se entrega en borrador para revisión.
