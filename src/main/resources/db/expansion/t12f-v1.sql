@@ -3422,8 +3422,13 @@ BEGIN
     source_checksum text,snapshot jsonb,classification text,reason text,root jsonb) LANGUAGE sql STABLE
     SET timezone='UTC' SET datestyle='ISO, YMD' AS $fn$
     SELECT 't12f_attempts',jsonb_build_object('id',a.id),'NEW_EXECUTION_V1',md5(to_jsonb(a)::text),to_jsonb(a),
-      'RESOLVED','EXACT_PUBLISHED_DELIVERY_EXECUTION',jsonb_build_object('source','evaluations','pk',jsonb_build_object('id',a.evaluation_id))
-    FROM @ctl@.attempts a
+      CASE WHEN v.resolution->>'scope'='INSTITUTION' AND (v.resolution->>'institutionId')::bigint=a.institution_id THEN 'RESOLVED'
+       WHEN v.resolution->>'scope'='INSTITUTION' THEN 'CONFLICT' ELSE coalesce(v.resolution->>'scope','UNRESOLVED') END,
+      CASE WHEN v.resolution->>'scope'='INSTITUTION' AND (v.resolution->>'institutionId')::bigint=a.institution_id THEN 'EXACT_PUBLISHED_DELIVERY_EXECUTION'
+       ELSE 'CURRENT_F08_NOT_COMPATIBLE_WITH_FROZEN_EXECUTION' END,
+      jsonb_build_object('source','evaluations','pk',jsonb_build_object('id',a.evaluation_id))
+    FROM @ctl@.attempts a LEFT JOIN t11b10_versions v ON v.source_table='evaluations' AND v.source_pk=jsonb_build_object('id',a.evaluation_id)
+      AND NOT EXISTS(SELECT 1 FROM t11b10_versions n WHERE n.predecessor_id=v.id)
    $fn$;
    CREATE FUNCTION @ctl@.scan() RETURNS TABLE(source_table text,source_pk jsonb,source_version text,
     source_checksum text,snapshot jsonb,classification text,reason text,root jsonb) LANGUAGE sql STABLE AS $fn$
@@ -3518,8 +3523,9 @@ BEGIN
         AND NOT EXISTS(SELECT 1 FROM t11b10_versions v WHERE v.source_table=x->>'source_table' AND v.source_pk=x->'source_pk')
       ORDER BY s.ordinal DESC LIMIT 1),x) ORDER BY x->>'source_table',(x->'source_pk')::text),'[]') INTO data FROM jsonb_array_elements(data) x;
     RETURN data||(SELECT coalesce(jsonb_agg(jsonb_build_object('source_table','t12f_attempts','source_pk',jsonb_build_object('id',a.id),
-      'scope',CASE WHEN v.resolution->>'scope'='INSTITUTION' THEN 'INSTITUTION' ELSE 'UNRESOLVED' END,
-      'owner_id',CASE WHEN v.resolution->>'scope'='INSTITUTION' THEN (v.resolution->>'institutionId')::bigint ELSE 0 END,
+      'scope',CASE WHEN v.resolution->>'scope'='INSTITUTION' AND (v.resolution->>'institutionId')::bigint=a.institution_id THEN 'INSTITUTION'
+        WHEN v.resolution->>'scope'='INSTITUTION' THEN 'CONFLICT' ELSE coalesce(v.resolution->>'scope','UNRESOLVED') END,
+      'owner_id',CASE WHEN v.resolution->>'scope'='INSTITUTION' AND (v.resolution->>'institutionId')::bigint=a.institution_id THEN a.institution_id ELSE 0 END,
       'category','ORIGINAL','rows_used',1,'bytes_used',octet_length(to_jsonb(a)::text),
       'provenance',jsonb_build_object('rootVersion',v.id,'resource',a.resource_id,'revision',a.revision_id,'delivery',a.delivery_id,
         'institution',a.institution_id,'class',a.class_id,'account',a.account_id,'enrollment',a.enrollment_id,'engine','NEW_V1')) ORDER BY a.id),'[]')

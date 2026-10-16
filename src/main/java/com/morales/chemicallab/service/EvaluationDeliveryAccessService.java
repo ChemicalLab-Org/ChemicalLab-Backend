@@ -439,6 +439,14 @@ public class EvaluationDeliveryAccessService {
         require(rows.size() == 1);
         var row = rows.get(0);
         long resource = number(row, "resource_id");
+        if(!execution) {
+            String ctl="t12f_"+jdbc.queryForObject("select current_schema()",String.class).substring(4);
+            if(exists("select to_regclass(?::text) is not null",ctl+".attempts")
+               && exists("select exists(select 1 from "+ctl+".attempts where resource_id=?)",resource))
+                // Shared delivery metadata may still be read, but B8 attempts/correction
+                // never become a second result engine for an adopted execution root.
+                require(q.attemptId()==null && !exists("select exists(select 1 from t11b8_fixture_attempts where resource_id=?)",resource));
+        }
         b10.get("t11b8_resources", resource, false, null, null);
         // The DRAFT evaluation is a technical anchor, not a second published academic revision or engine.
         require(!exists("select exists(select 1 from evaluation_assignments where evaluation_id=?) or exists(select 1 from evaluation_attempts where evaluation_id=?)",

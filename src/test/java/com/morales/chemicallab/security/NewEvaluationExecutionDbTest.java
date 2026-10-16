@@ -37,6 +37,7 @@ class NewEvaluationExecutionDbTest {
     long count(String query,Object...args){return sql().queryForObject(query,Long.class,args);}
     UUID op(){return UUID.randomUUID();}
     @BeforeEach void start(TestInfo info) throws Exception {
+        System.out.println("T12-F case: "+info.getTestMethod().orElseThrow().getName());
         h=new InstitutionalEvaluationReadDbTest();h.start(info);e=h.e;f=h.f;r=h.r;revisions=e.revisions;
         sql().execute(r.script("t12c-v1"));sql().execute(r.script("t12d-v1"));sql().execute(r.script("t12e-v1"));sql().execute(r.script("t12f-v1"));
         ctl="t12f_"+f.schema.substring(4);h.activation.put("app.evaluations.institutional.new-execution-enabled",true);
@@ -174,8 +175,9 @@ class NewEvaluationExecutionDbTest {
         assertThat(count("select count(*) from evaluation_attempts where evaluation_id=?",q.evaluationId())).isZero();
         assertThat(count("select count(*) from evaluation_assignments where evaluation_id=?",q.evaluationId())).isZero();
         // A later simulator is never silently counted as an execution opportunity.
-        long rec=count("select id from t11b8_recipients where delivery_id=?",q.deliveryId());revisions.reserveFixtureAttempt(rec,op());resolve(q,null);
-        denied(send("GET",h.pupil,q,"/own-attempts/"+attempt,null));
+        long rec=count("select id from t11b8_recipients where delivery_id=?",q.deliveryId());
+        assertThatThrownBy(()->revisions.reserveFixtureAttempt(rec,op())).isInstanceOf(IllegalStateException.class).hasMessageContaining("cannot be simulated");
+        own(q,attempt);
     }
     @Test void institutionsAndSelectorsAreBilateralAndCannotChangeThePrincipal() throws Exception {
         Request a=q,b=prepare(r.foreign,r.foreignClass,e.c.foreignEpisode,3,"ALL_AT_ONCE",false,Instant.now().plusSeconds(900));resolve(b,null);
@@ -205,7 +207,7 @@ class NewEvaluationExecutionDbTest {
         assertThat(after.path("answers").toString()).contains("Required").doesNotContain("Ignored");
     }
     @Test void expiredDeadlineAcceptsOnlySavedContentAndStartReplayOutlivesItsWindow() throws Exception {
-        Instant due=Instant.now().plusSeconds(18).truncatedTo(java.time.temporal.ChronoUnit.MICROS);q=prepare(r.institution,r.classId,r.episode,3,"ALL_AT_ONCE",false,due);resolve(q,null);
+        Instant due=Instant.now().plusSeconds(40).truncatedTo(java.time.temporal.ChronoUnit.MICROS);q=prepare(r.institution,r.classId,r.episode,3,"ALL_AT_ONCE",false,due);resolve(q,null);
         UUID start=op();var receipt=begin(q,start);long a=receipt.path("attemptId").asLong();UUID saving=op();var saved=save(q,a,saving,18,31L,null);
         Instant deadline=Instant.parse(own(q,a).path("deadline").asText());assertThat(deadline).isEqualTo(due.truncatedTo(java.time.temporal.ChronoUnit.MICROS));
         long millis=Duration.between(Instant.now(),deadline.plusMillis(50)).toMillis();if(millis>0)Thread.sleep(millis);
@@ -243,9 +245,12 @@ class NewEvaluationExecutionDbTest {
         long future=revisions.assign(q.revisionId(),r.institution,r.otherClass,Instant.now().plusSeconds(600),null,op());
         Request other=successor(q,r.classId,r.episode,100,"ALL_AT_ONCE",false);resolve(q,null);
         long a=begun();submit(q,a,op(),List.of(answer(q,17,null,"First")));teacher(a,"/answers/17","score",2);teacher(a,"/close");
+        long second=begin(other,op()).path("attemptId").asLong();submit(other,second,op(),List.of(answer(other,117,null,"Pending grade")));
         revisions.closeDelivery(q.deliveryId(),1,op());revisions.closeDelivery(other.deliveryId(),1,op());resolve(q,null);
         denied(send("GET",h.pupil,q,"/own-attempts/"+a+"/correction",null));
         revisions.closeDelivery(future,1,op());resolve(q,null);
+        denied(send("GET",h.pupil,q,"/own-attempts/"+a+"/correction",null));
+        Request original=q;q=other;teacher(second,"/answers/117","score",2);teacher(second,"/close");q=original;
         var correction=ok(send("GET",h.pupil,q,"/own-attempts/"+a+"/correction",null));assertThat(correction.toString()).contains("Correct 0");
         assertThat(correction.path("finalScore").decimalValue()).isEqualByComparingTo("8");
         assertThat(count("select count(*) from t11b8_fixture_attempts where resource_id=?",resource(q))).isZero();
@@ -406,5 +411,30 @@ class NewEvaluationExecutionDbTest {
             n.e.c.b.service.limit(n.q.institutionId(),"ORIGINAL",1000000,268435456,op());s.save(op(),s.open,null,"Allowed after explicit quota change");
             n.own(n.q,a);assertThat(s.save(original,s.open,null,"Original C")).isEqualTo(receipt);
         } finally {for(String prefix:List.of("t12f_","t12e_","t12d_"))s.sql().execute("drop schema if exists "+prefix+suffix+" cascade");s.stop();}
+    }
+    @Test void readmissionWithAnotherEpisodeCannotRefundConsumptionOrRetargetOldAttempt() throws Exception {
+        q=prepare(r.institution,r.classId,r.episode,1,"ALL_AT_ONCE",false,Instant.now().plusSeconds(900));resolve(q,null);long a=begun();submit(q,a,op(),List.of(answer(q,17,null,"Historical")));
+        long recipient=count("select id from t11b8_recipients where delivery_id=?",q.deliveryId());
+        revisions.recipient(q.deliveryId(),f.student.getId(),r.episode,1,false,op());r.academic.transitionEnrollment(r.episode,Enrollment.Status.ENDED,Instant.now());
+        Instant at=Instant.now();var episode=r.academic.createEnrollment(r.institution,r.classId,r.member,at,r.until,at);r.academic.transitionEnrollment(episode.id(),Enrollment.Status.ACTIVE,Instant.now());
+        revisions.recipient(q.deliveryId(),f.student.getId(),episode.id(),2,true,op());resolve(q,null);
+        denied(send("GET",h.pupil,q,"/own-attempts/"+a,null));denied(send("POST",h.pupil,q,"/own-attempts",body(op())));
+        assertThat(count("select count(*) from "+ctl+".attempts where resource_id=?",resource(q))).isEqualTo(1);
+        assertThat(count("select enrollment_id from "+ctl+".attempts where id=?",a)).isEqualTo(r.episode);
+        assertThat(count("select id from t11b8_recipients where delivery_id=?",q.deliveryId())).isEqualTo(recipient);
+    }
+    @Test void futureStartAndWithdrawnAccessDenyAndChoiceOnlySubmissionClosesAutomatically() throws Exception {
+        var draft=revisions.nextDraft(q.revisionId(),op());var payload=f.json.readTree(payload(3,"ALL_AT_ONCE",false,0));((com.fasterxml.jackson.databind.node.ArrayNode)payload.get("questions")).remove(0);
+        draft=revisions.edit(draft.id(),1,payload.toString(),op());var published=revisions.publish(draft.id(),draft.version(),op());
+        Request future=deliver(resource(q),published.id(),r.institution,r.classId,r.episode,Instant.now().plusSeconds(600),null);resolve(q,null);
+        denied(send("POST",h.pupil,future,"/own-attempts",body(op())));denied(send("GET",h.pupil,future,"",null));
+        assertThat(ok(send("GET",h.admin,future,"?recipientAccountId="+f.student.getId(),null)).path("projection").asText()).isEqualTo("SUPERVISION_METADATA");
+        Request choice=deliver(resource(q),published.id(),r.institution,r.otherClass,r.otherEpisode,Instant.now().minusSeconds(60),Instant.now().plusSeconds(900));resolve(q,null);
+        long a=begin(choice,op()).path("attemptId").asLong();var result=submit(choice,a,op(),List.of(answer(choice,18,31L,null)));
+        assertThat(result.path("status").asText()).isEqualTo("GRADED");assertThat(result.path("gradeClosed").asBoolean()).isTrue();
+        denied(send("GET",h.pupil,choice,"/own-attempts/"+a+"/correction",null));
+        long active=begun();revisions.resourceState(resource(q),1,"WITHDRAWN",false,false,op());resolve(q,null);
+        denied(send("POST",h.pupil,q,"/own-attempts/"+active+"/answers",body(op(),"answer",answer(q,17,null,"Withdrawn"))));
+        denied(send("POST",h.pupil,q,"/own-attempts/"+active+"/submit",body(op(),"answers",List.of(answer(q,17,null,"Withdrawn")))));
     }
 }

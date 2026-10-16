@@ -131,6 +131,12 @@ public class AcademicRevisionMaintenanceService {
     /** Simulates F09 consumption only. Cannot consume a LEGACY root or call production startAttempt. */
     public long reserveFixtureAttempt(long recipient,UUID operation) {
         lock();String request=request(recipient);Long prior=prior(operation,"FIXTURE_START",request);if(prior!=null)return prior;
+        // Preparation is shared; simulation and NEW_V1 execution are mutually exclusive.
+        // This only rejects adoption ambiguity. It never changes B8's simulation semantics.
+        String execution="t12f_"+jdbc.queryForObject("select current_schema()",String.class).substring(4);
+        if(Boolean.TRUE.equals(jdbc.queryForObject("select to_regclass(?::text) is not null",Boolean.class,execution+".attempts"))
+           && Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from "+execution+".attempts a join t11b8_recipients r on r.resource_id=a.resource_id where r.id=?)",Boolean.class,recipient)))
+            throw new IllegalStateException("NEW_V1 execution root cannot be simulated");
         long id=jdbc.queryForObject("""
             insert into t11b8_fixture_attempts(resource_id,institution_id,account_id,recipient_id,revision_id,
               attempt_number,configuration,question_order,started_at,operation_id)
