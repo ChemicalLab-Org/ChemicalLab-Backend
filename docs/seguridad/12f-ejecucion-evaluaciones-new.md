@@ -133,6 +133,9 @@ una única opción correcta por alternativa. Una publicación incompatible con
 este contrato se rechaza sin modificar su payload. El transporte T07-A incluye
 la ruta F: límite de 1 MiB o el HTTP menor, límites estructurales y rechazo de
 claves duplicadas incluso en cuerpos sin Content-Length o con otro Content-Type.
+Exclusivamente F rechaza también IDs/puntajes fraccionarios o representados
+como texto y textos numéricos antes de MVC; no cambia coerciones de contratos
+anteriores ni la configuración global del ObjectMapper.
 
 | Actor | Facultad F |
 | --- | --- |
@@ -257,6 +260,7 @@ Zona académica America/Lima, perfil único test. No H2 ni persistencia simulada
 | critical-1 | `b0e4728` | 5/1/0/0; cuatro casos aprobados, falla el fixture de vencimiento antes del guardado por ventana inicial de 18 s; selección de 7 min 28 s |
 | critical-2 | `c4adecd` | testCompile fallido por Enrollment.Status.ENDED inexistente; no ejecutó JUnit |
 | critical-3 | `56e057c` | 7/1/0/0; seis casos aprobados, incluidos vencimiento, readmisión, cierre global, dos JVM y recuperación física; falla una aserción del arnés que esperaba 403 cuando el flag legacy seguía desactivado (404). Selección de 10 min 54 s |
+| new-complete-1 | `736f328` | Candidata interrumpida deliberadamente antes de completar la clase para endurecer tipos JSON F; log/exit conservados. No es una suite completa aprobada |
 
 El fallo temporal se corrigió normalizando solo snapshots académicos F mediante
 su inventario UTC. No se cambian referencias, SQL ni fingerprints previos.

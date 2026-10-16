@@ -32,7 +32,10 @@ public class TransportInputFilter extends OncePerRequestFilter {
             if (request.getContentLengthLong() > max) throw InputRejectedException.size();
             byte[] bytes = request.getInputStream().readNBytes(max + 1);
             if (bytes.length > max) throw InputRejectedException.size();
-            if (!sockjs && bytes.length > 0) guard.check(bytes, board && path.endsWith("/state"), telemetry);
+            if (!sockjs && bytes.length > 0) {
+                if(institutional && path.contains("/evaluation-execution/"))guard.checkExecution(bytes);
+                else guard.check(bytes, board && path.endsWith("/state"), telemetry);
+            }
             chain.doFilter(new HttpServletRequestWrapper(request) {
                 @Override public ServletInputStream getInputStream() {
                     var source = new ByteArrayInputStream(bytes);
