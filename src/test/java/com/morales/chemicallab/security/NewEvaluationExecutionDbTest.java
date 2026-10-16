@@ -89,7 +89,10 @@ class NewEvaluationExecutionDbTest {
     String body(UUID id,Object...fields) throws Exception {Map<String,Object>b=new LinkedHashMap<>();b.put("operationId",id);for(int i=0;i<fields.length;i+=2)b.put((String)fields[i],fields[i+1]);return f.json.writeValueAsString(b);}
     Map<String,Object> answer(Request x,long question,Long option,String text){Map<String,Object>a=new LinkedHashMap<>();a.put("revisionId",x.revisionId());a.put("questionId",question);a.put("selectedOptionId",option);a.put("answerText",text);return a;}
     HttpResponse<String> send(String method,String token,Request x,String suffix,String body) throws Exception {
-        var b=HttpRequest.newBuilder(URI.create(f.origin+base(x)+suffix)).timeout(Duration.ofSeconds(60)).header("Content-Type","application/json");
+        return sendAt(f.origin,method,token,x,suffix,body);
+    }
+    HttpResponse<String> sendAt(String origin,String method,String token,Request x,String suffix,String body) throws Exception {
+        var b=HttpRequest.newBuilder(URI.create(origin+base(x)+suffix)).timeout(Duration.ofSeconds(60)).header("Content-Type","application/json");
         if(token!=null)b.header("Authorization","Bearer "+token);
         return f.http.send(b.method(method,body==null?HttpRequest.BodyPublishers.noBody():HttpRequest.BodyPublishers.ofString(body)).build(),HttpResponse.BodyHandlers.ofString());
     }
@@ -158,6 +161,7 @@ class NewEvaluationExecutionDbTest {
         assertThat(count("select count(*) from "+ctl+".attempts where resource_id=? and status='IN_PROGRESS'",resource(q))).isEqualTo(1);
     }
     @Test void b8SimulationExecutionAndLegacyHaveDistinctNamespacesEvenForEqualIds() throws Exception {
+        e.resolve(e.request(false,Action.READ_OWN_ATTEMPT));
         long attempt=begun();
         assertThat(attempt).isEqualTo(e.aAttempt); // independent identity sequences deliberately collide
         assertThat(h.ok(h.pupil,e.request(false,Action.READ_OWN_ATTEMPT)).path("status").asText()).isEqualTo("FINAL");
@@ -201,7 +205,7 @@ class NewEvaluationExecutionDbTest {
         assertThat(after.path("answers").toString()).contains("Required").doesNotContain("Ignored");
     }
     @Test void expiredDeadlineAcceptsOnlySavedContentAndStartReplayOutlivesItsWindow() throws Exception {
-        Instant due=Instant.now().plusSeconds(18);q=prepare(r.institution,r.classId,r.episode,3,"ALL_AT_ONCE",false,due);resolve(q,null);
+        Instant due=Instant.now().plusSeconds(18).truncatedTo(java.time.temporal.ChronoUnit.MICROS);q=prepare(r.institution,r.classId,r.episode,3,"ALL_AT_ONCE",false,due);resolve(q,null);
         UUID start=op();var receipt=begin(q,start);long a=receipt.path("attemptId").asLong();UUID saving=op();var saved=save(q,a,saving,18,31L,null);
         Instant deadline=Instant.parse(own(q,a).path("deadline").asText());assertThat(deadline).isEqualTo(due.truncatedTo(java.time.temporal.ChronoUnit.MICROS));
         long millis=Duration.between(Instant.now(),deadline.plusMillis(50)).toMillis();if(millis>0)Thread.sleep(millis);
@@ -276,11 +280,11 @@ class NewEvaluationExecutionDbTest {
     }
     @Test void institutionalQuotaFailureRollsBackEachGrowingAggregateAndItsReceipt() throws Exception {
         e.c.b.service.limit(q.institutionId(),"ORIGINAL",1000000,268435456,op());long a=begun();
-        var before=state();e.c.b.service.limit(q.institutionId(),"ORIGINAL",1,1,op());
+        e.c.b.service.limit(q.institutionId(),"ORIGINAL",1,1,op());var before=state();
         assertThat(send("POST",h.pupil,q,"/own-attempts/"+a+"/submit",body(op(),"answers",List.of(answer(q,17,null,"Quota")))).statusCode()).isEqualTo(503);
         assertThat(state()).isEqualTo(before);e.c.b.service.limit(q.institutionId(),"ORIGINAL",1000000,268435456,op());
-        submit(q,a,op(),List.of(answer(q,17,null,"Quota")));teacher(a,"/answers/17","score",2);before=state();
-        e.c.b.service.limit(q.institutionId(),"ORIGINAL",1,1,op());assertThat(send("POST",h.teacher,q,review(a)+"/close",body(op())).statusCode()).isEqualTo(503);assertThat(state()).isEqualTo(before);
+        submit(q,a,op(),List.of(answer(q,17,null,"Quota")));teacher(a,"/answers/17","score",2);
+        e.c.b.service.limit(q.institutionId(),"ORIGINAL",1,1,op());before=state();assertThat(send("POST",h.teacher,q,review(a)+"/close",body(op())).statusCode()).isEqualTo(503);assertThat(state()).isEqualTo(before);
     }
     @Test void finalSessionRevalidationRollsBackAnAlreadyFinishedOperation() throws Exception {
         long a=begun();var before=state();
@@ -319,5 +323,88 @@ class NewEvaluationExecutionDbTest {
         Request bad=deliver(res,rev,r.institution,r.classId,r.episode,Instant.now().minusSeconds(10),Instant.now().plusSeconds(900));resolve(bad,null);
         String frozen=sql().queryForObject(r.signature("t11b8_revisions"),String.class);denied(send("POST",h.pupil,bad,"/own-attempts",body(op())));
         assertThat(sql().queryForObject(r.signature("t11b8_revisions"),String.class)).isEqualTo(frozen);
+    }
+    @Test void lastOpportunitySerializesTwoIndependentHttpProcessesAcrossDeliveries() throws Exception {
+        Request other=successor(q,r.otherClass,r.otherEpisode,100,"ALL_AT_ONCE",false);resolve(q,null);
+        for(int i=0;i<2;i++){long a=begun();submit(q,a,op(),List.of(answer(q,17,null,"Historical consumption")));}
+        var processes=new ArrayList<Process>();var stops=new ArrayList<Path>();var origins=new ArrayList<String>();
+        var dir=Files.createDirectories(Path.of("target/t12f-processes",f.schema)).toAbsolutePath();var pool=Executors.newFixedThreadPool(2);
+        try {
+            for(int i=0;i<2;i++) {
+                var ready=dir.resolve(i+".ready");var stop=dir.resolve(i+".stop");stops.add(stop);
+                var command=List.of(Path.of(System.getProperty("java.home"),"bin",System.getProperty("os.name").startsWith("Windows")?"java.exe":"java").toString(),"-Xmx384m","-Dspring.devtools.restart.enabled=false","-cp",System.getProperty("surefire.test.class.path",System.getProperty("java.class.path")),NewExecutionServer.class.getName(),f.setting("spring.datasource.url"),f.setting("spring.datasource.username"),f.setting("spring.datasource.password"),f.schema,Base64.getEncoder().encodeToString(f.key),ready.toString(),stop.toString());
+                var child=new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(dir.resolve(i+".log").toFile()).start();processes.add(child);
+                long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(90);while(!Files.exists(ready)&&child.isAlive()&&System.nanoTime()<until)Thread.sleep(50);
+                assertThat(Files.exists(ready)).as(dir.toString()).isTrue();origins.add(Files.readString(ready));
+            }
+            UUID one=op(),two=op();String b1=body(one),b2=body(two);
+            try(Connection barrier=h.connection()) {
+                barrier.setAutoCommit(false);barrier.createStatement().execute("lock table evaluations in exclusive mode");
+                var first=pool.submit(()->sendAt(origins.get(0),"POST",h.pupil,q,"/own-attempts",b1));
+                var second=pool.submit(()->sendAt(origins.get(1),"POST",h.pupil,other,"/own-attempts",b2));
+                long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(4);long blocked=0;
+                while(System.nanoTime()<until){blocked=count("select count(*) from pg_stat_activity where wait_event_type='Lock' and query='lock table evaluations in exclusive mode'");if(blocked>=2)break;Thread.sleep(20);}
+                assertThat(blocked).isGreaterThanOrEqualTo(2);barrier.commit();var a=first.get(60,TimeUnit.SECONDS);var b=second.get(60,TimeUnit.SECONDS);
+                assertThat(List.of(a.statusCode(),b.statusCode())).filteredOn(x->x==200).hasSize(1);
+                assertThat(a.statusCode()).isIn(200,403,503);assertThat(b.statusCode()).isIn(200,403,503);
+                assertThat(count("select count(*) from "+ctl+".attempts where resource_id=?",resource(q))).isEqualTo(3);
+                assertThat(count("select count(*) from "+ctl+".attempts where resource_id=? and status='IN_PROGRESS'",resource(q))).isEqualTo(1);
+                Request winner=a.statusCode()==200?q:other;JsonNode result=ok(a.statusCode()==200?a:b);long target=result.path("attemptId").asLong();
+                assertThat(ok(send("POST",h.pupil,winner,"/own-attempts",a.statusCode()==200?b1:b2))).isEqualTo(result);
+                submit(winner,target,op(),List.of(answer(winner,winner==q?17:117,null,"Last")));
+                denied(send("POST",h.pupil,q,"/own-attempts",body(op())));denied(send("POST",h.pupil,other,"/own-attempts",body(op())));
+                Files.writeString(dir.resolve("evidence.json"),f.json.writeValueAsString(Map.of("osPids",processes.stream().map(Process::pid).toList(),"blocked",blocked,"statuses",List.of(a.statusCode(),b.statusCode()),"attempts",3,"lastNumber",result.path("attemptNumber").asInt())));
+            }
+        } finally {pool.shutdownNow();for(var stop:stops)Files.writeString(stop,"stop");for(var child:processes)if(!child.waitFor(15,TimeUnit.SECONDS))child.destroyForcibly();}
+    }
+    @Test void certificationRepeatAndPhysicalRecoveryPreserveExecutionAndPredecessors() throws Exception {
+        e.resolve(e.request(false,Action.READ_OWN_ATTEMPT));
+        UUID start=op();var first=begin(q,start);long a=first.path("attemptId").asLong();UUID save=op();var saved=save(q,a,save,17,null,"Durable student text");
+        submit(q,a,op(),List.of(answer(q,18,31L,null)));teacher(a,"/answers/17","score",2);teacher(a,"/adjustments","amount",-1,"reason","Durable adjustment");
+        UUID close=op();var closed=ok(send("POST",h.teacher,q,review(a)+"/close",body(close)));String expansion=r.script("t12f-v1");sql().execute(expansion);
+        var tx=new TransactionTemplate(f.app.getBean(PlatformTransactionManager.class));
+        tx.executeWithoutResult(status->{sql().execute("alter table "+ctl+".attempts disable trigger academic_guard");assertThatThrownBy(()->sql().execute(expansion)).isInstanceOf(org.springframework.dao.DataAccessException.class).hasMessageContaining("divergence");status.setRollbackOnly();});
+        Path dir=Files.createDirectories(Path.of("target/t12f-recovery",f.schema)).toAbsolutePath();String url=f.setting("spring.datasource.url"),port=url.substring(url.indexOf(':',18)+1,url.lastIndexOf('/'));
+        var args=List.of("-h","127.0.0.1","-p",port,"-U",f.setting("spring.datasource.username"));
+        sql().update("update authentication_limits set expires_at=greatest(expires_at,floor(extract(epoch from clock_timestamp())*1000)::bigint+3600000)");
+        Map<String,String> before=new TreeMap<>();
+        for(String schema:List.of(f.schema,"t06_"+f.schema.substring(4),"t12c_"+f.schema.substring(4),"t12d_"+f.schema.substring(4),"t12e_"+f.schema.substring(4),ctl))
+            for(String table:sql().queryForList("select tablename from pg_tables where schemaname=? order by tablename",String.class,schema))before.put(schema+"."+table,sql().queryForObject(r.signature(schema+"."+table),String.class));
+        var backup=dir.resolve("copy");r.nativeTool("pg_basebackup",args,List.of("-D",backup.toString(),"--wal-method=stream","--checkpoint=fast"),dir);r.nativeTool("pg_verifybackup",List.of(),List.of(backup.toString()),dir);
+        int copyPort=TransitionWalRecoveryFixture.port();Files.writeString(backup.resolve("postgresql.auto.conf"),"listen_addresses='127.0.0.1'\nport="+copyPort+"\nmax_connections=20\nmax_locks_per_transaction=512\nshared_buffers='16MB'\n");
+        boolean started=false;String origin=f.origin;org.springframework.context.ConfigurableApplicationContext copyApp=null;
+        try {
+            r.nativeTool("pg_ctl",List.of(),List.of("-D",backup.toString(),"-l",dir.resolve("copy-postgres.log").toString(),"-w","start"),dir);started=true;
+            String copyUrl="jdbc:postgresql://127.0.0.1:"+copyPort+"/chemicallab_t01_test";
+            try(Connection copy=DriverManager.getConnection(copyUrl,f.setting("spring.datasource.username"),f.setting("spring.datasource.password"));var statement=copy.createStatement()) {
+                statement.execute("set search_path to "+f.schema+",public");statement.execute(expansion);Map<String,String> restored=new TreeMap<>();
+                for(String table:before.keySet())try(var rows=statement.executeQuery(r.signature(table))){rows.next();restored.put(table,rows.getString(1));}assertThat(restored).isEqualTo(before);
+                Files.writeString(dir.resolve("signatures.json"),f.json.writerWithDefaultPrettyPrinter().writeValueAsString(Map.of("before",before,"restored",restored,"copyPort",copyPort,"method","physical backup with streaming WAL; not historical PITR")));
+                copyApp=f.startApp("--spring.datasource.url="+copyUrl+"?currentSchema="+f.schema,"--spring.jpa.hibernate.ddl-auto=none","--app.evaluations.institutional.enabled=true","--app.evaluations.institutional.new-execution-enabled=true","--app.evaluations.institutional.fixture-schema="+f.schema);f.origin=f.origin(copyApp);
+                assertThat(begin(q,start)).isEqualTo(first);assertThat(save(q,a,save,17,null,"Durable student text")).isEqualTo(saved);
+                assertThat(ok(send("POST",h.teacher,q,review(a)+"/close",body(close)))).isEqualTo(closed);
+                assertThat(own(q,a).path("answers").toString()).contains("Durable student text");assertThat(ok(send("GET",h.teacher,q,review(a),null)).path("gradeClosed").asBoolean()).isTrue();
+                // The predecessor simulation remains visible ONLY through its original namespace.
+                h.ok(h.pupil,e.request(false,Action.READ_OWN_ATTEMPT));
+            }
+        } finally {f.origin=origin;if(copyApp!=null)copyApp.close();if(started)r.nativeTool("pg_ctl",List.of(),List.of("-D",backup.toString(),"-m","fast","-w","stop"),dir);}
+    }
+    @Test void originalCReceiptAndNewExecutionShareInstitutionalQuotaWithoutRewritingHistory(TestInfo info) throws Exception {
+        var s=new InstitutionalAnswerSaveDbTest();s.start(info);String suffix=s.f.schema.substring(4);
+        try {
+            UUID original=op();var receipt=s.save(original,s.open,null,"Original C");String frozen=s.sql().queryForObject(s.r.signature(s.ctl+".saves"),String.class);
+            for(String version:List.of("t12d-v1","t12e-v1","t12f-v1"))s.sql().execute(s.r.script(version));
+            s.h.activation.put("app.evaluations.institutional.new-execution-enabled",true);
+            assertThat(s.save(original,s.open,null,"Original C")).isEqualTo(receipt);
+            var n=new NewEvaluationExecutionDbTest();n.h=s.h;n.e=s.e;n.f=s.f;n.r=s.r;n.revisions=s.e.revisions;n.ctl="t12f_"+suffix;
+            n.q=n.prepare(n.r.institution,n.r.classId,n.r.episode,3,"ALL_AT_ONCE",false,Instant.now().plusSeconds(900));n.resolve(n.q,null);long a=n.begun();n.save(n.q,a,op(),17,null,"NEW academic content");
+            assertThat(s.sql().queryForObject(s.r.signature(s.ctl+".saves"),String.class)).isEqualTo(frozen);
+            long bytes=n.count("select sum((x->>'bytes_used')::bigint) from jsonb_array_elements("+n.ctl+".measure()) x where x->>'scope'='INSTITUTION' and (x->>'owner_id')::bigint=? and x->>'category'='ORIGINAL'",n.q.institutionId());
+            n.e.c.b.service.limit(n.q.institutionId(),"ORIGINAL",1000000,bytes,op());var before=n.state();
+            assertThat(s.post(s.h.pupil,s.q,s.body(op(),s.open,null,"Original C plus additional bytes")).statusCode()).isEqualTo(503);
+            assertThat(n.state()).isEqualTo(before);assertThat(s.sql().queryForObject(s.r.signature(s.ctl+".saves"),String.class)).isEqualTo(frozen);
+            n.e.c.b.service.limit(n.q.institutionId(),"ORIGINAL",1000000,268435456,op());s.save(op(),s.open,null,"Allowed after explicit quota change");
+            n.own(n.q,a);assertThat(s.save(original,s.open,null,"Original C")).isEqualTo(receipt);
+        } finally {for(String prefix:List.of("t12f_","t12e_","t12d_"))s.sql().execute("drop schema if exists "+prefix+suffix+" cascade");s.stop();}
     }
 }

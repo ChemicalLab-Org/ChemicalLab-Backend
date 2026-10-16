@@ -30,9 +30,10 @@ class TransportInputFilterTest {
     @Test void institutionalBodiesRespectLowerHttpBudgetEvenChunkedOrMultipart() throws Exception {
         var limits=new TransportLimits();limits.setHttpBytes(32);
         var filter=new TransportInputFilter(limits,new JsonInputGuard(limits),new AccountTrafficLimits(limits));
+        for(String route:new String[]{"evaluation-writes/LEGACY","evaluation-execution/NEW/v1"})
         for(String contentType:new String[]{"application/json","text/plain","multipart/form-data; boundary=fictitious"}) {
             var request=new MockHttpServletRequest(){@Override public long getContentLengthLong(){return -1;}};
-            request.setServletPath("/api/institutions/1/classes/2/evaluation-writes/LEGACY/evaluations/3/deliveries/4/revisions/5/own-attempts");
+            request.setServletPath("/api/institutions/1/classes/2/"+route+"/evaluations/3/deliveries/4/revisions/5/own-attempts");
             request.setMethod("POST");request.setContentType(contentType);request.setContent(new byte[33]);
             var response=new MockHttpServletResponse();var chain=new MockFilterChain();filter.doFilter(request,response,chain);
             assertThat(response.getStatus()).isEqualTo(413);assertThat(chain.getRequest()).isNull();
