@@ -50,6 +50,8 @@ Desactivado por defecto; perfil único test, schema aprobado, base ficticia y
 loopback. Sin creación/publicación HTTP, frontend, paneles, activación real,
 merge, despliegue, DDL/backfill real ni rotaciones. T12 integral y etapa 4
 permanecen abiertos. Evidencia y pendientes se completan con resultados reales.
+Las rutas legacy restantes conservan sus contratos; esta entrega no las declara
+institucionalmente aisladas ni acredita activación o capacidad productiva.
 
 ## Rutas y versión de almacenamiento
 
@@ -252,8 +254,16 @@ Zona académica America/Lima, perfil único test. No H2 ni persistencia simulada
 | selection-4 | `79ee3b5` | 1/1/0/0; nulo en childId del recibo de inicio; rollback |
 | selection-5 | `0c560cd` | 1/1/0/0; referencias B10 serializadas bajo otra zona; rollback |
 | selection-6 | `9c2a5bb` | 1/0/0/0; recorrido completo alumno/docente y replays, selección de 2 min 39 s |
+| critical-1 | `b0e4728` | 5/1/0/0; cuatro casos aprobados, falla el fixture de vencimiento antes del guardado por ventana inicial de 18 s; selección de 7 min 28 s |
+| critical-2 | `c4adecd` | testCompile fallido por Enrollment.Status.ENDED inexistente; no ejecutó JUnit |
+| critical-3 | `56e057c` | 7/1/0/0; seis casos aprobados, incluidos vencimiento, readmisión, cierre global, dos JVM y recuperación física; falla una aserción del arnés que esperaba 403 cuando el flag legacy seguía desactivado (404). Selección de 10 min 54 s |
 
 El fallo temporal se corrigió normalizando solo snapshots académicos F mediante
 su inventario UTC. No se cambian referencias, SQL ni fingerprints previos.
 Las ejecuciones posteriores, suites completas, JAR y publicación se registrarán
 con sus SHA reales. Aún no se atribuye a esta nota aprobación de toda la suite.
+El fixture de vencimiento se amplió a 40 s sin cambiar el límite académico ni
+el timeout de operaciones HTTP; sigue esperando el vencimiento real. La
+readmisión usa la transición existente WITHDRAWN. No se omiten esas verificaciones.
+El caso de namespaces habilita explícitamente el flag del escritor anterior
+antes de exigir su rechazo de NEW: así comprueba contrato, no desactivación.

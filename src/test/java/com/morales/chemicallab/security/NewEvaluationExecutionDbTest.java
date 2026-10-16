@@ -170,6 +170,7 @@ class NewEvaluationExecutionDbTest {
         denied(send("GET",h.pupil,e.request(false,Action.READ_DELIVERY),"/own-attempts/"+e.aAttempt,null));
         denied(send("POST",h.pupil,e.request(false,Action.READ_DELIVERY),"/own-attempts",body(op())));
         assertThat(send("POST",h.pupil,q,"/own-attempts",body(op())).statusCode()).isEqualTo(403);
+        h.activation.put("app.evaluations.institutional.attempt-lifecycle-enabled",true);
         assertThat(f.request("POST",h.base(q).replace("evaluation-reads","evaluation-writes")+"/own-attempts",h.pupil,body(op())).statusCode()).isEqualTo(403);
         denied(send("GET",h.pupil,e.legacy(Action.READ_DELIVERY),"/own-attempts/"+e.legacyAttempt,null));
         assertThat(count("select count(*) from evaluation_attempts where evaluation_id=?",q.evaluationId())).isZero();

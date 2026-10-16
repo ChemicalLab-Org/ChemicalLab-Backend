@@ -100,9 +100,9 @@ public class NewEvaluationExecutionService {
             Request q=request(actor,institution,clazz,evaluation,delivery,revision,id,teacher,action,ctl);
             if(projection.equals("delivery") && recipient!=null)q=new Request(q.contract(),q.action(),institution,clazz,evaluation,delivery,revision,recipient,null);
             Context decision=access.authorizeExecution(actor,q);
-            var binding=binding(q);
             if(decision.projection()==Projection.SUPERVISION_METADATA)
                 return new InstitutionalEvaluationRead.Metadata(new InstitutionalEvaluationRead.Scope(Contract.NEW,institution,clazz,evaluation,delivery,revision),"SUPERVISION_METADATA",decision.observedAt());
+            var binding=binding(q);
             var content=content(binding);
             if(projection.equals("delivery")) {
                 var cfg=content.configuration;
