@@ -415,7 +415,7 @@ class NewEvaluationExecutionDbTest {
     @Test void readmissionWithAnotherEpisodeCannotRefundConsumptionOrRetargetOldAttempt() throws Exception {
         q=prepare(r.institution,r.classId,r.episode,1,"ALL_AT_ONCE",false,Instant.now().plusSeconds(900));resolve(q,null);long a=begun();submit(q,a,op(),List.of(answer(q,17,null,"Historical")));
         long recipient=count("select id from t11b8_recipients where delivery_id=?",q.deliveryId());
-        revisions.recipient(q.deliveryId(),f.student.getId(),r.episode,1,false,op());r.academic.transitionEnrollment(r.episode,Enrollment.Status.ENDED,Instant.now());
+        revisions.recipient(q.deliveryId(),f.student.getId(),r.episode,1,false,op());r.academic.transitionEnrollment(r.episode,Enrollment.Status.WITHDRAWN,Instant.now());
         Instant at=Instant.now();var episode=r.academic.createEnrollment(r.institution,r.classId,r.member,at,r.until,at);r.academic.transitionEnrollment(episode.id(),Enrollment.Status.ACTIVE,Instant.now());
         revisions.recipient(q.deliveryId(),f.student.getId(),episode.id(),2,true,op());resolve(q,null);
         denied(send("GET",h.pupil,q,"/own-attempts/"+a,null));denied(send("POST",h.pupil,q,"/own-attempts",body(op())));
