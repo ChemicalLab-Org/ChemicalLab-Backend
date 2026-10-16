@@ -3542,7 +3542,7 @@ BEGIN
     END LOOP;
    END $fn$;
 
-   CREATE FUNCTION @ctl@.finish_operation(op uuid,target bigint,projection jsonb,audit bigint) RETURNS void LANGUAGE plpgsql SET timezone='UTC' SET datestyle='ISO, YMD' AS $fn$
+   CREATE FUNCTION @ctl@.finish_operation(op uuid,target bigint,projection jsonb,audit bigint) RETURNS void LANGUAGE plpgsql AS $fn$
    DECLARE s @ctl@.operations%ROWTYPE;p t11b10_proposals%ROWTYPE;before_row jsonb;after_row jsonb;kind text;allowed text[];
     data jsonb;previous jsonb;g record;l record;oldrows bigint;oldbytes bigint;other jsonb;current_base jsonb;
     question text;value jsonb;prior_value jsonb;input_value jsonb;accept_answers boolean;
@@ -3554,7 +3554,7 @@ BEGIN
     IF current_base IS DISTINCT FROM s.before_base OR s.heads IS DISTINCT FROM t11p05_heads(current_base)
       OR s.references_snapshot IS DISTINCT FROM t11p05_references(p.proposed,p.root) THEN RAISE EXCEPTION 'T12-F source authority drift';END IF;
     SELECT x->'snapshot' INTO before_row FROM jsonb_array_elements(s.before_execution) x WHERE x->'source_pk'=jsonb_build_object('id',target);
-    SELECT to_jsonb(a) INTO STRICT after_row FROM @ctl@.attempts a WHERE id=target AND evaluation_id=s.evaluation_id;
+    SELECT snapshot INTO STRICT after_row FROM @ctl@.inventory() a WHERE source_pk=jsonb_build_object('id',target) AND a.root=jsonb_build_object('source','evaluations','pk',jsonb_build_object('id',s.evaluation_id));
     IF (SELECT coalesce(jsonb_agg(x ORDER BY x->>'source_table',(x->'source_pk')::text),'[]') FROM jsonb_array_elements(s.before_execution) x WHERE x->'source_pk'<>jsonb_build_object('id',target))
        IS DISTINCT FROM (SELECT coalesce(jsonb_agg(x ORDER BY x->>'source_table',(x->'source_pk')::text),'[]') FROM jsonb_array_elements(@ctl@.manifest(s.evaluation_id)) x WHERE x->'source_pk'<>jsonb_build_object('id',target)) THEN
        RAISE EXCEPTION 'T12-F unrelated execution changed';END IF;

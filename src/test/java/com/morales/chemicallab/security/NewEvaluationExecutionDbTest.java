@@ -79,7 +79,7 @@ class NewEvaluationExecutionDbTest {
             }
             // Roots/revisions span classes; only deliveries/recipients have a mandatory class.
             if(!Set.of("t11b8_deliveries","t11b8_recipients").contains(source))row.remove("classId");
-            if(uncertainty!=null && source.equals("evaluations")){row.remove(List.of("institutionId","classId","accountId","enrollmentId","sourceTimezone"));row.put("scope",uncertainty);}
+            if(uncertainty!=null){row.remove(List.of("institutionId","classId","accountId","enrollmentId","sourceTimezone"));row.put("scope",uncertainty);}
         }
         long p=e.c.service.propose(e.c.root("evaluations",x.evaluationId()),mapping.toString(),"FIXTURE-NEW-EXECUTION",op());
         e.c.approve(p,"PLATFORM",e.c.platform,e.c.platformGrant);e.c.approve(p,"INSTITUTION",e.c.school,x.institutionId()==r.foreign?e.c.schoolGrant:e.c.foreignSchoolGrant);
@@ -256,5 +256,68 @@ class NewEvaluationExecutionDbTest {
         var principal=(SessionPrincipal)f.app.getBean(AccountSessionService.class).authenticate(h.pupil).getPrincipal();sql().update("update account_sessions set revoked_at=clock_timestamp() where id=?",principal.sessionId());
         assertThat(send("POST",h.pupil,q,"/own-attempts",body(start)).statusCode()).isEqualTo(401);
         assertThat(count("select count(*) from "+ctl+".operations where operation_id=?",add)).isEqualTo(1);
+    }
+    @Test void mandatoryAuditFailureRollsBackConsumptionAnswersGradesAndClosure() throws Exception {
+        for(String action:List.of("START","SAVE","SUBMIT","GRADE","CLOSE")) {
+            long a=action.equals("START")?0:begun();
+            if(Set.of("GRADE","CLOSE").contains(action))submit(q,a,op(),List.of(answer(q,17,null,"Before failure")));
+            if(action.equals("CLOSE"))teacher(a,"/answers/17","score",2);
+            String suffix=switch(action){case "START"->"/own-attempts";case "SAVE"->"/own-attempts/"+a+"/answers";case "SUBMIT"->"/own-attempts/"+a+"/submit";case "GRADE"->review(a)+"/answers/17";default->review(a)+"/close";};
+            String body=switch(action){case "SAVE"->body(op(),"answer",answer(q,17,null,"Atomic"));case "SUBMIT"->body(op(),"answers",List.of(answer(q,17,null,"Atomic")));case "GRADE"->body(op(),"score",1);default->body(op());};
+            var before=state();
+            sql().execute("create function fixture_new_audit_fail() returns trigger language plpgsql as $$ begin if NEW.action='"+action+"_NEW_EXECUTION' then raise exception 'fixture audit failure';end if;return NEW;end $$");
+            sql().execute("create trigger fixture_new_audit_fail before insert on system_logs for each row execute function fixture_new_audit_fail()");
+            try{assertThat(send("POST",Set.of("GRADE","CLOSE").contains(action)?h.teacher:h.pupil,q,suffix,body).statusCode()).isEqualTo(503);}
+            finally{sql().execute("drop trigger fixture_new_audit_fail on system_logs;drop function fixture_new_audit_fail()");}
+            assertThat(state()).as(action).isEqualTo(before);
+            // Each iteration owns a genuinely independent academic resource, not refunded attempts.
+            q=prepare(r.institution,r.classId,r.episode,3,"ALL_AT_ONCE",false,Instant.now().plusSeconds(900));resolve(q,null);
+        }
+    }
+    @Test void institutionalQuotaFailureRollsBackEachGrowingAggregateAndItsReceipt() throws Exception {
+        e.c.b.service.limit(q.institutionId(),"ORIGINAL",1000000,268435456,op());long a=begun();
+        var before=state();e.c.b.service.limit(q.institutionId(),"ORIGINAL",1,1,op());
+        assertThat(send("POST",h.pupil,q,"/own-attempts/"+a+"/submit",body(op(),"answers",List.of(answer(q,17,null,"Quota")))).statusCode()).isEqualTo(503);
+        assertThat(state()).isEqualTo(before);e.c.b.service.limit(q.institutionId(),"ORIGINAL",1000000,268435456,op());
+        submit(q,a,op(),List.of(answer(q,17,null,"Quota")));teacher(a,"/answers/17","score",2);before=state();
+        e.c.b.service.limit(q.institutionId(),"ORIGINAL",1,1,op());assertThat(send("POST",h.teacher,q,review(a)+"/close",body(op())).statusCode()).isEqualTo(503);assertThat(state()).isEqualTo(before);
+    }
+    @Test void finalSessionRevalidationRollsBackAnAlreadyFinishedOperation() throws Exception {
+        long a=begun();var before=state();
+        var principal=(SessionPrincipal)f.app.getBean(AccountSessionService.class).authenticate(h.pupil).getPrincipal();
+        var service=f.app.getBean(NewEvaluationExecutionService.class);JdbcTemplate spy=spy(sql());var finished=new java.util.concurrent.atomic.AtomicBoolean();
+        doAnswer(call->{Object result=call.callRealMethod();finished.set(true);long remaining=count("select greatest(0,ceil(extract(epoch from (expires_at-clock_timestamp()))*1000))::bigint from account_sessions where id=?",principal.sessionId());assertThat(remaining).isPositive();Thread.sleep(remaining+50);return result;})
+          .when(spy).queryForObject(contains(".finish_operation("),eq(Object.class),any(Object[].class));
+        sql().update("update account_sessions set expires_at=date_trunc('second',clock_timestamp())+interval '18 seconds' where id=?",principal.sessionId());
+        var session=f.app.getBean(com.morales.chemicallab.repository.AccountSessionRepository.class).findById(principal.sessionId()).orElseThrow();
+        h.pupil=f.app.getBean(JwtService.class).generateToken(f.student,session);ReflectionTestUtils.setField(service,"jdbc",spy);
+        try{assertThat(send("POST",h.pupil,q,"/own-attempts/"+a+"/submit",body(op(),"answers",List.of(answer(q,17,null,"Must rollback")))).statusCode()).isEqualTo(401);}
+        finally{ReflectionTestUtils.setField(service,"jdbc",sql());}
+        assertThat(finished).isTrue();assertThat(state()).isEqualTo(before);
+    }
+    @Test void latestF08AndOutOfProtocolChangesCannotBeLegitimizedByReplays() throws Exception {
+        UUID key=op();long a=begin(q,key).path("attemptId").asLong();
+        for(String scope:List.of("UNRESOLVED","CONFLICT")){resolve(q,scope);denied(send("GET",h.pupil,q,"/own-attempts/"+a,null));denied(send("POST",h.pupil,q,"/own-attempts",body(key)));resolve(q,null);own(q,a);}
+        var tx=new TransactionTemplate(f.app.getBean(PlatformTransactionManager.class));
+        tx.executeWithoutResult(status->{sql().execute("set local session_replication_role=replica");sql().update("update "+ctl+".attempts set answers='{\"17\":{\"text\":\"Outside protocol\"}}'::jsonb where id=?",a);});
+        denied(send("GET",h.pupil,q,"/own-attempts/"+a,null));denied(send("POST",h.pupil,q,"/own-attempts",body(key)));
+        resolve(q,null);denied(send("GET",h.pupil,q,"/own-attempts/"+a,null));
+    }
+    @Test void defaultGatesTransportAndInvalidPublishedTypesRejectWithoutMutation() throws Exception {
+        h.activation.remove("app.evaluations.institutional.new-execution-enabled");assertThat(send("POST",h.pupil,q,"/own-attempts",body(op())).statusCode()).isEqualTo(404);
+        h.activation.put("app.evaluations.institutional.new-execution-enabled",true);
+        assertThat(send("POST",h.pupil,q,"/own-attempts","{\"operationId\":\""+op()+"\",\"padding\":\""+"X".repeat(1048576)+"\"}").statusCode()).isEqualTo(413);
+        long a=begun();var before=state();var many=new ArrayList<Map<String,Object>>();for(int i=0;i<201;i++)many.add(answer(q,17,null,"A"));
+        assertThat(send("POST",h.pupil,q,"/own-attempts/"+a+"/submit",body(op(),"answers",many)).statusCode()).isEqualTo(400);
+        assertThat(send("POST",h.pupil,q,"/own-attempts/"+a+"/answers",body(op(),"answer",answer(q,17,null,"X".repeat(3001)))).statusCode()).isEqualTo(400);
+        assertThat(send("POST",h.pupil,q,"/own-attempts/"+a+"/answers","{\"operationId\":\""+op()+"\",\"operationId\":\""+op()+"\"}").statusCode()).isEqualTo(400);
+        assertThat(state()).isEqualTo(before);
+        // B8 accepts castable scalars in its preparation contract. F's executable contract is typed.
+        String invalid=payload(3,"ALL_AT_ONCE",false,0).replace("\"randomize_questions\":false","\"randomize_questions\":\"false\"");
+        long res=revisions.createNew(AcademicRevisionMaintenanceService.Kind.EVALUATION,r.institution,f.teacher.getId(),r.authorMember,invalid,op());
+        long rev=count("select id from t11b8_revisions where resource_id=?",res);revisions.publish(rev,1,op());
+        Request bad=deliver(res,rev,r.institution,r.classId,r.episode,Instant.now().minusSeconds(10),Instant.now().plusSeconds(900));resolve(bad,null);
+        String frozen=sql().queryForObject(r.signature("t11b8_revisions"),String.class);denied(send("POST",h.pupil,bad,"/own-attempts",body(op())));
+        assertThat(sql().queryForObject(r.signature("t11b8_revisions"),String.class)).isEqualTo(frozen);
     }
 }
