@@ -1323,14 +1323,7 @@ public class EvaluationService {
 
     /** Nota base del intento en escala 0–20, derivada del puntaje en puntos. */
     private BigDecimal baseScore20(EvaluationAttempt attempt) {
-        Integer score = attempt.getScore();
-        Integer maxScore = attempt.getMaxScore();
-        if (score == null || maxScore == null || maxScore == 0) {
-            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-        }
-        return BigDecimal.valueOf(score)
-                .multiply(MAX_GRADE)
-                .divide(BigDecimal.valueOf(maxScore), 2, RoundingMode.HALF_UP);
+        return EvaluationGradeMath.base(attempt.getScore(), attempt.getMaxScore());
     }
 
     /** Suma de los ajustes manuales activos del intento (en escala 0–20, con su signo). */
@@ -1346,9 +1339,7 @@ public class EvaluationService {
      * acotada a [0, 20] para que nunca sea negativa ni supere el máximo de la escala.
      */
     private BigDecimal computeFinalScore(EvaluationAttempt attempt) {
-        BigDecimal raw = baseScore20(attempt).add(adjustmentsTotal(attempt));
-        BigDecimal clamped = raw.max(BigDecimal.ZERO).min(MAX_GRADE);
-        return clamped.setScale(2, RoundingMode.HALF_UP);
+        return EvaluationGradeMath.finalScore(attempt.getScore(), attempt.getMaxScore(), adjustmentsTotal(attempt));
     }
 
     /** Recalcula y fija la nota final del intento (el llamador persiste el intento). */
@@ -1960,14 +1951,14 @@ public class EvaluationService {
                 // Calificación manual: solo cuenta si el docente ya la revisó. No se modifica
                 // la respuesta (su puntaje lo fija la revisión manual).
                 if (Boolean.TRUE.equals(answer.getReviewed()) && answer.getPointsAwarded() != null) {
-                    score += answer.getPointsAwarded();
+                    score += EvaluationGradeMath.awarded(true, true, answer.getPointsAwarded(), false, question.getPoints());
                 }
                 continue;
             }
 
             boolean correct = answer.getSelectedOption() != null
                     && Boolean.TRUE.equals(answer.getSelectedOption().getCorrect());
-            int awarded = correct ? question.getPoints() : 0;
+            int awarded = EvaluationGradeMath.awarded(false, true, null, correct, question.getPoints());
 
             answer.setCorrect(correct);
             answer.setPointsAwarded(awarded);
