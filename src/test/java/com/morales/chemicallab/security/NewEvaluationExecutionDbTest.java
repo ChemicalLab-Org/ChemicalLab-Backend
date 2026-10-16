@@ -442,4 +442,13 @@ class NewEvaluationExecutionDbTest {
         denied(send("POST",h.pupil,q,"/own-attempts/"+active+"/answers",body(op(),"answer",answer(q,17,null,"Withdrawn"))));
         denied(send("POST",h.pupil,q,"/own-attempts/"+active+"/submit",body(op(),"answers",List.of(answer(q,17,null,"Withdrawn")))));
     }
+    @Test void startCrossingItsWindowRollsBackTheFinishedReceiptAndConsumption() throws Exception {
+        Instant due=Instant.now().plusSeconds(22);q=prepare(r.institution,r.classId,r.episode,3,"ALL_AT_ONCE",false,due);resolve(q,null);var before=state();
+        var service=f.app.getBean(NewEvaluationExecutionService.class);JdbcTemplate spy=spy(sql());var finished=new java.util.concurrent.atomic.AtomicBoolean();
+        doAnswer(call->{Object result=call.callRealMethod();finished.set(true);long remaining=Duration.between(Instant.now(),due.plusMillis(50)).toMillis();if(remaining>0)Thread.sleep(remaining);return result;})
+          .when(spy).queryForObject(contains(".finish_operation("),eq(Object.class),any(Object[].class));
+        ReflectionTestUtils.setField(service,"jdbc",spy);
+        try{denied(send("POST",h.pupil,q,"/own-attempts",body(op())));}finally{ReflectionTestUtils.setField(service,"jdbc",sql());}
+        assertThat(finished).isTrue();assertThat(state()).isEqualTo(before);
+    }
 }

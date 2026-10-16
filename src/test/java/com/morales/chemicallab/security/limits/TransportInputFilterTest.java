@@ -44,7 +44,7 @@ class TransportInputFilterTest {
         for(String body:new String[]{"{\"questionId\":17.5}","{\"questionId\":\"17\"}","{\"answerText\":42}","{\"score\":1.5}","{\"amount\":\"1.25\"}","{\"questionId\":17,\"answerText\":\"Text\"}"}) {
             var request=new MockHttpServletRequest();request.setServletPath("/api/institutions/1/classes/2/evaluation-execution/NEW/v1/evaluations/3/deliveries/4/revisions/5/own-attempts/6/answers");request.setMethod("POST");request.setContentType("application/json");request.setContent(body.getBytes(StandardCharsets.UTF_8));
             var response=new MockHttpServletResponse();var chain=new MockFilterChain();filter.doFilter(request,response,chain);
-            if(body.contains("Text")){assertThat(response.getStatus()).isEqualTo(200);assertThat(chain.getRequest()).isNotNull();}
+            if(body.contains("\"Text\"")){assertThat(response.getStatus()).isEqualTo(200);assertThat(chain.getRequest()).isNotNull();}
             else{assertThat(response.getStatus()).isEqualTo(400);assertThat(chain.getRequest()).isNull();}
         }
     }

@@ -179,6 +179,10 @@ public class NewEvaluationExecutionService {
             entities.flush();jdbc.execute("set local synchronous_commit=on");
             jdbc.queryForObject("select "+ctl+".finish_operation(?,?,?::jsonb,?)",Object.class,key,target,encode(result),event.getId());
             access.authorizeExecution(actor,new Request(Contract.NEW,teacher?Action.REVIEW_ATTEMPT:Action.READ_OWN_ATTEMPT,institution,clazz,evaluation,delivery,revision,q.recipientAccountId(),target));
+            if(operation.equals("START")) {
+                access.authorizeExecution(actor,new Request(Contract.NEW,Action.START_OWN_ATTEMPT,institution,clazz,evaluation,delivery,revision,q.recipientAccountId(),null));
+                if(!answersOpen(changed,now()))throw denied();
+            }
             // A save that crossed the frozen deadline rolls back the whole receipt and audit.
             if(operation.equals("SAVE") && !answersOpen(changed,now()))throw denied();
             if(operation.equals("SUBMIT") && !content.sequential && submitted!=null && !submitted.isEmpty()

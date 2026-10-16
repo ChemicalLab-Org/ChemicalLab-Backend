@@ -109,6 +109,8 @@ El inicio exige ESTUDIANTE propio y ventana exacta disponible. Fija desde el
 servidor el episodio, configuración y checksum publicados, orden completo y
 plazo mínimo entre dueAt y comienzo más duración. La aleatorización ocurre una
 sola vez. El GET no crea, cambia orden, recalcula, repara o finaliza.
+Si el inicio cruza la ventana antes de completar la unidad, su revalidación
+final revierte también el recibo terminado, la auditoría y el consumo.
 
 Guardar valida la revisión explícita, pregunta/opción de esa revisión, tipos
 de respuesta y límite de texto; ONE_BY_ONE solo permite la pregunta del cursor
