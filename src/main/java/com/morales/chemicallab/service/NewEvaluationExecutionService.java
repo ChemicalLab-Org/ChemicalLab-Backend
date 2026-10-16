@@ -82,7 +82,12 @@ public class NewEvaluationExecutionService {
               and not exists(select 1 from t11b10_versions n where n.predecessor_id=root.id)
             where d.id=? and d.revision_id=? and s.evaluation_id=? and d.class_id=? and d.institution_id=?
             """,q.recipientAccountId(),q.deliveryId(),q.revisionId(),q.evaluationId(),q.classId(),q.institutionId());
-        if(rows.size()!=1)throw denied();return rows.get(0);
+        if(rows.size()!=1)throw denied();
+        var row=rows.get(0);JsonNode context=tree((String)row.get("context"));
+        if(!"INSTITUTION".equals(context.path("scope").asText()) || context.path("institutionId").asLong()!=q.institutionId()
+           || context.path("classId").asLong()!=q.classId() || context.path("accountId").asLong()!=q.recipientAccountId()
+           || context.path("enrollmentId").asLong()!=number(row,"enrollment_id").longValue())throw denied();
+        return row;
     }
     private Map<String,Object> attempt(String ctl,long id){return jdbc.queryForMap("select * from "+ctl+".attempts where id=?",id);}
     private PublishedEvaluationContent content(Map<String,Object> binding){return new PublishedEvaluationContent(tree((String)binding.get("payload")));}
@@ -143,35 +148,40 @@ public class NewEvaluationExecutionService {
         return unit(actor,true,ctl->{
             boolean teacher=Set.of("GRADE","COMPLETE","ADD","REMOVE","FEEDBACK","CLOSE").contains(operation);
             Request q=request(actor,institution,clazz,evaluation,delivery,revision,id,teacher,id==null?Action.READ_DELIVERY:teacher?Action.REVIEW_ATTEMPT:Action.READ_OWN_ATTEMPT,ctl);
-            access.authorizeExecution(actor,q);
-            var bound=binding(q);var content=content(bound);
             Map<String,Object> input=new TreeMap<>();input.put("engine","NEW_V1");input.put("operation",operation);input.put("actor",actor.userId());input.put("recipient",q.recipientAccountId());
             input.put("institution",institution);input.put("class",clazz);input.put("evaluation",evaluation);input.put("delivery",delivery);input.put("revision",revision);input.put("attempt",id);
             input.put("child",child);input.put("answer",answer);input.put("answers",submitted);input.put("score",score);input.put("amount",amount);input.put("text",text);
             String encoded=encode(input);
             var previous=jdbc.queryForList("select request::text,result::text from "+ctl+".operations where operation_id=?",key);
             if(!previous.isEmpty()) {
-                if(!tree((String)previous.get(0).get("request")).equals(tree(encoded)))throw new ResponseStatusException(HttpStatus.CONFLICT,"Operación incompatible.");
                 Receipt receipt=decode((String)previous.get(0).get("result"));
                 access.authorizeExecution(actor,new Request(Contract.NEW,teacher?Action.REVIEW_ATTEMPT:Action.READ_OWN_ATTEMPT,institution,clazz,evaluation,delivery,revision,q.recipientAccountId(),receipt.attemptId()));
+                if(!tree((String)previous.get(0).get("request")).equals(tree(encoded)))throw new ResponseStatusException(HttpStatus.CONFLICT,"Operación incompatible.");
                 return receipt;
             }
+            access.authorizeExecution(actor,q);
+            var bound=binding(q);var content=content(bound);
             Action mutation=switch(operation){case "START"->Action.START_OWN_ATTEMPT;case "SAVE"->Action.SAVE_OWN_ANSWER;case "SUBMIT"->Action.SUBMIT_OWN_ATTEMPT;default->Action.GRADE_ATTEMPT;};
             access.authorizeExecution(actor,new Request(Contract.NEW,mutation,institution,clazz,evaluation,delivery,revision,q.recipientAccountId(),id));
             if(teacher && !Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from teacher_profiles where user_id=?)",Boolean.class,actor.userId())))throw denied();
             jdbc.queryForObject("select "+ctl+".begin_operation(?,?::jsonb,?::jsonb)",Object.class,key,encoded,bound.get("context"));
-            long target;
+            long target;String previousStatus=id==null?null:(String)attempt(ctl,id).get("status");
             if(operation.equals("START"))target=start(ctl,q,bound,content);
             else {target=id;mutate(ctl,q,attempt(ctl,id),bound,content,operation,child,answer,submitted,score,amount,text,actor.userId());}
             var changed=attempt(ctl,target);
-            Receipt result=new Receipt(key,target,child,(String)changed.get("status"),number(changed,"attempt_number").intValue(),(Boolean)changed.get("grade_closed"),time(changed,"started_at"),time(changed,"submitted_at"));
+            Long resultChild=operation.equals("ADD")?(long)tree(changed.get("adjustments").toString()).size():operation.equals("SAVE")?answer.questionId():child;
+            Receipt result=new Receipt(key,target,resultChild,(String)changed.get("status"),number(changed,"attempt_number").intValue(),(Boolean)changed.get("grade_closed"),time(changed,"started_at"),time(changed,"submitted_at"));
             var event=event(actor,type(operation),operation,evaluation,key);audit.persist(event);
             if(operation.equals("SUBMIT") && changed.get("status").equals("PENDING_MANUAL_REVIEW"))audit.persist(event(actor,LogEventType.EVALUATION_ATTEMPT_PENDING_REVIEW,"PENDING_REVIEW",evaluation,key));
+            if(operation.equals("GRADE") && !"GRADED".equals(previousStatus) && changed.get("status").equals("GRADED"))audit.persist(event(actor,LogEventType.EVALUATION_REVIEW_COMPLETED,"REVIEW_COMPLETED",evaluation,key));
             entities.flush();jdbc.execute("set local synchronous_commit=on");
             jdbc.queryForObject("select "+ctl+".finish_operation(?,?,?::jsonb,?)",Object.class,key,target,encode(result),event.getId());
             access.authorizeExecution(actor,new Request(Contract.NEW,teacher?Action.REVIEW_ATTEMPT:Action.READ_OWN_ATTEMPT,institution,clazz,evaluation,delivery,revision,q.recipientAccountId(),target));
             // A save that crossed the frozen deadline rolls back the whole receipt and audit.
             if(operation.equals("SAVE") && !answersOpen(changed,now()))throw denied();
+            if(operation.equals("SUBMIT") && !content.sequential && submitted!=null && !submitted.isEmpty()
+               && time(changed,"deadline")!=null && time(changed,"submitted_at").isBefore(time(changed,"deadline"))
+               && !now().isBefore(time(changed,"deadline")))throw denied();
             return result;
         });
     }

@@ -3498,7 +3498,7 @@ BEGIN
    END $fn$;
 
    -- Reuse E's live measurement/attribution for all predecessor rows. F rows are academic ORIGINAL.
-   CREATE FUNCTION @ctl@.measure() RETURNS jsonb LANGUAGE plpgsql STABLE AS $fn$
+   CREATE FUNCTION @ctl@.measure() RETURNS jsonb LANGUAGE plpgsql STABLE SET timezone='UTC' SET datestyle='ISO, YMD' AS $fn$
    DECLARE data jsonb;
    BEGIN
     SELECT coalesce(jsonb_agg(to_jsonb(m)||jsonb_build_object('scope',coalesce(v.resolution->>'scope',m.scope),
@@ -3523,9 +3523,10 @@ BEGIN
         AND NOT EXISTS(SELECT 1 FROM t11b10_versions n WHERE n.predecessor_id=v.id));
    END $fn$;
 
-   CREATE FUNCTION @ctl@.finish_operation(op uuid,target bigint,projection jsonb,audit bigint) RETURNS void LANGUAGE plpgsql AS $fn$
+   CREATE FUNCTION @ctl@.finish_operation(op uuid,target bigint,projection jsonb,audit bigint) RETURNS void LANGUAGE plpgsql SET timezone='UTC' SET datestyle='ISO, YMD' AS $fn$
    DECLARE s @ctl@.operations%ROWTYPE;p t11b10_proposals%ROWTYPE;before_row jsonb;after_row jsonb;kind text;allowed text[];
     data jsonb;previous jsonb;g record;l record;oldrows bigint;oldbytes bigint;other jsonb;current_base jsonb;
+    question text;value jsonb;prior_value jsonb;input_value jsonb;accept_answers boolean;
    BEGIN
     SELECT * INTO STRICT s FROM @ctl@.operations WHERE operation_id=op FOR UPDATE;
     IF s.xid<>pg_current_xact_id()::text OR s.after_execution IS NOT NULL THEN RAISE EXCEPTION 'T12-F one atomic transaction required';END IF;
@@ -3552,6 +3553,44 @@ BEGIN
      IF allowed IS NULL OR (before_row-allowed) IS DISTINCT FROM (after_row-allowed) THEN RAISE EXCEPTION 'T12-F operation field mismatch';END IF;
      IF kind IN('SAVE','SUBMIT') AND (before_row->>'status'<>'IN_PROGRESS' OR s.request->'actor' IS DISTINCT FROM s.request->'recipient') THEN RAISE EXCEPTION 'T12-F student lifecycle';END IF;
      IF kind NOT IN('SAVE','SUBMIT') AND (before_row->>'status'='IN_PROGRESS' OR s.request->'actor'=s.request->'recipient') THEN RAISE EXCEPTION 'T12-F distinct reviewing teacher required';END IF;
+     IF kind IN('SAVE','GRADE') THEN
+      question:=CASE WHEN kind='SAVE' THEN s.request#>>'{answer,questionId}' ELSE s.request->>'child' END;
+      value:=after_row->'answers'->question;prior_value:=before_row->'answers'->question;
+      IF question IS NULL OR value IS NULL OR ((before_row->'answers')-question) IS DISTINCT FROM ((after_row->'answers')-question) THEN RAISE EXCEPTION 'T12-F unrelated answer changed';END IF;
+      IF kind='SAVE' THEN
+       IF (after_row->>'current_question_index')::int<>(before_row->>'current_question_index')::int+CASE WHEN before_row#>>'{configuration,question_display_mode}'='ONE_BY_ONE' THEN 1 ELSE 0 END
+          OR (value->>'reviewed')::boolean OR value->>'points' IS NOT NULL
+          OR value->>'text' IS DISTINCT FROM nullif(btrim(s.request#>>'{answer,answerText}',E' \t\r\n\f\013'),'')
+          OR value->>'option' IS DISTINCT FROM s.request#>>'{answer,selectedOptionId}' THEN RAISE EXCEPTION 'T12-F save content mismatch';END IF;
+      ELSE
+       IF prior_value IS NULL OR (prior_value-ARRAY['reviewed','points','feedback','reviewer','reviewedAt']) IS DISTINCT FROM (value-ARRAY['reviewed','points','feedback','reviewer','reviewedAt'])
+         OR NOT (value->>'reviewed')::boolean OR value->'points' IS DISTINCT FROM s.request->'score' OR value->'reviewer' IS DISTINCT FROM s.request->'actor'
+         OR value->>'feedback' IS DISTINCT FROM nullif(btrim(s.request->>'text',E' \t\r\n\f\013'),'') THEN RAISE EXCEPTION 'T12-F review content mismatch';END IF;
+      END IF;
+     ELSIF kind='SUBMIT' THEN
+      accept_answers:=before_row#>>'{configuration,question_display_mode}'='ALL_AT_ONCE' AND (before_row->>'deadline' IS NULL OR (after_row->>'submitted_at')::timestamptz<(before_row->>'deadline')::timestamptz);
+      IF EXISTS(SELECT 1 FROM jsonb_object_keys(before_row->'answers') k WHERE NOT (after_row->'answers') ? k) THEN RAISE EXCEPTION 'T12-F removed saved answer';END IF;
+      FOR question,value IN SELECT * FROM jsonb_each(after_row->'answers') LOOP
+       prior_value:=before_row->'answers'->question;input_value:=NULL;
+       IF accept_answers AND jsonb_typeof(s.request->'answers')='array' THEN SELECT x INTO input_value FROM jsonb_array_elements(s.request->'answers') x WHERE x->>'questionId'=question;END IF;
+       IF input_value IS NOT NULL THEN
+        IF value->>'option' IS DISTINCT FROM input_value->>'selectedOptionId' OR value->>'text' IS DISTINCT FROM nullif(btrim(input_value->>'answerText',E' \t\r\n\f\013'),'') THEN RAISE EXCEPTION 'T12-F submitted content mismatch';END IF;
+       ELSIF prior_value IS NOT NULL THEN
+        IF (prior_value-ARRAY['reviewed','correct','points']) IS DISTINCT FROM (value-ARRAY['reviewed','correct','points']) THEN RAISE EXCEPTION 'T12-F late or unrelated submitted answer';END IF;
+       ELSIF value IS DISTINCT FROM '{"text":null,"reviewed":false}'::jsonb THEN RAISE EXCEPTION 'T12-F only missing open placeholder allowed';END IF;
+      END LOOP;
+     ELSIF kind='ADD' THEN
+      value:=after_row->'adjustments'->-1;
+      IF (after_row->'adjustments')-(-1) IS DISTINCT FROM before_row->'adjustments' OR value->'actor' IS DISTINCT FROM s.request->'actor'
+       OR (value->>'id')::int<>jsonb_array_length(before_row->'adjustments')+1 OR NOT (value->>'active')::boolean
+       OR (value->>'amount')::numeric<>round((s.request->>'amount')::numeric,2)
+       OR value->>'reason' IS DISTINCT FROM nullif(btrim(s.request->>'text',E' \t\r\n\f\013'),'') THEN RAISE EXCEPTION 'T12-F adjustment content mismatch';END IF;
+     ELSIF kind='REMOVE' THEN
+      SELECT jsonb_agg(CASE WHEN x->'id'=s.request->'child' THEN x||'{"active":false}'::jsonb ELSE x END ORDER BY ord)
+       INTO other FROM jsonb_array_elements(before_row->'adjustments') WITH ORDINALITY v(x,ord);
+      IF after_row->'adjustments' IS DISTINCT FROM other THEN RAISE EXCEPTION 'T12-F unrelated adjustment mutation';END IF;
+     ELSIF kind='FEEDBACK' AND after_row->>'overall_feedback' IS DISTINCT FROM nullif(btrim(s.request->>'text',E' \t\r\n\f\013'),'') THEN RAISE EXCEPTION 'T12-F feedback mismatch';
+     ELSIF kind='CLOSE' AND (NOT (after_row->>'grade_closed')::boolean OR after_row->'grade_closed_by' IS DISTINCT FROM s.request->'actor') THEN RAISE EXCEPTION 'T12-F closing actor mismatch';END IF;
     END IF;
     IF NOT EXISTS(SELECT 1 FROM system_logs WHERE id=audit AND correlation_id=op AND outcome='SUCCESS'
       AND actor_user_id=(s.request->>'actor')::bigint AND action=kind||'_NEW_EXECUTION' AND target_type='ContextResolution' AND target_id=s.evaluation_id) THEN
