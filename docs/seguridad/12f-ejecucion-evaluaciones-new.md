@@ -3,6 +3,7 @@
 16 de octubre de 2026, America/Lima. Base `aaebf4cd0e1674df1f62b3e256a3c000ec0e9a0d`
 (T12-E integrado). Checkout aislado `.codex-work/t12f-backend`, rama
 `feature/t12f-ejecucion-new`. Sin AGENTS.md aplicables ni delegación.
+Entrega en el [PR #85 en borrador](https://github.com/ChemicalLab-Org/ChemicalLab-Backend/pull/85), hacia develop.
 
 ## Contrato elegido antes de implementar
 
@@ -49,7 +50,7 @@ contexto aprobado, actor, acción, contenido, auditoría y medición.
 Desactivado por defecto; perfil único test, schema aprobado, base ficticia y
 loopback. Sin creación/publicación HTTP, frontend, paneles, activación real,
 merge, despliegue, DDL/backfill real ni rotaciones. T12 integral y etapa 4
-permanecen abiertos. Evidencia y pendientes se completan con resultados reales.
+permanecen abiertos. Evidencia y pendientes se detallan con sus resultados reales.
 Las rutas legacy restantes conservan sus contratos; esta entrega no las declara
 institucionalmente aisladas ni acredita activación o capacidad productiva.
 
@@ -287,8 +288,10 @@ Zona académica America/Lima, perfil único test. No H2 ni persistencia simulada
 | scale-guard | `cffa48a` | 9/0/0/0; TransportInputFilterTest (4) e InputBudgetsTest (5) completas, incluido rechazo de exponentes extremos antes del redondeo |
 | final-package | `cffa48a` | Interrumpida sin exit registrado, causa no determinada; al retomar estaban ausentes Maven y el clúster propio. AcademicRevisionDbTest (34) y ConcurrencyDbTest (17) tienen XML completos 0/0/0; no se atribuye éxito a las demás clases ni al empaquetado |
 | final-resume | `cffa48a` | EvaluationDeliveryAccessDbTest (22) y EvaluationWindowHttpDbTest (10) completas, 0/0/0. Corte planificado de la JVM propia verificada después de conservar esos XML para continuar las diez clases restantes con dos forks; salida Maven 1 por esa parada, sin empaquetado aprobado |
-| final-two-forks / ciclo | `cffa48a` | InstitutionalAttemptLifecycleDbTest completa: 27/1/0/0. La carrera SAVE/SUBMIT recibe 503 donde esperaba 200; PostgreSQL confirma lock_timeout de 5 s en `lock table evaluations in exclusive mode` a las 09:44:24 Lima. No se relaja el límite ni se cuenta esta clase como aprobada. Se conserva el XML y se repite completa de forma secuencial tras las demás suites |
+| final-two-forks / ciclo | `cffa48a` | InstitutionalAttemptLifecycleDbTest completa: 27/1/0/0. La carrera SAVE/SUBMIT recibe 503 donde esperaba 200; PostgreSQL confirma lock_timeout de 5 s en `lock table evaluations in exclusive mode` a las 09:44:24 Lima. No se relaja el límite ni se cuenta esta clase como aprobada. Se conserva el XML y la clase se repitió completa de forma secuencial tras las demás suites |
 | final-two-forks / NEW | `cffa48a` | NewEvaluationExecutionDbTest completa: 21/1/0/0; el fixture de vencimiento recibe 403 al guardar cuando esperaba 200. La ventana inicial de 40 s se consumió durante preparación/conciliación/inicio bajo carga. La ejecución agrupada termina 226/2/0/0, BUILD FAILURE; las doce clases completas aprobadas aportan 261 casos sin contar las dos clases fallidas |
+| serial-diagnosis | `fdc5a61` | 2/0/0/0, BUILD SUCCESS en 4 min 45 s; selección de la carrera SAVE/SUBMIT original y del vencimiento F con fixture de 90 s. No constituye dos clases completas ni se suma al conjunto de regresión |
+| final-serial | `fdc5a61` | 48/0/0/0 y BUILD SUCCESS, clean package con un solo fork: ciclo completa 27/0/0/0 en 1738 s y NEW completa 21/0/0/0 en 1915 s. Termina a las 12:06:58 Lima; Maven informa 01:01 h. El JAR procede de esta misma ejecución |
 
 El fallo temporal se corrigió normalizando solo snapshots académicos F mediante
 su inventario UTC. No se cambian referencias, SQL ni fingerprints previos.
@@ -304,13 +307,92 @@ antes de exigir su rechazo de NEW: así comprueba contrato, no desactivación.
 Un sondeo aislado con JDK17 y heap de 32 MiB confirmó OutOfMemoryError al
 redondear 1e-100000000. Se conserva su log y se acotó el exponente mediante la
 escala F antes de llegar al cálculo. Los contratos anteriores permanecen
-intactos. La ejecución conjunta final vuelve a incluir la suite F completa.
+intactos. La ejecución secuencial final incluyó nuevamente la suite F completa.
 Tras el fallo bajo dos forks, esa ventana de fixture se amplía a 90 s para
 incluir su preparación/conciliación e inicio. Conserva todas las aserciones,
 espera el vencimiento real y comprueba el rechazo de respuestas tardías. No
-cambia el plazo calculado por el servidor ni los timeouts de 30 s/5 s. Se depuran
+cambia el plazo calculado por el servidor ni los timeouts de 30 s/5 s. Se depuraron
 los dos casos fallidos de forma focalizada antes de repetir completas ambas
 clases con un solo fork.
+Entre `cffa48a` y `fdc5a61`, el código de aplicación (`src/main`) y el POM son
+idénticos. El único cambio de fuente de pruebas es la ventana F de 40 a 90 s;
+los demás cambios corresponden a esta nota.
+
+## Resultado de validación de la entrega
+
+Se aceptan **14 clases completas, 309 pruebas, 0 fallos, 0 errores y 0 omitidas**.
+Los SHA de código probados en este conjunto son:
+
+- `cffa48adb62065a58bb99d2e8c045f1e9cf17c32`
+- `fdc5a61377e65c43b4765ce4a5dd33b5705190f3`
+
+Cada clase procede de un único XML completo; no se suman selecciones ni se
+duplican las ejecuciones anteriores. Los cortes de final-package/final-resume
+se mantienen registrados arriba y no se presentan como builds exitosos.
+
+| Clase completa | Pruebas | Ejecución aceptada | SHA |
+| --- | ---: | --- | --- |
+| AcademicRevisionDbTest | 34 | final-package | `cffa48a` |
+| ConcurrencyDbTest | 17 | final-package | `cffa48a` |
+| EvaluationAccessPolicyTest | 4 | final-two-forks | `cffa48a` |
+| EvaluationDeliveryAccessDbTest | 22 | final-resume | `cffa48a` |
+| EvaluationOpenQuestionPersistenceDbTest | 5 | final-two-forks | `cffa48a` |
+| EvaluationServiceTest | 88 | final-two-forks | `cffa48a` |
+| EvaluationWindowHttpDbTest | 10 | final-resume | `cffa48a` |
+| InputBudgetsTest | 5 | final-two-forks | `cffa48a` |
+| InstitutionalAnswerSaveDbTest | 21 | final-two-forks | `cffa48a` |
+| InstitutionalAttemptLifecycleDbTest | 27 | final-serial | `fdc5a61` |
+| InstitutionalAttemptReviewDbTest | 24 | final-two-forks | `cffa48a` |
+| InstitutionalEvaluationReadDbTest | 27 | final-two-forks | `cffa48a` |
+| NewEvaluationExecutionDbTest | 21 | final-serial | `fdc5a61` |
+| TransportInputFilterTest | 4 | final-two-forks | `cffa48a` |
+
+`final-two-forks` intentó `clean package -DforkCount=2`, con clases seriales dentro
+de cada JVM, esquemas UUID y puertos efímeros propios. Los fallos de ciclo y NEW
+impidieron el empaquetado de esa ejecución. Se conserva su comando efectivo, log, exit,
+parche y todos los XML, incluido el fallido. Las cuatro clases completas de las
+dos ejecuciones previas no se repiten. Las doce clases completas ya aprobadas
+no se vuelven a ejecutar. Ciclo y NEW se aceptan exclusivamente de sus XML
+completos de `final-serial`, con un solo fork y los mismos límites del servidor.
+La ventana del fixture F se amplió a 90 s tras el fallo documentado; conserva
+la espera de vencimiento real y todas sus aserciones. No se atribuye éxito a
+la ejecución agrupada fallida ni se suman las selecciones de diagnóstico.
+
+`final-serial` ejecuta `clean package` con ambas clases completas (48 pruebas),
+un solo fork y salida 0. El JAR procede de ese mismo empaquetado. Comandos y SHA
+efectivos permanecen en los archivos de cada ejecución.
+
+La recuperación F de `final-serial` verificó el backup mediante
+pg_verifybackup y comparó **137 tablas idénticas** tras restaurar
+con WAL streaming en 127.0.0.1:52672. La suite también repite la
+certificación y verifica HTTP/replays sobre la copia. No se atribuye PITR
+histórico a este ensayo. En la carrera participaron dos procesos de sistema independientes
+(18700, 12784); el arnés observó 2 solicitudes esperando el lock,
+respuestas [503, 200], último número 3 y exactamente
+3 consumos; los asserts verifican replay del ganador y
+agotamiento posterior.
+
+El JAR tiene CRC ZIP íntegro, manifest ejecutable Spring Boot JarLauncher,
+Start-Class y clases F presentes. Sus bytes de clases de servicio coinciden con
+target/classes; contiene los 18 SQL, con los 17 anteriores intactos, y los cinco
+flags institucionales en false. Esta comprobación inspecciona el artefacto;
+los ensayos HTTP arrancan las clases compiladas y no se presentan como arranque
+del JAR. El SHA registrado al compilar/empaquetar es
+`fdc5a61377e65c43b4765ce4a5dd33b5705190f3`. Los commits posteriores que solo completan esta
+nota no se declaran nuevamente probados.
+
+| Evidencia local conservada | SHA-256 |
+| --- | --- |
+| verified-backend.jar | `d8b1a87f13f897c8462d730bcf38937878b3cb32271c8070019534b888e6ec61` |
+| verified-reports.zip | `04a80c5a02e60677842162ad0142ef0dd35a6c9a466bd836197904256ea49fc2` |
+| verified-results.json | `7620b3d73e45e71cf15880169a7ea7c645dca2a59def5aaf20a138fb167dd10e` |
+| signatures.json de la recuperación F | `d161b256c93170f594c0a3a81f174492fc900c2b4fa65fe9c5a2541e2fa20375` |
+
+La comprobación final conserva 192 archivos, incluidos los 16 E2E, documentos,
+evidencias y auditoría. Los HEAD/estados principal y frontend y los demás
+worktrees coinciden con la fotografía previa. `git diff --check` sin errores.
+La evidencia local incluye `preservation-before.json`, `preservation-after.json`
+y `artifact-verification.json`; logs y backups no se añaden al PR.
 
 ## Pendientes para etapas posteriores
 
