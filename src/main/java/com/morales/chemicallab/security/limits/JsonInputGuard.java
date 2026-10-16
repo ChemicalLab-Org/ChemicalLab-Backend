@@ -55,6 +55,10 @@ public class JsonInputGuard {
                         }
                         case "amount" -> {
                             if(token!=JsonToken.VALUE_NULL && token!=JsonToken.VALUE_NUMBER_INT && token!=JsonToken.VALUE_NUMBER_FLOAT)throw InputRejectedException.invalid();
+                            if(token!=JsonToken.VALUE_NULL) {
+                                var value=parser.getDecimalValue();
+                                if(value.precision()>32 || value.scale() < -32 || value.scale()>32)throw InputRejectedException.invalid();
+                            }
                         }
                         default -> { }
                     }

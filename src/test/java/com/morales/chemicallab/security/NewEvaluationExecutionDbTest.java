@@ -325,6 +325,7 @@ class NewEvaluationExecutionDbTest {
           "{\"revisionId\":"+q.revisionId()+",\"questionId\":\"17\",\"answerText\":\"A\"}",
           "{\"revisionId\":"+q.revisionId()+",\"questionId\":17,\"answerText\":42}"))
             assertThat(send("POST",h.pupil,q,"/own-attempts/"+a+"/answers","{\"operationId\":\""+op()+"\",\"answer\":"+invalidAnswer+"}").statusCode()).isEqualTo(400);
+        assertThat(send("POST",h.teacher,q,review(a)+"/adjustments","{\"operationId\":\""+op()+"\",\"amount\":1e-100000000,\"reason\":\"Bounded\"}").statusCode()).isEqualTo(400);
         assertThat(state()).isEqualTo(before);
         // B8 accepts castable scalars in its preparation contract. F's executable contract is typed.
         String invalid=payload(3,"ALL_AT_ONCE",false,0).replace("\"randomize_questions\":false","\"randomize_questions\":\"false\"");

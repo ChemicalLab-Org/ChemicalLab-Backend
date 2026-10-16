@@ -138,6 +138,8 @@ claves duplicadas incluso en cuerpos sin Content-Length o con otro Content-Type.
 Exclusivamente F rechaza también IDs/puntajes fraccionarios o representados
 como texto y textos numéricos antes de MVC; no cambia coerciones de contratos
 anteriores ni la configuración global del ObjectMapper.
+Los ajustes F acotan precisión a 32 dígitos y escala decimal a [-32,32] antes de
+redondear. La longitud de un número por sí sola no limita su exponente.
 
 | Actor | Facultad F |
 | --- | --- |
@@ -263,6 +265,9 @@ Zona académica America/Lima, perfil único test. No H2 ni persistencia simulada
 | critical-2 | `c4adecd` | testCompile fallido por Enrollment.Status.ENDED inexistente; no ejecutó JUnit |
 | critical-3 | `56e057c` | 7/1/0/0; seis casos aprobados, incluidos vencimiento, readmisión, cierre global, dos JVM y recuperación física; falla una aserción del arnés que esperaba 403 cuando el flag legacy seguía desactivado (404). Selección de 10 min 54 s |
 | new-complete-1 | `736f328` | Candidata interrumpida deliberadamente antes de completar la clase para endurecer tipos JSON F; log/exit conservados. No es una suite completa aprobada |
+| transport-final | `bd7c0ad` | 11/1/0/0; pasan dos casos F y InputBudgets completa; falla una aserción del test de transporte que confundía el nombre answerText con el valor Text |
+| transport-2 | `9852993` | 10/0/0/0; TransportInputFilterTest e InputBudgetsTest completas y selección de inicio que cruza la ventana. BUILD SUCCESS en 1 min 33 s |
+| new-complete-2 | `9852993` | 21/0/0/0; suite F completa, BUILD SUCCESS en 31 min 49 s. No se atribuye al endurecimiento de escala posterior |
 
 El fallo temporal se corrigió normalizando solo snapshots académicos F mediante
 su inventario UTC. No se cambian referencias, SQL ni fingerprints previos.
@@ -273,3 +278,7 @@ el timeout de operaciones HTTP; sigue esperando el vencimiento real. La
 readmisión usa la transición existente WITHDRAWN. No se omiten esas verificaciones.
 El caso de namespaces habilita explícitamente el flag del escritor anterior
 antes de exigir su rechazo de NEW: así comprueba contrato, no desactivación.
+Un sondeo aislado con JDK17 y heap de 32 MiB confirmó OutOfMemoryError al
+redondear 1e-100000000. Se conserva su log y se acotó el exponente mediante la
+escala F antes de llegar al cálculo. Los contratos anteriores permanecen
+intactos. La ejecución conjunta final vuelve a incluir la suite F completa.
