@@ -208,7 +208,7 @@ class NewEvaluationExecutionDbTest {
         assertThat(after.path("answers").toString()).contains("Required").doesNotContain("Ignored");
     }
     @Test void expiredDeadlineAcceptsOnlySavedContentAndStartReplayOutlivesItsWindow() throws Exception {
-        Instant due=Instant.now().plusSeconds(40).truncatedTo(java.time.temporal.ChronoUnit.MICROS);q=prepare(r.institution,r.classId,r.episode,3,"ALL_AT_ONCE",false,due);resolve(q,null);
+        Instant due=Instant.now().plusSeconds(90).truncatedTo(java.time.temporal.ChronoUnit.MICROS);q=prepare(r.institution,r.classId,r.episode,3,"ALL_AT_ONCE",false,due);resolve(q,null);
         UUID start=op();var receipt=begin(q,start);long a=receipt.path("attemptId").asLong();UUID saving=op();var saved=save(q,a,saving,18,31L,null);
         Instant deadline=Instant.parse(own(q,a).path("deadline").asText());assertThat(deadline).isEqualTo(due.truncatedTo(java.time.temporal.ChronoUnit.MICROS));
         long millis=Duration.between(Instant.now(),deadline.plusMillis(50)).toMillis();if(millis>0)Thread.sleep(millis);

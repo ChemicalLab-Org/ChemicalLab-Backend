@@ -288,6 +288,7 @@ Zona académica America/Lima, perfil único test. No H2 ni persistencia simulada
 | final-package | `cffa48a` | Interrumpida sin exit registrado, causa no determinada; al retomar estaban ausentes Maven y el clúster propio. AcademicRevisionDbTest (34) y ConcurrencyDbTest (17) tienen XML completos 0/0/0; no se atribuye éxito a las demás clases ni al empaquetado |
 | final-resume | `cffa48a` | EvaluationDeliveryAccessDbTest (22) y EvaluationWindowHttpDbTest (10) completas, 0/0/0. Corte planificado de la JVM propia verificada después de conservar esos XML para continuar las diez clases restantes con dos forks; salida Maven 1 por esa parada, sin empaquetado aprobado |
 | final-two-forks / ciclo | `cffa48a` | InstitutionalAttemptLifecycleDbTest completa: 27/1/0/0. La carrera SAVE/SUBMIT recibe 503 donde esperaba 200; PostgreSQL confirma lock_timeout de 5 s en `lock table evaluations in exclusive mode` a las 09:44:24 Lima. No se relaja el límite ni se cuenta esta clase como aprobada. Se conserva el XML y se repite completa de forma secuencial tras las demás suites |
+| final-two-forks / NEW | `cffa48a` | NewEvaluationExecutionDbTest completa: 21/1/0/0; el fixture de vencimiento recibe 403 al guardar cuando esperaba 200. La ventana inicial de 40 s se consumió durante preparación/conciliación/inicio bajo carga. La ejecución agrupada termina 226/2/0/0, BUILD FAILURE; las doce clases completas aprobadas aportan 261 casos sin contar las dos clases fallidas |
 
 El fallo temporal se corrigió normalizando solo snapshots académicos F mediante
 su inventario UTC. No se cambian referencias, SQL ni fingerprints previos.
@@ -295,7 +296,7 @@ Las ejecuciones posteriores, suites completas, JAR y publicación se registran
 con sus SHA reales. Los reportes de clases completas se conservan aunque la
 ejecución conjunta haya sido interrumpida; nunca se completa una clase sumando
 selecciones parciales.
-El fixture de vencimiento se amplió a 40 s sin cambiar el límite académico ni
+El fixture de vencimiento se amplió inicialmente a 40 s sin cambiar el límite académico ni
 el timeout de operaciones HTTP; sigue esperando el vencimiento real. La
 readmisión usa la transición existente WITHDRAWN. No se omiten esas verificaciones.
 El caso de namespaces habilita explícitamente el flag del escritor anterior
@@ -304,6 +305,12 @@ Un sondeo aislado con JDK17 y heap de 32 MiB confirmó OutOfMemoryError al
 redondear 1e-100000000. Se conserva su log y se acotó el exponente mediante la
 escala F antes de llegar al cálculo. Los contratos anteriores permanecen
 intactos. La ejecución conjunta final vuelve a incluir la suite F completa.
+Tras el fallo bajo dos forks, esa ventana de fixture se amplía a 90 s para
+incluir su preparación/conciliación e inicio. Conserva todas las aserciones,
+espera el vencimiento real y comprueba el rechazo de respuestas tardías. No
+cambia el plazo calculado por el servidor ni los timeouts de 30 s/5 s. Se depuran
+los dos casos fallidos de forma focalizada antes de repetir completas ambas
+clases con un solo fork.
 
 ## Pendientes para etapas posteriores
 
