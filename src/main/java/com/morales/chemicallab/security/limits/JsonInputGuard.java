@@ -35,6 +35,39 @@ public class JsonInputGuard {
         catch (com.fasterxml.jackson.core.exc.StreamConstraintsException ex) { throw InputRejectedException.size(); }
         catch (IOException ex) { throw InputRejectedException.invalid(); }
     }
+    /** NEW_V1 uses exact typed identities/content; do not let MVC coerce another JSON type. */
+    public void checkExecution(byte[] bytes) {
+        check(bytes,false,false);
+        try(var parser=ordinaryFactory.createParser(bytes)) {
+            String field=null;JsonToken token;
+            while((token=parser.nextToken())!=null) {
+                if(token==JsonToken.FIELD_NAME){field=parser.currentName();continue;}
+                if(field!=null) {
+                    switch(field) {
+                        case "revisionId","questionId","selectedOptionId" -> {
+                            if(token!=JsonToken.VALUE_NULL){if(token!=JsonToken.VALUE_NUMBER_INT)throw InputRejectedException.invalid();parser.getLongValue();}
+                        }
+                        case "score" -> {
+                            if(token!=JsonToken.VALUE_NULL){if(token!=JsonToken.VALUE_NUMBER_INT)throw InputRejectedException.invalid();parser.getIntValue();}
+                        }
+                        case "operationId","answerText","feedback","overallFeedback","reason" -> {
+                            if(token!=JsonToken.VALUE_NULL && token!=JsonToken.VALUE_STRING)throw InputRejectedException.invalid();
+                        }
+                        case "amount" -> {
+                            if(token!=JsonToken.VALUE_NULL && token!=JsonToken.VALUE_NUMBER_INT && token!=JsonToken.VALUE_NUMBER_FLOAT)throw InputRejectedException.invalid();
+                            if(token!=JsonToken.VALUE_NULL) {
+                                var value=parser.getDecimalValue();
+                                if(value.precision()>32 || value.scale() < -32 || value.scale()>32)throw InputRejectedException.invalid();
+                            }
+                        }
+                        default -> { }
+                    }
+                    field=null;
+                }
+            }
+        } catch(InputRejectedException ex){throw ex;}
+          catch(IOException ex){throw InputRejectedException.invalid();}
+    }
     private void check(JsonParser parser, boolean envelope, boolean telemetry) throws IOException {
         record Frame(boolean object, boolean metadata, int[] count) {}
         var stack = new ArrayDeque<Frame>();

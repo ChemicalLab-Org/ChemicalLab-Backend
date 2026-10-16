@@ -139,6 +139,7 @@ public class InstitutionalAttemptLifecycleService {
                 }
                 jdbc.execute("set local synchronous_commit=on");
                 jdbc.queryForObject("select "+ctl+".finish_operation(?,?,?::jsonb,?)",Object.class,operation,changed.getId(),encode(result),event.getId());
+                InstitutionalFixtureUnit.checkExecutionQuotas(jdbc,schema);
                 access.authorizeLifecycle(principal,request);
                 // Also resolves all newly derived children through the public read resolver.
                 access.authorizeLifecycle(principal,new Request(contract,Action.READ_OWN_ATTEMPT,institution,clazz,evaluation,delivery,revision,principal.userId(),changed.getId()));

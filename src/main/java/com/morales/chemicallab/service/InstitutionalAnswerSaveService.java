@@ -93,6 +93,7 @@ public class InstitutionalAnswerSaveService {
                 audit.persist(event);
                 jdbc.execute("set local synchronous_commit=on");
                 jdbc.queryForObject("select "+ctl+".finish_save(?,?,?::jsonb,?)",Object.class,command.operationId(),answer,encode(result),event.getId());
+                InstitutionalFixtureUnit.checkExecutionQuotas(jdbc,schema);
                 // No cached ALLOW survives the mutation. Time can expire while manifests
                 // are scanned, so recheck relations, session and the exclusive deadline last.
                 access.authorizeSave(principal,request);

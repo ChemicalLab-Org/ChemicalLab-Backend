@@ -14,6 +14,12 @@ final class InstitutionalFixtureUnit {
     static String control(String schema) { return "t12c_" + schema.substring(4); }
     static String lifecycleControl(String schema) { return "t12d_" + schema.substring(4); }
     static String reviewControl(String schema) { return "t12e_" + schema.substring(4); }
+    /** Successor academic rows share institutional limits with C/D/E, in both directions. */
+    static void checkExecutionQuotas(JdbcTemplate jdbc,String schema) {
+        String control="t12f_"+schema.substring(4);
+        if(Boolean.TRUE.equals(jdbc.queryForObject("select to_regprocedure(?::text) is not null",Boolean.class,control+".check_quotas()")))
+            jdbc.execute("select "+control+".check_quotas()");
+    }
     static String writeControl(JdbcTemplate jdbc,String schema) {
         String review=reviewControl(schema);
         if(Boolean.TRUE.equals(jdbc.queryForObject("select to_regprocedure(?::text) is not null",Boolean.class,review+".fresh(bigint)")))return review;

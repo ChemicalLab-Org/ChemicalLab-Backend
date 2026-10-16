@@ -151,7 +151,22 @@ public class EvaluationDeliveryAccessService {
         }
     }
 
+    /** F explicitly selects its own attempt namespace, never probes B8/legacy IDs. */
+    Context authorizeExecution(SessionPrincipal principal, Request q) {
+        try {
+            require(principal != null && !principal.temporaryPassword() && valid(q) && q.contract()==Contract.NEW);
+            String ctl="t12f_"+jdbc.queryForObject("select current_schema()",String.class).substring(4);
+            require(exists("select "+ctl+".execution_fresh(?)", q.evaluationId()));
+            return resolve(principal,q,true,true).context();
+        } catch(Denied failure) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Operación no autorizada.");
+        }
+    }
+
     private Decision resolve(SessionPrincipal principal, Request q, boolean readingRows) {
+        return resolve(principal,q,readingRows,false);
+    }
+    private Decision resolve(SessionPrincipal principal, Request q, boolean readingRows, boolean execution) {
         // Retain the existing maintainer boundary. This read installs/mutates nothing.
         jdbc.execute("select t11b5_fixture()");
         // One SQL statement fixes both the server instant and B8's time-dependent
@@ -172,7 +187,7 @@ public class EvaluationDeliveryAccessService {
 
         var b10 = new CurrentContexts(q);
         Resolved root = b10.get("evaluations", q.evaluationId(), false, null, null);
-        Delivery delivery = q.contract() == Contract.LEGACY ? legacy(q, b10, now) : academic(q, b10, observation);
+        Delivery delivery = q.contract() == Contract.LEGACY ? legacy(q, b10, now) : academic(q, b10, observation, execution);
         Resolved d = b10.get(delivery.source(), q.deliveryId(), true, null, null);
         b10.get(delivery.revisionSource(), q.revisionId(), false, null, null);
         Resolved recipient = b10.get(delivery.recipientSource(), delivery.recipientId(), true, q.recipientAccountId(), null);
@@ -187,16 +202,19 @@ public class EvaluationDeliveryAccessService {
 
         Attempt attempt = null;
         if (q.attemptId() != null) {
-            attempt = q.contract() == Contract.LEGACY ? legacyAttempt(q, delivery, now) : academicAttempt(q, delivery);
-            b10.get(q.contract() == Contract.LEGACY ? "evaluation_attempts" : "t11b8_fixture_attempts",
+            if(execution) attempt=executionAttempt(q,delivery,recipient.enrollment());
+            else {
+                attempt = q.contract() == Contract.LEGACY ? legacyAttempt(q, delivery, now) : academicAttempt(q, delivery);
+                b10.get(q.contract() == Contract.LEGACY ? "evaluation_attempts" : "t11b8_fixture_attempts",
                     q.attemptId(), true, q.recipientAccountId(), recipient.enrollment());
+            }
         }
         boolean permitted = switch (q.action()) {
             case READ_DELIVERY -> admin || teacher || (own && delivery.available());
             case READ_OWN_ATTEMPT -> own && delivery.started();
-            case START_OWN_ATTEMPT -> q.contract()==Contract.LEGACY && own && delivery.available();
-            case SUBMIT_OWN_ATTEMPT -> q.contract()==Contract.LEGACY && own && delivery.closable();
-            case SAVE_OWN_ANSWER -> q.contract()==Contract.LEGACY && own && delivery.available() && !attempt.terminal();
+            case START_OWN_ATTEMPT -> (q.contract()==Contract.LEGACY || execution) && own && delivery.available();
+            case SUBMIT_OWN_ATTEMPT -> (q.contract()==Contract.LEGACY || execution) && own && delivery.closable();
+            case SAVE_OWN_ANSWER -> (q.contract()==Contract.LEGACY || execution) && own && delivery.available() && !attempt.terminal();
             case SUPERVISE -> admin || teacher;
             case REVIEW_ATTEMPT -> teacher && principal.userId() != q.recipientAccountId() && attempt.terminal();
             case GRADE_ATTEMPT -> teacher && principal.userId() != q.recipientAccountId() && attempt.terminal() && !attempt.closed();
@@ -409,7 +427,7 @@ public class EvaluationDeliveryAccessService {
                 policy.window(assignment)==EvaluationAccessPolicy.Window.AVAILABLE || policy.window(assignment)==EvaluationAccessPolicy.Window.EXPIRED);
     }
 
-    private Delivery academic(Request q, CurrentContexts b10, Observation observation) {
+    private Delivery academic(Request q, CurrentContexts b10, Observation observation, boolean execution) {
         var rows = jdbc.queryForList("""
             select d.resource_id,d.starts_at,d.due_at,d.status,r.id recipient_id,s.availability
             from t11b8_deliveries d join t11b8_resources s on s.id=d.resource_id
@@ -421,6 +439,14 @@ public class EvaluationDeliveryAccessService {
         require(rows.size() == 1);
         var row = rows.get(0);
         long resource = number(row, "resource_id");
+        if(!execution) {
+            String ctl="t12f_"+jdbc.queryForObject("select current_schema()",String.class).substring(4);
+            if(exists("select to_regclass(?::text) is not null",ctl+".attempts")
+               && exists("select exists(select 1 from "+ctl+".attempts where resource_id=?)",resource))
+                // Shared delivery metadata may still be read, but B8 attempts/correction
+                // never become a second result engine for an adopted execution root.
+                require(q.attemptId()==null && !exists("select exists(select 1 from t11b8_fixture_attempts where resource_id=?)",resource));
+        }
         b10.get("t11b8_resources", resource, false, null, null);
         // The DRAFT evaluation is a technical anchor, not a second published academic revision or engine.
         require(!exists("select exists(select 1 from evaluation_assignments where evaluation_id=?) or exists(select 1 from evaluation_attempts where evaluation_id=?)",
@@ -433,8 +459,13 @@ public class EvaluationDeliveryAccessService {
         boolean closed = rootClosed && !exists("""
             select exists(select 1 from t11b8_fixture_attempts where resource_id=? and (status<>'FINAL' or not grade_closed))
             """, resource);
+        if(execution) {
+            String ctl="t12f_"+jdbc.queryForObject("select current_schema()",String.class).substring(4);
+            require(!exists("select exists(select 1 from t11b8_fixture_attempts where resource_id=?)",resource));
+            closed=rootClosed && !exists("select exists(select 1 from "+ctl+".attempts where resource_id=? and (status<>'GRADED' or not grade_closed))",resource);
+        }
         return new Delivery("t11b8_deliveries", "t11b8_revisions", "t11b8_recipients", number(row, "recipient_id"),
-                null, resource, started, available, closed, false);
+                null, resource, started, available, closed, execution && started && "OPEN".equals(row.get("status")) && "AVAILABLE".equals(row.get("availability")));
     }
 
     private record Attempt(boolean terminal, boolean closed, boolean correctionVisible) {}
@@ -453,6 +484,15 @@ public class EvaluationDeliveryAccessService {
         var assignment = EvaluationAssignment.builder().startAt(row.get("start_at") == null ? null : ((Timestamp) row.get("start_at")).toLocalDateTime()).build();
         var metadata = EvaluationAttempt.builder().status(AttemptStatus.valueOf(status)).gradeClosed(closed).assignment(assignment).build();
         return new Attempt(!"IN_PROGRESS".equals(status), closed, policy(now).exposeCorrection(metadata, delivery.correctionAvailable()));
+    }
+    private Attempt executionAttempt(Request q,Delivery delivery,long enrollment) {
+        String ctl="t12f_"+jdbc.queryForObject("select current_schema()",String.class).substring(4);
+        var rows=jdbc.queryForList("select status,grade_closed from "+ctl+".attempts where id=? and engine_version='NEW_V1' and resource_id=? and recipient_id=? and revision_id=? and delivery_id=? and account_id=? and institution_id=? and class_id=? and enrollment_id=?",
+            q.attemptId(),delivery.resourceId(),delivery.recipientId(),q.revisionId(),q.deliveryId(),q.recipientAccountId(),q.institutionId(),q.classId(),enrollment);
+        require(rows.size()==1);
+        boolean terminal=!"IN_PROGRESS".equals(rows.get(0).get("status"));
+        boolean closed=Boolean.TRUE.equals(rows.get(0).get("grade_closed"));
+        return new Attempt(terminal,closed,terminal && closed && delivery.started() && delivery.correctionAvailable());
     }
     private Attempt academicAttempt(Request q, Delivery delivery) {
         var rows = jdbc.queryForList("""

@@ -134,6 +134,7 @@ public class InstitutionalAttemptReviewService {
                 audit.persist(event(actor,LogEventType.EVALUATION_REVIEW_COMPLETED,"REVIEW_COMPLETED",institution,evaluation,attempt,null,id));
             jdbc.execute("set local synchronous_commit=on");
             jdbc.queryForObject("select "+ctl+".finish_operation(?,?,?::jsonb,?)",Object.class,id,attempt,encode(result),event.getId());
+            InstitutionalFixtureUnit.checkExecutionQuotas(jdbc,schema);
             access.authorizeReview(actor,q);sessions.revalidate(actor);return result;
         }));
     }
