@@ -3379,7 +3379,7 @@ BEGIN
  installed:=to_regnamespace(ctl) IS NOT NULL;
  IF NOT installed THEN
   EXECUTE format('CREATE SCHEMA %I',ctl);
-  EXECUTE replace(replace($ddl$
+  EXECUTE replace(replace(replace(replace($ddl$
    CREATE TABLE @ctl@.schema_version(version integer PRIMARY KEY CHECK(version=1),revision text NOT NULL,
     predecessor_fingerprint text NOT NULL,fingerprint text NOT NULL);
    CREATE TABLE @ctl@.attempts(
@@ -3508,8 +3508,12 @@ BEGIN
       AND NOT EXISTS(SELECT 1 FROM t11b10_versions n WHERE n.predecessor_id=v.id)
       WHERE m.source_table<>'system_logs' OR NOT EXISTS(SELECT 1 FROM system_logs WHERE id=(m.source_pk->>'id')::bigint AND target_type='ContextResolution');
     SELECT coalesce(jsonb_agg(coalesce((SELECT x||jsonb_build_object('scope',z->>'scope','owner_id',(z->>'institutionId')::bigint)
-      FROM @old@.saves s CROSS JOIN LATERAL jsonb_array_elements(s.derived) z JOIN t11b10_versions root ON root.id=s.root_version
-      WHERE s.after_manifest IS NOT NULL AND NOT EXISTS(SELECT 1 FROM t11b10_versions n WHERE n.predecessor_id=root.id)
+      FROM (
+       SELECT prior.ordinal,z,prior.root_version FROM @old@.saves prior CROSS JOIN LATERAL jsonb_array_elements(prior.derived) z WHERE prior.after_manifest IS NOT NULL
+       UNION ALL SELECT -prior.ordinal,z,prior.root_version FROM @d@.saves prior CROSS JOIN LATERAL jsonb_array_elements(prior.derived) z WHERE prior.after_manifest IS NOT NULL
+       UNION ALL SELECT -100000-prior.ordinal,prior.answer_resolution||jsonb_build_object('source','evaluation_answers','pk',jsonb_build_object('id',prior.answer_id)),prior.root_version FROM @c@.saves prior WHERE prior.after_manifest IS NOT NULL
+      ) s JOIN t11b10_versions root ON root.id=s.root_version
+      WHERE NOT EXISTS(SELECT 1 FROM t11b10_versions n WHERE n.predecessor_id=root.id)
         AND z->>'source'=x->>'source_table' AND z->'pk'=x->'source_pk'
         AND NOT EXISTS(SELECT 1 FROM t11b10_versions v WHERE v.source_table=x->>'source_table' AND v.source_pk=x->'source_pk')
       ORDER BY s.ordinal DESC LIMIT 1),x) ORDER BY x->>'source_table',(x->'source_pk')::text),'[]') INTO data FROM jsonb_array_elements(data) x;
@@ -3521,6 +3525,21 @@ BEGIN
         'institution',a.institution_id,'class',a.class_id,'account',a.account_id,'enrollment',a.enrollment_id,'engine','NEW_V1')) ORDER BY a.id),'[]')
        FROM @ctl@.attempts a JOIN t11b10_versions v ON v.source_table='evaluations' AND v.source_pk=jsonb_build_object('id',a.evaluation_id)
         AND NOT EXISTS(SELECT 1 FROM t11b10_versions n WHERE n.predecessor_id=v.id));
+   END $fn$;
+
+   CREATE FUNCTION @ctl@.check_quotas() RETURNS void LANGUAGE plpgsql AS $fn$
+   DECLARE data jsonb;previous jsonb;g record;l record;oldrows bigint;oldbytes bigint;
+   BEGIN
+    data:=@ctl@.measure();
+    SELECT dataset INTO previous FROM @ctl@.operations WHERE after_execution IS NOT NULL ORDER BY ordinal DESC LIMIT 1;
+    IF previous IS NULL THEN SELECT dataset INTO STRICT previous FROM t11b10_measurements ORDER BY id DESC LIMIT 1;END IF;
+    FOR g IN SELECT x->>'scope' scope,(x->>'owner_id')::bigint owner,x->>'category' category,sum((x->>'rows_used')::bigint) rows,sum((x->>'bytes_used')::bigint) bytes FROM jsonb_array_elements(data) x GROUP BY 1,2,3 LOOP
+     SELECT coalesce(sum((x->>'rows_used')::bigint),0),coalesce(sum((x->>'bytes_used')::bigint),0) INTO oldrows,oldbytes FROM jsonb_array_elements(previous) x WHERE x->>'scope'=g.scope AND (x->>'owner_id')::bigint=g.owner AND x->>'category'=g.category;
+     IF g.scope='INSTITUTION' THEN
+      SELECT * INTO l FROM t11b9_limits WHERE institution_id=g.owner AND category=g.category;
+      IF (g.rows>oldrows OR g.bytes>oldbytes) AND (NOT FOUND OR g.rows>l.maximum_rows OR g.bytes>l.maximum_bytes) THEN RAISE EXCEPTION 'T12-F shared institution quota exceeded' USING ERRCODE='P7501';END IF;
+     ELSIF (g.rows>oldrows AND g.rows>1000000) OR (g.bytes>oldbytes AND g.bytes>268435456) THEN RAISE EXCEPTION 'T12-F technical quota exceeded' USING ERRCODE='P7501';END IF;
+    END LOOP;
    END $fn$;
 
    CREATE FUNCTION @ctl@.finish_operation(op uuid,target bigint,projection jsonb,audit bigint) RETURNS void LANGUAGE plpgsql SET timezone='UTC' SET datestyle='ISO, YMD' AS $fn$
@@ -3632,7 +3651,7 @@ BEGIN
    CREATE TRIGGER no_truncate BEFORE TRUNCATE ON @ctl@.operations FOR EACH STATEMENT EXECUTE FUNCTION @ctl@.immutable();
    CREATE TRIGGER no_truncate BEFORE TRUNCATE ON @ctl@.schema_version FOR EACH STATEMENT EXECUTE FUNCTION @ctl@.immutable();
    CREATE CONSTRAINT TRIGGER complete AFTER INSERT OR UPDATE ON @ctl@.operations DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION @ctl@.complete();
-  $ddl$,'@ctl@',ctl),'@old@',old);
+  $ddl$,'@ctl@',ctl),'@old@',old),'@d@','t12d_'||substr(current_schema(),5)),'@c@','t12c_'||substr(current_schema(),5));
  END IF;
  SELECT md5(string_agg(s,E'\n' ORDER BY s)) INTO actual FROM (
   SELECT 'c:'||c.relname||':'||a.attnum||':'||a.attname||':'||format_type(a.atttypid,a.atttypmod)||':'||a.attnotnull||':'||a.attidentity::text||':'||a.attgenerated::text||':'||coalesce(pg_get_expr(d.adbin,d.adrelid),'') s

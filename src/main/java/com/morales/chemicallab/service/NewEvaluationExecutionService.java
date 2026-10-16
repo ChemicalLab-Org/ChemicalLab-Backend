@@ -169,7 +169,9 @@ public class NewEvaluationExecutionService {
             if(operation.equals("START"))target=start(ctl,q,bound,content);
             else {target=id;mutate(ctl,q,attempt(ctl,id),bound,content,operation,child,answer,submitted,score,amount,text,actor.userId());}
             var changed=attempt(ctl,target);
-            Long resultChild=operation.equals("ADD")?(long)tree(changed.get("adjustments").toString()).size():operation.equals("SAVE")?answer.questionId():child;
+            Long resultChild=child;
+            if(operation.equals("ADD"))resultChild=Long.valueOf(tree(changed.get("adjustments").toString()).size());
+            if(operation.equals("SAVE"))resultChild=answer.questionId();
             Receipt result=new Receipt(key,target,resultChild,(String)changed.get("status"),number(changed,"attempt_number").intValue(),(Boolean)changed.get("grade_closed"),time(changed,"started_at"),time(changed,"submitted_at"));
             var event=event(actor,type(operation),operation,evaluation,key);audit.persist(event);
             if(operation.equals("SUBMIT") && changed.get("status").equals("PENDING_MANUAL_REVIEW"))audit.persist(event(actor,LogEventType.EVALUATION_ATTEMPT_PENDING_REVIEW,"PENDING_REVIEW",evaluation,key));

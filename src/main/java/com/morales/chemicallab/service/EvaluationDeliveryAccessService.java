@@ -457,7 +457,7 @@ public class EvaluationDeliveryAccessService {
             closed=rootClosed && !exists("select exists(select 1 from "+ctl+".attempts where resource_id=? and (status<>'GRADED' or not grade_closed))",resource);
         }
         return new Delivery("t11b8_deliveries", "t11b8_revisions", "t11b8_recipients", number(row, "recipient_id"),
-                null, resource, started, available, closed, execution && started && "AVAILABLE".equals(row.get("availability")));
+                null, resource, started, available, closed, execution && started && "OPEN".equals(row.get("status")) && "AVAILABLE".equals(row.get("availability")));
     }
 
     private record Attempt(boolean terminal, boolean closed, boolean correctionVisible) {}
