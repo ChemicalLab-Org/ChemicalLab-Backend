@@ -3558,7 +3558,7 @@ BEGIN
       value:=after_row->'answers'->question;prior_value:=before_row->'answers'->question;
       IF question IS NULL OR value IS NULL OR ((before_row->'answers')-question) IS DISTINCT FROM ((after_row->'answers')-question) THEN RAISE EXCEPTION 'T12-F unrelated answer changed';END IF;
       IF kind='SAVE' THEN
-       IF (after_row->>'current_question_index')::int<>(before_row->>'current_question_index')::int+CASE WHEN before_row#>>'{configuration,question_display_mode}'='ONE_BY_ONE' THEN 1 ELSE 0 END
+       IF (after_row->>'current_question_index')::int<>(before_row->>'current_question_index')::int+(CASE WHEN before_row#>>'{configuration,question_display_mode}'='ONE_BY_ONE' THEN 1 ELSE 0 END)
           OR (value->>'reviewed')::boolean OR value->>'points' IS NOT NULL
           OR value->>'text' IS DISTINCT FROM nullif(btrim(s.request#>>'{answer,answerText}',E' \t\r\n\f\013'),'')
           OR value->>'option' IS DISTINCT FROM s.request#>>'{answer,selectedOptionId}' THEN RAISE EXCEPTION 'T12-F save content mismatch';END IF;

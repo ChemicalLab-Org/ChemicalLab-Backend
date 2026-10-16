@@ -131,4 +131,130 @@ class NewEvaluationExecutionDbTest {
         assertThat(count("select count(*) from system_logs where correlation_id=? and outcome='SUCCESS'",closed)).isEqualTo(1);
         assertThat(save(q,attempt,save,17,null,"Student original")).isEqualTo(saved); // replay after terminal/grade close
     }
+
+    long resource(Request x){return count("select resource_id from t11b8_deliveries where id=?",x.deliveryId());}
+    Request successor(Request x,long clazz,long episode,int offset,String mode,boolean random) {
+        var draft=revisions.nextDraft(x.revisionId(),op());draft=revisions.edit(draft.id(),1,payload(3,mode,random,offset),op());
+        var published=revisions.publish(draft.id(),draft.version(),op());
+        return deliver(resource(x),published.id(),x.institutionId(),clazz,episode,Instant.now().minusSeconds(30),Instant.now().plusSeconds(900));
+    }
+    @Test void twoPublicationsAndDraftChangesPreserveContentAndShareNumberingAcrossClasses() throws Exception {
+        Request next=successor(q,r.otherClass,r.otherEpisode,100,"ALL_AT_ONCE",true);resolve(q,null);
+        UUID firstKey=op();long first=begin(q,firstKey).path("attemptId").asLong();
+        denied(send("POST",h.pupil,next,"/own-attempts",body(op())));
+        denied(send("GET",h.pupil,next,"/own-attempts/"+first,null));
+        denied(send("POST",h.pupil,q,"/own-attempts/"+first+"/answers",body(op(),"answer",answer(next,117,null,"Wrong publication"))));
+        denied(send("POST",h.pupil,q,"/own-attempts/"+first+"/answers",body(op(),"answer",answer(q,18,131L,null))));
+        save(q,first,op(),17,null,"Revision one");submit(q,first,op(),List.of(answer(q,18,31L,null)));
+        long second=begin(next,op()).path("attemptId").asLong();assertThat(own(next,second).path("attemptNumber").asInt()).isEqualTo(2);
+        var order=own(next,second).path("questionOrder");assertThat(own(next,second).path("questionOrder")).isEqualTo(order);
+        var draft=revisions.nextDraft(next.revisionId(),op());revisions.edit(draft.id(),1,payload(3,"ONE_BY_ONE",false,200),op());resolve(q,null);
+        assertThat(ok(send("GET",h.pupil,q,"",null)).toString()).contains("Explain 0").doesNotContain("Explain 100","Explain 200");
+        assertThat(ok(send("GET",h.pupil,next,"",null)).toString()).contains("Explain 100").doesNotContain("Explain 200");
+        assertThat(own(q,first).path("answers").toString()).contains("Revision one");
+        save(next,second,op(),117,null,"Revision two");submit(next,second,op(),List.of(answer(next,118,131L,null)));
+        assertThat(begin(q,op()).path("attemptNumber").asInt()).isEqualTo(3);
+        assertThat(count("select count(*) from "+ctl+".attempts where resource_id=? and account_id=?",resource(q),f.student.getId())).isEqualTo(3);
+        assertThat(count("select count(*) from "+ctl+".attempts where resource_id=? and status='IN_PROGRESS'",resource(q))).isEqualTo(1);
+    }
+    @Test void b8SimulationExecutionAndLegacyHaveDistinctNamespacesEvenForEqualIds() throws Exception {
+        long attempt=begun();
+        assertThat(attempt).isEqualTo(e.aAttempt); // independent identity sequences deliberately collide
+        assertThat(h.ok(h.pupil,e.request(false,Action.READ_OWN_ATTEMPT)).path("status").asText()).isEqualTo("FINAL");
+        assertThat(own(q,attempt).path("status").asText()).isEqualTo("IN_PROGRESS");
+        denied(send("GET",h.pupil,e.request(false,Action.READ_DELIVERY),"/own-attempts/"+e.aAttempt,null));
+        denied(send("POST",h.pupil,e.request(false,Action.READ_DELIVERY),"/own-attempts",body(op())));
+        assertThat(send("POST",h.pupil,q,"/own-attempts",body(op())).statusCode()).isEqualTo(403);
+        assertThat(f.request("POST",h.base(q).replace("evaluation-reads","evaluation-writes")+"/own-attempts",h.pupil,body(op())).statusCode()).isEqualTo(403);
+        denied(send("GET",h.pupil,e.legacy(Action.READ_DELIVERY),"/own-attempts/"+e.legacyAttempt,null));
+        assertThat(count("select count(*) from evaluation_attempts where evaluation_id=?",q.evaluationId())).isZero();
+        assertThat(count("select count(*) from evaluation_assignments where evaluation_id=?",q.evaluationId())).isZero();
+        // A later simulator is never silently counted as an execution opportunity.
+        long rec=count("select id from t11b8_recipients where delivery_id=?",q.deliveryId());revisions.reserveFixtureAttempt(rec,op());resolve(q,null);
+        denied(send("GET",h.pupil,q,"/own-attempts/"+attempt,null));
+    }
+    @Test void institutionsAndSelectorsAreBilateralAndCannotChangeThePrincipal() throws Exception {
+        Request a=q,b=prepare(r.foreign,r.foreignClass,e.c.foreignEpisode,3,"ALL_AT_ONCE",false,Instant.now().plusSeconds(900));resolve(b,null);
+        long first=begin(a,op()).path("attemptId").asLong(),second=begin(b,op()).path("attemptId").asLong();
+        assertThat(own(a,first).path("attemptNumber").asInt()).isEqualTo(1);assertThat(own(b,second).path("attemptNumber").asInt()).isEqualTo(1);
+        for(Request bad:List.of(e.changed(a,r.foreign,a.classId(),a.evaluationId(),a.deliveryId(),a.revisionId(),f.student.getId(),null),
+          e.changed(a,a.institutionId(),r.foreignClass,a.evaluationId(),a.deliveryId(),a.revisionId(),f.student.getId(),null),
+          e.changed(a,a.institutionId(),a.classId(),b.evaluationId(),a.deliveryId(),a.revisionId(),f.student.getId(),null),
+          e.changed(a,a.institutionId(),a.classId(),a.evaluationId(),b.deliveryId(),a.revisionId(),f.student.getId(),null),
+          e.changed(a,a.institutionId(),a.classId(),a.evaluationId(),a.deliveryId(),b.revisionId(),f.student.getId(),null)))
+            denied(send("GET",h.pupil,bad,"/own-attempts/"+first,null));
+        denied(send("GET",h.peer,a,"/own-attempts/"+first+"?recipientAccountId="+f.student.getId()+"&role=DOCENTE",null));
+        denied(send("GET",h.teacher,a,"/own-attempts/"+first,null));
+        var metadata=ok(send("GET",h.admin,a,"?recipientAccountId="+f.student.getId(),null));
+        assertThat(metadata.path("projection").asText()).isEqualTo("SUPERVISION_METADATA");assertThat(metadata.toString()).doesNotContain("questions","PRIVATE-F-");
+        r.institutions.transitionMembership(r.member,InstitutionMembership.Status.SUSPENDED,Instant.now());
+        denied(send("GET",h.pupil,a,"/own-attempts/"+first,null));own(b,second);
+    }
+    @Test void oneByOnePreservesCursorAndIgnoresSubmissionPayload() throws Exception {
+        q=prepare(r.institution,r.classId,r.episode,3,"ONE_BY_ONE",false,Instant.now().plusSeconds(900));resolve(q,null);long a=begun();
+        denied(send("POST",h.pupil,q,"/own-attempts/"+a+"/answers",body(op(),"answer",answer(q,18,31L,null))));
+        denied(send("POST",h.pupil,q,"/own-attempts/"+a+"/answers",body(op(),"answer",answer(q,17,null,"  "))));
+        UUID key=op();var result=save(q,a,key,17,null,"Required");assertThat(save(q,a,key,17,null,"Required")).isEqualTo(result);
+        denied(send("POST",h.pupil,q,"/own-attempts/"+a+"/answers",body(op(),"answer",answer(q,17,null,"Backwards"))));
+        save(q,a,op(),18,31L,null);var before=own(q,a);submit(q,a,op(),List.of(answer(q,17,null,"Ignored"),answer(q,999,999L,null)));
+        var after=own(q,a);assertThat(after.path("currentQuestionIndex").asInt()).isEqualTo(2);assertThat(after.path("questionOrder")).isEqualTo(before.path("questionOrder"));
+        assertThat(after.path("answers").toString()).contains("Required").doesNotContain("Ignored");
+    }
+    @Test void expiredDeadlineAcceptsOnlySavedContentAndStartReplayOutlivesItsWindow() throws Exception {
+        Instant due=Instant.now().plusSeconds(18);q=prepare(r.institution,r.classId,r.episode,3,"ALL_AT_ONCE",false,due);resolve(q,null);
+        UUID start=op();var receipt=begin(q,start);long a=receipt.path("attemptId").asLong();UUID saving=op();var saved=save(q,a,saving,18,31L,null);
+        Instant deadline=Instant.parse(own(q,a).path("deadline").asText());assertThat(deadline).isEqualTo(due.truncatedTo(java.time.temporal.ChronoUnit.MICROS));
+        long millis=Duration.between(Instant.now(),deadline.plusMillis(50)).toMillis();if(millis>0)Thread.sleep(millis);
+        var before=state();own(q,a);assertThat(state()).isEqualTo(before);
+        denied(send("POST",h.pupil,q,"/own-attempts/"+a+"/answers",body(op(),"answer",answer(q,17,null,"Late"))));
+        submit(q,a,op(),List.of(answer(q,17,null,"Late"),answer(q,18,32L,null)));
+        var actual=own(q,a);assertThat(actual.path("answers").toString()).doesNotContain("Late");
+        assertThat(ok(send("GET",h.teacher,q,review(a),null)).path("score").asInt()).isEqualTo(3);
+        assertThat(begin(q,start)).isEqualTo(receipt);assertThat(save(q,a,saving,18,31L,null)).isEqualTo(saved);
+        denied(send("POST",h.pupil,q,"/own-attempts",body(op())));
+    }
+    @Test void requiredOpenAndExactQuestionOptionAndRevisionValidationRollback() throws Exception {
+        long a=begun();var before=state();
+        denied(send("POST",h.pupil,q,"/own-attempts/"+a+"/submit",body(op())));
+        for(var value:List.of(answer(q,999,null,"Unknown"),answer(q,18,999L,null),answer(q,17,31L,"Mixed"),answer(q,18,31L,"Mixed")))
+            denied(send("POST",h.pupil,q,"/own-attempts/"+a+"/answers",body(op(),"answer",value)));
+        var wrong=answer(q,17,null,"Revision");wrong.put("revisionId",e.aRevision);denied(send("POST",h.pupil,q,"/own-attempts/"+a+"/answers",body(op(),"answer",wrong)));
+        assertThat(state()).isEqualTo(before);
+        submit(q,a,op(),List.of(answer(q,17,null,"Required")));assertThat(own(q,a).path("status").asText()).isEqualTo("PENDING_MANUAL_REVIEW");
+    }
+    @Test void coTeachingRevocationAdminAndSelfGradingRequireCurrentFaculties() throws Exception {
+        long a=begun();submit(q,a,op(),List.of(answer(q,17,null,"Original")));
+        for(String token:List.of(h.pupil,h.peer,h.admin)) {denied(send("GET",token,q,review(a),null));denied(send("POST",token,q,review(a)+"/answers/17",body(op(),"score",1)));}
+        var delegation=f.app.getBean(DelegationMaintenanceService.class);
+        long member=count("select id from institution_memberships where institution_id=? and account_id=?",r.institution,f.otherTeacher.getId());
+        Instant at=Instant.now();var co=delegation.planCoTeacher(r.institution,r.classId,member,at,r.until,at);delegation.transitionCoTeacher(co.id(),TeachingAssignment.Status.ACTIVE,Instant.now());
+        String token=f.login(f.otherTeacher);UUID grade=op();String body=body(grade,"score",1);
+        ok(send("GET",token,q,review(a),null));ok(send("POST",token,q,review(a)+"/answers/17",body));
+        assertThat(ok(send("GET",token,q,review(a),null)).path("openAnswers").get(0).path("reviewedByAccountId").asLong()).isEqualTo(f.otherTeacher.getId());
+        delegation.transitionCoTeacher(co.id(),TeachingAssignment.Status.ENDED,Instant.now());denied(send("POST",token,q,review(a)+"/answers/17",body));
+        r.institutions.grantRole(r.member,DOCENTE,r.from.plusSeconds(20),null);at=Instant.now();var self=delegation.planCoTeacher(r.institution,r.classId,r.member,at,r.until,at);delegation.transitionCoTeacher(self.id(),TeachingAssignment.Status.ACTIVE,Instant.now());resolve(q,null);
+        denied(send("GET",h.pupil,q,review(a),null));denied(send("POST",h.pupil,q,review(a)+"/close",body(op())));
+    }
+    @Test void globalExposureIncludesFutureEmptyUndatedDeliveriesAndAllExecutionGrades() throws Exception {
+        long future=revisions.assign(q.revisionId(),r.institution,r.otherClass,Instant.now().plusSeconds(600),null,op());
+        Request other=successor(q,r.classId,r.episode,100,"ALL_AT_ONCE",false);resolve(q,null);
+        long a=begun();submit(q,a,op(),List.of(answer(q,17,null,"First")));teacher(a,"/answers/17","score",2);teacher(a,"/close");
+        revisions.closeDelivery(q.deliveryId(),1,op());revisions.closeDelivery(other.deliveryId(),1,op());resolve(q,null);
+        denied(send("GET",h.pupil,q,"/own-attempts/"+a+"/correction",null));
+        revisions.closeDelivery(future,1,op());resolve(q,null);
+        var correction=ok(send("GET",h.pupil,q,"/own-attempts/"+a+"/correction",null));assertThat(correction.toString()).contains("Correct 0");
+        assertThat(correction.path("finalScore").decimalValue()).isEqualByComparingTo("8");
+        assertThat(count("select count(*) from t11b8_fixture_attempts where resource_id=?",resource(q))).isZero();
+    }
+    @Test void idempotenceBindsContentActorSessionAndNeverDuplicatesAdjustmentsOrClosures() throws Exception {
+        UUID start=op();long a=begin(q,start).path("attemptId").asLong();UUID key=op();save(q,a,key,17,null,"Saved");
+        assertThat(send("POST",h.pupil,q,"/own-attempts/"+a+"/answers",body(key,"answer",answer(q,17,null,"Changed"))).statusCode()).isEqualTo(409);
+        submit(q,a,op(),null);teacher(a,"/answers/17","score",2);
+        UUID add=op();String addition=body(add,"amount",-1,"reason","Bound");var result=ok(send("POST",h.teacher,q,review(a)+"/adjustments",addition));
+        assertThat(ok(send("POST",h.teacher,q,review(a)+"/adjustments",addition))).isEqualTo(result);assertThat(result.path("childId").asLong()).isEqualTo(1);
+        teacher(a,"/adjustments/1/void");teacher(a,"/close");assertThat(ok(send("POST",h.teacher,q,review(a)+"/adjustments",addition))).isEqualTo(result);
+        var principal=(SessionPrincipal)f.app.getBean(AccountSessionService.class).authenticate(h.pupil).getPrincipal();sql().update("update account_sessions set revoked_at=clock_timestamp() where id=?",principal.sessionId());
+        assertThat(send("POST",h.pupil,q,"/own-attempts",body(start)).statusCode()).isEqualTo(401);
+        assertThat(count("select count(*) from "+ctl+".operations where operation_id=?",add)).isEqualTo(1);
+    }
 }
