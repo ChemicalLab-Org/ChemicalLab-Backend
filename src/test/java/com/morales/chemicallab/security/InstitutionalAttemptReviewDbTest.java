@@ -257,14 +257,21 @@ class InstitutionalAttemptReviewDbTest {
     }
     @Test void finalSessionRevalidationRollsBackAlreadyFinishedJournalAndGrade() throws Exception {
         var principal=(SessionPrincipal)f.app.getBean(AccountSessionService.class).authenticate(teacher).getPrincipal();
-        sql().update("update account_sessions set expires_at=clock_timestamp()+interval '15 seconds' where id=?",principal.sessionId());
-        var before=state();String sessionBefore=sql().queryForObject(r.signature("account_sessions"),String.class);
+        var before=state();
         var service=f.app.getBean(InstitutionalAttemptReviewService.class);JdbcTemplate spy=spy(sql());
         var finished=new java.util.concurrent.atomic.AtomicBoolean();
         doAnswer(call->{Object value=call.callRealMethod();finished.set(true);
             long remaining=count("select greatest(0,ceil(extract(epoch from (expires_at-clock_timestamp()))*1000))::bigint from account_sessions where id=?",principal.sessionId());
+            assertThat(remaining).as("journal finished while the session was still valid").isPositive();
             Thread.sleep(remaining+50);return value;})
             .when(spy).queryForObject(contains(".finish_operation("),eq(Object.class),any(Object[].class));
+        // T02 binds the JWT expiration exactly to the persisted session. Issue a
+        // matching short-lived token after preparing the snapshot and instrumentation.
+        sql().update("update account_sessions set expires_at=date_trunc('second',clock_timestamp())+interval '20 seconds' where id=?",principal.sessionId());
+        var session=f.app.getBean(AccountSessionRepository.class).findById(principal.sessionId()).orElseThrow();
+        teacher=f.app.getBean(JwtService.class).generateToken(f.otherTeacher,session);
+        assertThat(f.app.getBean(AccountSessionService.class).authenticate(teacher).getPrincipal()).isEqualTo(principal);
+        String sessionBefore=sql().queryForObject(r.signature("account_sessions"),String.class);
         ReflectionTestUtils.setField(service,"jdbc",spy);
         try{assertThat(post(teacher,"/answers/"+answer,body(UUID.randomUUID(),"score",1)).statusCode()).isEqualTo(401);}
         finally{ReflectionTestUtils.setField(service,"jdbc",sql());}
