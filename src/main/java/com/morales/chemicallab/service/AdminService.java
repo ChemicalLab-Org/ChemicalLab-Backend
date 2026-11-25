@@ -164,6 +164,7 @@ public class AdminService {
             case ADMINISTRADOR -> createAdministrator(request, encoded);
             case DOCENTE -> createTeacher(request, encoded);
             case ESTUDIANTE -> createStudent(request, encoded);
+            case INSTITUCIONAL -> throw new IllegalArgumentException("Usa el alta institucional.");
         };
 
         return new AdminUserCreatedResponse(toAdminUserResponse(createdUser), temporaryPassword);
@@ -510,6 +511,7 @@ public class AdminService {
             case ADMINISTRADOR -> "Administrador";
             case DOCENTE -> "Docente";
             case ESTUDIANTE -> "Estudiante";
+            case INSTITUCIONAL -> "Institucional";
         };
         return new AdminActivityItem(user.getUsername(), roleLabel, user.getCreatedAt());
     }

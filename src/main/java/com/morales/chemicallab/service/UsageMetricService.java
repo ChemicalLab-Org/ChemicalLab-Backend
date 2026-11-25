@@ -74,8 +74,7 @@ public class UsageMetricService {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordEvent(String username, RecordUsageEventRequest request) {
-        if ((request.module() == UsageModule.WHITEBOARD || request.eventType() == UsageEventType.WHITEBOARD_SESSION_JOINED)
-                && institutionalBoards.installed()) {
+        if (institutionalBoards.installed()) {
             throw EvaluationRuntime.denied();
         }
         UserAccount user = userAccountRepository.findByUsername(username)

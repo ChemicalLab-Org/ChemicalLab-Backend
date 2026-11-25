@@ -99,7 +99,8 @@ public class AuthService {
                 profileNames.lastNames(),
                 user.getRole(),
                 user.getActive(),
-                user.getTemporaryPassword()
+                user.getTemporaryPassword(),
+                false
         );
     }
 
@@ -159,7 +160,8 @@ public class AuthService {
                 profileNames.lastNames(),
                 user.getRole(),
                 user.getActive(),
-                user.getTemporaryPassword()
+                user.getTemporaryPassword(),
+                false
         );
     }
 

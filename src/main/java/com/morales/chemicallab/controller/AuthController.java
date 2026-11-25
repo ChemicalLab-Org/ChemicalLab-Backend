@@ -24,11 +24,13 @@ public class AuthController {
     private final AuthService authService;
     private final com.morales.chemicallab.security.audit.AuditRejections audit;
     private final com.morales.chemicallab.security.AuthenticationLimits limits;
+    private final com.morales.chemicallab.service.WhiteboardRuntimeContract institutionalBoards;
 
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request) {
         var budget = limits.login(request);
-        try { return authService.login(request, budget); }
+        boolean institutional = institutionalBoards.installed();
+        try { return authService.login(request, budget).withInstitutionalInstallation(institutional); }
         catch (com.morales.chemicallab.exception.LoginRejectedException ex) {
             if(org.springframework.web.context.request.RequestContextHolder.getRequestAttributes()
                     instanceof org.springframework.web.context.request.ServletRequestAttributes attributes)
@@ -40,7 +42,7 @@ public class AuthController {
 
     @GetMapping("/me")
     public CurrentUserResponse currentUser() {
-        return authService.getCurrentUser();
+        return authService.getCurrentUser().withInstitutionalInstallation(institutionalBoards.installed());
     }
 
     @PatchMapping("/change-temporary-password")

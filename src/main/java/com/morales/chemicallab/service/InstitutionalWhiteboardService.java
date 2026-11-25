@@ -160,6 +160,14 @@ public class InstitutionalWhiteboardService {
                     where e.institution_id=? and e.class_id=? and e.membership_id=? and e.account_id=? and
                     """ + EPISODE, Long.class, scope.institution(), scope.clazz(), membership, actor.userId());
                 require(episodes.size() == 1);
+                if (actor.role() == Role.INSTITUCIONAL) {
+                    // Satisfy the T03 participant FK on first use. Access always follows the scoped episode.
+                    jdbc.update("""
+                        insert into student_profiles(user_id,teacher_id,student_code,names,last_names,grade,section)
+                        values(?,?,'I-'||?,'Participante','#'||?,'','')
+                        on conflict(user_id) do nothing
+                        """, actor.userId(), board.getTeacher().getId(), actor.userId(), actor.userId());
+                }
                 var student = students.findByUser_Id(actor.userId()).orElseThrow(EvaluationRuntime::denied);
                 begin(actor, scope, membership, id, target.board(), Action.JOIN, hash);
                 participant = participants.save(WhiteboardParticipant.builder().session(board).student(student).build());

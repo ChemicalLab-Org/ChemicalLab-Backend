@@ -12,12 +12,14 @@ import java.util.List;
 public class TechnicalRetentionService {
     private final JdbcTemplate jdbc;
     private final AuditLogService audit;
+    private final WhiteboardRuntimeContract institutionalBoards;
     @Value("${app.retention.delete-enabled:false}") private boolean enabled;
     @Value("${app.retention.batch-size:500}") private int batchSize;
     @Value("${app.retention.minimum-age-days:180}") private int minimumAgeDays;
     public record Result(boolean simulation,boolean coordinated,int candidates,int deleted,List<Long> ids,LocalDateTime cutoff){}
     @Transactional(timeout=15)
     public Result batch(LocalDateTime cutoff,boolean simulation) {
+        if (institutionalBoards.installed()) throw InstitutionalAdministration.denied();
         if(batchSize<1 || batchSize>1000 || minimumAgeDays<1 || cutoff==null || cutoff.isAfter(LocalDateTime.now().minusDays(minimumAgeDays)))
             throw new IllegalArgumentException("Retención: lote 1–1000 y fecha anterior al plazo mínimo configurado.");
         if(!simulation && !enabled) throw new IllegalArgumentException("La eliminación técnica está desactivada. Usa simulación.");

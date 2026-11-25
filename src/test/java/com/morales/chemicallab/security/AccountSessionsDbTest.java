@@ -164,7 +164,12 @@ class AccountSessionsDbTest {
         String download = "/api/concepts/" + concept.getId() + "/materials/" + material.getId() + "/download";
         for (UserAccount user : List.of(admin, teacher, student)) {
             String token = login(user);
-            String prefix = switch (user.getRole()) { case ADMINISTRADOR -> "admin"; case DOCENTE -> "teacher"; case ESTUDIANTE -> "student"; };
+            String prefix = switch (user.getRole()) {
+                case ADMINISTRADOR -> "admin";
+                case DOCENTE -> "teacher";
+                case ESTUDIANTE -> "student";
+                case INSTITUCIONAL -> throw new IllegalStateException("Legacy fixture expected");
+            };
             for (String path : List.of("/api/auth/me", "/api/chemistry/catalog/metals", "/api/concepts/" + prefix,
                     "/api/evaluations/" + prefix, "/api/whiteboards/" + prefix + (prefix.equals("student") ? "/active" : ""), download)) {
                 assertStatus("GET", path, token, null, 200);
