@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -81,6 +82,11 @@ class InstitutionalEvaluationAssignmentDbTest {
         assertThat(f.count("select count(*) from t11b10_approvals")).isEqualTo(oldApprovals);
         assertThat(f.sql().queryForObject("select t11p05_fresh(?)", Boolean.class, oldProposal)).isFalse();
         assertThat(f.sql().queryForObject("select " + control + ".fresh(?)", Boolean.class, oldProposal)).isTrue();
+        new TransactionTemplate(f.f.app.getBean(PlatformTransactionManager.class)).executeWithoutResult(tx -> {
+            f.revisions.closeDelivery(next.deliveryId(), 1, f.op());
+            assertThat(f.sql().queryForObject("select " + control + ".fresh(?)", Boolean.class, oldProposal)).isFalse();
+            tx.setRollbackOnly();
+        });
         f.denied(f.send("GET", f.h.pupil, next, "", null));
         f.denied(f.send("POST", f.h.pupil, next, "/own-attempts", f.body(f.op())));
         assertThat(f.own(original, attempt).path("attemptNumber").intValue()).isEqualTo(1);
@@ -139,6 +145,13 @@ class InstitutionalEvaluationAssignmentDbTest {
         ObjectNode bCommand = command(2, f.e.c.foreignEpisode);
         status(404, post(aPath, f.h.teacher, aCommand));
         f.h.activation.put(FLAG, true);
+        var environment = (ConfigurableEnvironment) f.f.app.getEnvironment();
+        environment.setActiveProfiles("prod");
+        try {
+            status(404, post(aPath, f.h.teacher, aCommand));
+        } finally {
+            environment.setActiveProfiles("test");
+        }
         status(401, post(aPath, null, aCommand));
         status(403, post(aPath, f.h.pupil, aCommand));
         status(403, post(aPath, f.h.admin, aCommand));
@@ -157,10 +170,11 @@ class InstitutionalEvaluationAssignmentDbTest {
         status(400, post(aPath, f.h.teacher, command(2)));
         status(400, post(aPath, f.h.teacher, command(2, java.util.stream.LongStream.rangeClosed(1, 101).toArray())));
         status(400, post(aPath, f.h.teacher, aCommand.deepCopy().put("accountId", f.f.student.getId())));
+        status(413, http("POST", aPath, f.h.teacher, "{\"x\":\"" + "a".repeat(1_050_000) + "\"}"));
         status(400, post(aPath, f.h.teacher, aCommand.deepCopy().put("startsAt", "2026-11-22T00:00:00.1234567Z")));
         status(409, post(aPath, f.h.teacher, command(1, f.r.episode)));
 
-        var extra = f.f.account(Role.ESTUDIANTE, null, "3", "A");
+        var extra = f.f.account(Role.ESTUDIANTE, f.f.teacher, "3", "A");
         long extraMember = f.r.membership(a.institutionId(), extra.getId(), ESTUDIANTE);
         Instant now = Instant.now();
         long expired = enroll(a, extraMember, now.minusSeconds(1000), now.minusSeconds(500));
@@ -192,8 +206,11 @@ class InstitutionalEvaluationAssignmentDbTest {
         f.denied(f.send("GET", f.h.pupil, target(a, a.classId(), assigned.path("deliveryId").longValue()), "", null));
         var draft = f.ok(http("POST", authoring(a) + "/successor", f.h.teacher, f.body(f.op(), "expectedVersion", 2)));
         var successor = authoring(a).replace("/revisions/" + a.revisionId(), "/revisions/" + draft.path("revisionId").longValue());
-        f.ok(http("GET", successor, f.h.teacher, null));
-        f.ok(http("POST", successor + "/publish", f.h.teacher, f.body(f.op(), "expectedVersion", 1)));
+        var copy = f.ok(http("GET", successor, f.h.teacher, null));
+        var payload = (ObjectNode) copy.get("payload");
+        ((ObjectNode) payload.get("resource")).put("title", "Revised while assignment awaits reconciliation");
+        f.ok(http("PUT", successor, f.h.teacher, f.body(f.op(), "expectedVersion", 1, "payload", payload)));
+        f.ok(http("POST", successor + "/publish", f.h.teacher, f.body(f.op(), "expectedVersion", 2)));
         assertThat(f.ok(post(aPath, f.h.teacher, both))).isEqualTo(assigned);
     }
 

@@ -49,8 +49,11 @@ BEGIN
    -- The supplied manifest can be the pre-write image. Heads and references always come from the live database.
    CREATE FUNCTION @h@.stamp(evaluation bigint,institution bigint,manifest jsonb) RETURNS jsonb LANGUAGE plpgsql STABLE AS $fn$
    DECLARE v t11b10_versions%ROWTYPE; p t11b10_proposals%ROWTYPE; approval record; refs text;
+     heads jsonb:=t11p05_heads(manifest);
    BEGIN
     v:=@h@.root_head(evaluation);
+    IF EXISTS(SELECT 1 FROM jsonb_array_elements(heads) x JOIN t11b10_versions existing ON existing.id=(x->>'id')::bigint
+      WHERE existing.proposal_id IS DISTINCT FROM v.proposal_id) THEN RETURN NULL;END IF;
     IF v.id IS NOT NULL THEN
      IF v.resolution->>'scope' IS DISTINCT FROM 'INSTITUTION'
        OR v.resolution->'institutionId' IS DISTINCT FROM to_jsonb(institution)
@@ -67,7 +70,7 @@ BEGIN
      refs:=@g@.digest(t11p05_references(p.proposed,p.root));
     END IF;
     RETURN jsonb_build_object('rootVersion',v.id,'manifest',@g@.digest(manifest),
-      'heads',@g@.digest(t11p05_heads(manifest)),'references',refs);
+      'heads',@g@.digest(heads),'references',refs);
    END $fn$;
 
    CREATE FUNCTION @h@.predecessor(evaluation bigint,institution bigint,manifest jsonb,stamp jsonb,base_allowed boolean)
@@ -141,7 +144,8 @@ BEGIN
     IF NEW.action='ASSIGN' THEN
      IF NOT EXISTS(SELECT 1 FROM t11b8_deliveries d WHERE d.id=NEW.delivery_id AND d.resource_id=NEW.resource_id
         AND d.institution_id=NEW.institution_id AND d.class_id=NEW.class_id AND d.revision_id=NEW.revision_id
-        AND d.operation_id=NEW.operation_id AND d.xmin=xid_now)
+        AND d.operation_id=NEW.operation_id AND d.status='OPEN' AND d.version=1 AND d.xmin=xid_now
+        AND d.starts_at=(NEW.request->>'startsAt')::timestamptz AND d.due_at=(NEW.request->>'dueAt')::timestamptz)
       THEN RAISE EXCEPTION 'T12-H one atomic delivery required';END IF;
      SELECT jsonb_agg(jsonb_build_object('source_table',src,'source_pk',jsonb_build_object('id',id))) INTO keys FROM (
       SELECT 't11b8_deliveries' src,NEW.delivery_id id
@@ -164,8 +168,10 @@ BEGIN
     allowed:=keys||new_rows;
     after_state:=t11p05_manifest(@g@.anchor(NEW.evaluation_id));
     expected:=CASE WHEN NEW.action IN ('EDIT','PUBLISH') THEN 1 ELSE 0 END;
-    IF (SELECT count(*) FROM jsonb_array_elements(before_state) x WHERE allowed @> jsonb_build_array(x-ARRAY['source_version','source_checksum','snapshot','classification','reason','root']))<>expected
-      OR (SELECT count(*) FROM jsonb_array_elements(after_state) x WHERE allowed @> jsonb_build_array(x-ARRAY['source_version','source_checksum','snapshot','classification','reason','root']))<>jsonb_array_length(allowed)
+    IF (SELECT count(*) FROM jsonb_array_elements(before_state) x
+         WHERE EXISTS(SELECT 1 FROM jsonb_array_elements(allowed) k WHERE x @> k))<>expected
+      OR (SELECT count(*) FROM jsonb_array_elements(after_state) x
+          WHERE EXISTS(SELECT 1 FROM jsonb_array_elements(allowed) k WHERE x @> k))<>jsonb_array_length(allowed)
       OR (SELECT coalesce(jsonb_agg(x ORDER BY ord),'[]') FROM jsonb_array_elements(before_state) WITH ORDINALITY m(x,ord)
           WHERE NOT EXISTS(SELECT 1 FROM jsonb_array_elements(allowed) k WHERE x @> k))
          IS DISTINCT FROM
@@ -223,6 +229,10 @@ BEGIN
      'version',d.version,'startsAt',d.starts_at,'dueAt',d.due_at,'recipientCount',admission_count);
     INSERT INTO @h@.receipt_commands VALUES(op,'ASSIGN',(req->>'actor')::bigint,institution,clazz,evaluation,resource,revision,
       d.id,manifest,req,result,audit);
+    observed:=clock_timestamp();
+    IF due<=observed THEN RAISE EXCEPTION 'T12-H assignment window ended' USING ERRCODE='P7809';END IF;
+    IF (SELECT count(*) FROM @h@.eligible_enrollments(institution,clazz,ids,observed))<>admission_count
+     THEN RAISE EXCEPTION 'T12-H admission expired' USING ERRCODE='P7803';END IF;
     RETURN result;
    END $fn$;
 
