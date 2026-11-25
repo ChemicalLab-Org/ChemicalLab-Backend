@@ -2,6 +2,7 @@ package com.morales.chemicallab.repository;
 import com.morales.chemicallab.dto.*;
 import com.morales.chemicallab.entity.*;
 import com.morales.chemicallab.security.storage.QueryLimits;
+import com.morales.chemicallab.service.LegacyEvaluationVisibility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -13,15 +14,17 @@ import java.util.*;
 public class SupervisionQueryRepository {
     private final NamedParameterJdbcTemplate jdbc;
     private final QueryLimits limits;
+    private final LegacyEvaluationVisibility legacyVisibility;
     public SupervisionSummaryResponse summary() {
+        String visible = legacyVisibility.supervisionPredicate();
         return jdbc.queryForObject("""
             select (select count(*) from concept_contents) concepts,
             (select count(*) from concept_contents where status='PUBLISHED') published_concepts,
-            (select count(*) from evaluations) evaluations,(select count(*) from evaluations where status='PUBLISHED') published_evaluations,
-            (select count(*) from (select created_by_teacher_id from concept_contents union select created_by_teacher_id from evaluations) x) teachers,
+            (select count(*) from evaluations r where %1$s) evaluations,(select count(*) from evaluations r where r.status='PUBLISHED' and %1$s) published_evaluations,
+            (select count(*) from (select created_by_teacher_id from concept_contents union select created_by_teacher_id from evaluations r where %1$s) x) teachers,
             (select count(*) from (select grade,section from concept_assignments where active union select grade,section from evaluation_assignments where active) x) sections,
             (select count(*) from evaluation_attempts where status in ('SUBMITTED','GRADED')) submitted
-            """,Map.of(),(r,n)->new SupervisionSummaryResponse(r.getLong(1),r.getLong(2),r.getLong(3),r.getLong(4),r.getLong(5),r.getLong(6),r.getLong(7)));
+            """.formatted(visible),Map.of(),(r,n)->new SupervisionSummaryResponse(r.getLong(1),r.getLong(2),r.getLong(3),r.getLong(4),r.getLong(5),r.getLong(6),r.getLong(7)));
     }
     private String where(boolean evaluation,Map<String,Object> p,String search,String status,String category,String section,boolean withAttempts) {
         String where=" where true";search=QueryLimits.search(search);
@@ -61,7 +64,8 @@ public class SupervisionQueryRepository {
     }
     public QueryPage<SupervisionEvaluationResponse> evaluations(int page,int size,String search,String status,String section,boolean withAttempts) {
         limits.page(page,size);var p=new HashMap<String,Object>();
-        String from=" from evaluations r join teacher_profiles t on t.id=r.created_by_teacher_id"+where(true,p,search,status,null,section,withAttempts);
+        String from=" from evaluations r join teacher_profiles t on t.id=r.created_by_teacher_id"
+            +where(true,p,search,status,null,section,withAttempts)+" and "+legacyVisibility.supervisionPredicate();
         long total=jdbc.queryForObject("select count(*)"+from,p,Long.class);p.put("limit",size);p.put("offset",(long)page*size);
         var ids=jdbc.queryForList("select r.id"+from+" order by r.created_at desc nulls last,r.id desc limit :limit offset :offset",p,Long.class);
         if(ids.isEmpty())return QueryPage.of(List.of(),page,size,total);

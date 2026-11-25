@@ -18,6 +18,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 
 import com.morales.chemicallab.security.PasswordPolicy;
 import java.util.ArrayList;
@@ -50,6 +51,7 @@ public class AdminService {
     private final PasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
     private final AdminQueryRepository queries;
+    private final LegacyEvaluationVisibility legacyVisibility;
 
     // Tipo de recurso afectado en los eventos de trazabilidad de gestión de usuarios.
     private static final String TARGET_USER = "UserAccount";
@@ -58,6 +60,7 @@ public class AdminService {
     // RESUMEN / MÉTRICAS
     // =========================================================================
 
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public AdminSummaryResponse getSummary() {
         long totalAdmins = userAccountRepository.countByRole(Role.ADMINISTRADOR);
         long totalTeachers = userAccountRepository.countByRole(Role.DOCENTE);
@@ -72,7 +75,9 @@ public class AdminService {
         // Métricas complementarias de módulos. Si un módulo no tiene datos, el conteo es 0.
         long totalConcepts = conceptContentRepository.count();
         long publishedConcepts = conceptContentRepository.countByStatus(ConceptStatus.PUBLISHED);
-        long totalEvaluations = evaluationRepository.count();
+        var excludedEvaluations = legacyVisibility.excludedIds();
+        long totalEvaluations = excludedEvaluations.isEmpty() ? evaluationRepository.count()
+                : evaluationRepository.countByIdNotIn(excludedEvaluations);
         long publishedEvaluations = evaluationRepository.countByStatus(EvaluationStatus.PUBLISHED);
         long submittedAttempts = evaluationAttemptRepository.countByStatusIn(
                 List.of(AttemptStatus.SUBMITTED, AttemptStatus.GRADED));
@@ -415,12 +420,16 @@ public class AdminService {
     // ACTIVIDAD RECIENTE (derivada de registros existentes)
     // =========================================================================
 
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public AdminActivityResponse getActivity() {
         List<AdminActivityItem> recentUsers = userAccountRepository.findTop8ByOrderByCreatedAtDesc().stream()
                 .map(this::toUserActivityItem)
                 .toList();
 
-        List<AdminActivityItem> recentEvaluations = evaluationRepository.findTop5ByOrderByCreatedAtDesc().stream()
+        var excludedEvaluations = legacyVisibility.excludedIds();
+        var evaluations = excludedEvaluations.isEmpty() ? evaluationRepository.findTop5ByOrderByCreatedAtDesc()
+                : evaluationRepository.findTop5ByIdNotInOrderByCreatedAtDesc(excludedEvaluations);
+        List<AdminActivityItem> recentEvaluations = evaluations.stream()
                 .map(e -> new AdminActivityItem(e.getTitle(), teacherFullName(e.getCreatedByTeacher()), e.getCreatedAt()))
                 .toList();
 

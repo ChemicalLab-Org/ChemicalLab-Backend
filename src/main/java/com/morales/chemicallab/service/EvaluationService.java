@@ -65,6 +65,7 @@ public class EvaluationService {
     private final AuditLogService auditLogService;
     private final EvaluationAccessPolicy accessPolicy;
     private final EvaluationAccessLock accessLock;
+    private final LegacyEvaluationVisibility legacyVisibility;
 
     private static final String TARGET_EVALUATION = "Evaluation";
 
@@ -145,8 +146,11 @@ public class EvaluationService {
 
     public List<EvaluationResponse> listTeacherEvaluations(String username) {
         TeacherProfile teacher = requireTeacher(username);
-        return evaluationRepository.findByCreatedByTeacherOrderByCreatedAtDesc(teacher)
+        var evaluations = evaluationRepository.findByCreatedByTeacherOrderByCreatedAtDesc(teacher);
+        var excluded = new java.util.HashSet<>(legacyVisibility.excludedIds());
+        return evaluations
                 .stream()
+                .filter(evaluation -> !excluded.contains(evaluation.getId()))
                 .map(this::toEvaluationResponse)
                 .toList();
     }
@@ -875,6 +879,7 @@ public class EvaluationService {
     public AdminEvaluationDetailResponse getAdminEvaluationDetail(Long evaluationId) {
         Evaluation evaluation = evaluationRepository.findById(evaluationId)
                 .orElseThrow(() -> new EntityNotFoundException("La evaluación no existe."));
+        legacyVisibility.requireVisible(evaluationId);
         return toAdminEvaluationDetailResponse(evaluation);
     }
 
@@ -2003,6 +2008,7 @@ public class EvaluationService {
     private Evaluation requireOwnedEvaluation(Long evaluationId, TeacherProfile teacher) {
         Evaluation evaluation = evaluationRepository.findById(evaluationId)
                 .orElseThrow(() -> new EntityNotFoundException("La evaluación no existe."));
+        legacyVisibility.requireVisible(evaluationId);
         if (!evaluation.getCreatedByTeacher().getId().equals(teacher.getId())) {
             throw new IllegalArgumentException("No tienes permiso para modificar esta evaluación.");
         }

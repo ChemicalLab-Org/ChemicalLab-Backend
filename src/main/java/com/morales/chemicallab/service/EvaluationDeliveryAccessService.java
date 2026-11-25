@@ -347,7 +347,8 @@ public class EvaluationDeliveryAccessService {
             require(rows.size() == 1);
             var row = rows.get(0);
             require(freshness.computeIfAbsent(number(row, "proposal_id"), proposal ->
-                    (exists("select t11p05_fresh(?)", proposal) || (bridgeInstalled() && exists("select "+control()+".fresh(?)",proposal)))));
+                    (exists("select t11p05_fresh(?)", proposal) || (bridgeInstalled() && exists("select "+control()+".fresh(?)",proposal))
+                        || (q.contract() == Contract.NEW && authoringFresh(proposal)))));
             if(source.equals("evaluations")) {
                 rootVersion=number(row,"id");rootProposal=number(row,"proposal_id");
             }
@@ -362,6 +363,11 @@ public class EvaluationDeliveryAccessService {
             return new Resolved(((Number) row.get("id")).longValue(),
                     resolution.has("enrollmentId") ? resolution.get("enrollmentId").longValue() : null);
         }
+    }
+    private boolean authoringFresh(long proposal) {
+        String schema = jdbc.queryForObject("select current_schema()", String.class);
+        String authoring = InstitutionalFixtureUnit.authoringControl(jdbc, schema);
+        return authoring != null && exists("select " + authoring + ".fresh(?)", proposal);
     }
     private String control() {
         String schema=jdbc.queryForObject("select current_schema()",String.class);

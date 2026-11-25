@@ -135,6 +135,7 @@ class EvaluationServiceTest {
     @org.mockito.Spy
     private EvaluationAccessPolicy accessPolicy = new EvaluationAccessPolicy(java.time.Clock.system(EvaluationAccessPolicy.ACADEMIC_ZONE));
     @Mock private EvaluationAccessLock accessLock;
+    @Mock private LegacyEvaluationVisibility legacyVisibility;
 
     @InjectMocks
     private EvaluationService service;

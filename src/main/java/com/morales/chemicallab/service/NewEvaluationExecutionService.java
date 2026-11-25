@@ -164,7 +164,9 @@ public class NewEvaluationExecutionService {
             Action mutation=switch(operation){case "START"->Action.START_OWN_ATTEMPT;case "SAVE"->Action.SAVE_OWN_ANSWER;case "SUBMIT"->Action.SUBMIT_OWN_ATTEMPT;default->Action.GRADE_ATTEMPT;};
             access.authorizeExecution(actor,new Request(Contract.NEW,mutation,institution,clazz,evaluation,delivery,revision,q.recipientAccountId(),id));
             if(teacher && !Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from teacher_profiles where user_id=?)",Boolean.class,actor.userId())))throw denied();
-            jdbc.queryForObject("select "+ctl+".begin_operation(?,?::jsonb,?::jsonb)",Object.class,key,encoded,bound.get("context"));
+            String authoring = InstitutionalFixtureUnit.authoringControl(jdbc, "t03_" + ctl.substring(5));
+            String begin = authoring == null ? ctl + ".begin_operation" : authoring + ".begin_execution";
+            jdbc.queryForObject("select " + begin + "(?,?::jsonb,?::jsonb)", Object.class, key, encoded, bound.get("context"));
             long target;String previousStatus=id==null?null:(String)attempt(ctl,id).get("status");
             if(operation.equals("START"))target=start(ctl,q,bound,content);
             else {target=id;mutate(ctl,q,attempt(ctl,id),bound,content,operation,child,answer,submitted,score,amount,text,actor.userId());}

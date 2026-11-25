@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Collection;
 
 @Repository
 public interface EvaluationRepository extends JpaRepository<Evaluation, Long> {
@@ -18,4 +19,6 @@ public interface EvaluationRepository extends JpaRepository<Evaluation, Long> {
     long countByStatus(EvaluationStatus status);
 
     List<Evaluation> findTop5ByOrderByCreatedAtDesc();
+    List<Evaluation> findTop5ByIdNotInOrderByCreatedAtDesc(Collection<Long> excluded);
+    long countByIdNotIn(Collection<Long> excluded);
 }
