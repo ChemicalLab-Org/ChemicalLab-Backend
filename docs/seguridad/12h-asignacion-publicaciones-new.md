@@ -1,33 +1,43 @@
-# T12-H propuesto — Asignación institucional de publicaciones NEW
+# T12-H — Asignación institucional de publicaciones NEW
 
-Estado local. Este alcance se propone a partir de los contratos versionados. El repositorio consultado no contiene una definición previa de T12-H. Este documento prepara el bloque. T12 integral y etapa 4 siguen abiertos.
+T12-H crea una entrega B8 y sus destinatarios iniciales en un fixture institucional. Parte de G revisado localmente en `aa052d6a2c96b3a1ac25c948f8513e773cc64e6d`. `develop` permanece en T12-F, `2169515779c460249ad7c973625e0019a8c81125`. T12 integral y etapa 4 siguen abiertos.
 
-## Alcance
+## Comando HTTP
 
-La asignación es el siguiente paso del recorrido de evaluaciones NEW. G deja una publicación inmutable en B8 y F ejecuta intentos vinculados a una entrega y un destinatario exactos. G deja la creación de esa entrega y sus destinatarios en el mantenedor interno. T11-D P01/P03/P05 asigna a T12 la autorización efectiva de facultades, entregas y adopción de contexto. B6 y B8 conservan ASSIGN separado de EDIT_DRAFT y PUBLISH. [T11-D](../arquitectura/11d-cierre-preparacion-modelo.md) · [B6](../arquitectura/11b6-docencia-delegaciones.md) · [B8](../arquitectura/11b8-revisiones-academicas.md) · [T12-G](12g-autoria-publicacion-new.md) · [T12-F](12f-ejecucion-evaluaciones-new.md)
+`POST /api/institutions/{institutionId}/classes/{classId}/evaluation-assignments/NEW/v1/evaluations/{evaluationId}/revisions/{revisionId}/deliveries`
 
-- Incorporar un único comando institucional de ensayo. Crea una entrega B8 para una revisión académica NEW publicada y una clase exacta. Admite en la misma transacción un conjunto explícito y acotado de episodios vigentes de esa clase.
-- Aceptar como selectores evaluación, revisión, institución y clase en ruta, y un UUID, la versión esperada de publicación, las fechas UTC y los IDs de episodio en el cuerpo. Proponer un máximo de 100 episodios distintos por comando, con al menos uno. El servidor resuelve cuenta, matrícula, vigencia de ESTUDIANTE, institución y clase a partir de las filas propias. Devuelve el identificador, la versión y las fechas de la entrega y el número de destinatarios.
-- Exigir sesión T02, DOCENTE actual y asignación RESPONSABLE o CO_DOCENTE vigente en la clase de destino. Para el recurso propio, verificar la autoría original y la pertenencia institucional. Para un recurso ajeno, exigir además una delegación NEW de ASSIGN exacta y vigente. EDIT_DRAFT, PUBLISH y el rol ADMIN_INSTITUCION por sí solo carecen de facultad de asignación. La asignación de destino se comprueba también cuando existe delegación.
-- Conservar la revisión publicada exacta, la ventana inmutable de B8, revisiones y entregas previas, y la raíz F09 por evaluación/cuenta. Aplicar la unicidad revisión/clase y las condiciones de disponibilidad y cierre de B8. La asignación y admisión no consumen ni restituyen intentos.
-- Confirmar entrega, destinatarios, historia, cuotas y SUCCESS T08 en una transacción. Vincular los reintentos al actor, alcance y contenido normalizado. Revalidar autorización antes de devolver el recibo durable. El UUID incompatible, una versión obsoleta y la segunda escritura concurrente para la misma revisión/clase deben fallar sin efecto adicional.
+```json
+{
+  "operationId": "fb003ff6-f7c5-4a62-a81b-e9c4150afa7a",
+  "expectedRevisionVersion": 2,
+  "startsAt": "2026-11-25T15:30:00Z",
+  "dueAt": "2026-11-25T17:30:00Z",
+  "enrollmentIds": [82, 97]
+}
+```
 
-Se propone la ruta `POST /api/institutions/{institutionId}/classes/{classId}/evaluation-assignments/NEW/v1/evaluations/{evaluationId}/revisions/{revisionId}/deliveries`. El cuerpo usa `operationId`, `expectedRevisionVersion`, `startsAt`, `dueAt` y `enrollmentIds`. La bandera propuesta es `app.evaluations.institutional.new-assignment-enabled`.
+- Los cuatro selectores de ruta identifican la evaluación, su revisión B8 exacta, la institución y la clase de destino. El servidor exige una revisión publicada de un recurso NEW disponible y comprueba el cierre B8. La entrega conserva los dos instantes exactos y la unicidad revisión/clase. Ambos instantes son obligatorios y aceptan UTC con sufijo `Z` y hasta seis decimales. El inicio debe preceder al vencimiento y el vencimiento debe seguir abierto al confirmar.
+- `enrollmentIds` contiene de 1 a 100 PK positivas y distintas de `enrollments.id`. Una fila B2 representa un episodio concreto de matrícula. El número de episodio `episode_number`, las cuentas, perfiles, membresías y destinatarios pertenecen a otros espacios de identificadores. El servidor une cada episodio a su membresía y cuenta, exige institución y clase exactas, estado y fechas vigentes y el rol ESTUDIANTE vigente. Comprueba también que las cuentas derivadas sean distintas. Una sola fila inválida rechaza el conjunto. [B2](../arquitectura/11b2-clases-matriculas.md)
+- La sesión T02 determina la cuenta. El servidor exige institución y clase activas, período abierto, DOCENTE vigente y una asignación RESPONSABLE o CO_DOCENTE vigente en la clase de destino. La autoría se acredita con la cuenta y membresía originales de B8 en esa institución. Otro docente requiere además un grant NEW de ASSIGN exacto y vigente para ese recurso. EDIT_DRAFT, PUBLISH y ASSIGN se verifican por separado. ADMIN_INSTITUCION requiere las mismas condiciones de docencia y facultad. [B6](../arquitectura/11b6-docencia-delegaciones.md) · [T12-G](12g-autoria-publicacion-new.md)
+- La respuesta 200 con `Cache-Control: no-store` devuelve `operationId`, `evaluationId`, `revisionId`, `deliveryId`, `version`, `startsAt`, `dueAt` y `recipientCount`. El UUID vincula actor, alcance, versión esperada, instantes y conjunto de episodios. El orden de los episodios y las representaciones UTC equivalentes se normalizan. La recuperación del recibo exige autorización y contexto vigentes y devuelve el resultado confirmado.
+- Las rutas apagadas responden 404 al comando válido. La sesión inválida devuelve 401. Un ámbito, episodio, facultad o contexto inadmisible devuelve 403. El JSON inválido devuelve 400 y el límite de transporte devuelve 413. Versión obsoleta, publicación o ventana incompatible, segunda asignación revisión/clase y UUID incongruente devuelven 409. Un fallo de persistencia o el vencimiento del lock de escritura devuelve 503. El cliente puede repetir la misma solicitud con el mismo UUID.
 
-El bloque se limita a crear una entrega y sus destinatarios iniciales. La sustitución docente, las bajas, las readmisiones, los traslados y F03 siguen con las reglas posteriores de T11-D. La activación por defecto queda apagada y la ejecución se limita a fixtures. [Responsabilidades P09–P11](../arquitectura/11d-cierre-preparacion-modelo.md)
+## Entrega, intentos y conciliación
 
-## Dependencia de G y contexto B10
+H confirma la entrega, la admisión inicial, los eventos B8, las mediciones de cuota, el recibo durable y SUCCESS T08 en una transacción. Las filas quedan vinculadas a la revisión y al episodio exactos. F09 conserva el presupuesto y la numeración por evaluación/cuenta a través de clases y publicaciones. La asignación tiene efecto cero sobre intentos consumidos, intentos disponibles y numeración. [B8](../arquitectura/11b8-revisiones-academicas.md) · [T12-F](12f-ejecucion-evaluaciones-new.md)
 
-H depende de la publicación NEW de G, de la facultad ASSIGN tipada en el mismo schema de ensayo y de una forma comprobable de extender su trazabilidad. Crear la entrega y sus destinatarios cambia el manifiesto B10. Antes de implementar las rutas, fijar la prueba del delta H y los consumidores que necesitan verificarla. Debe enlazar el antecedente de G o la cabeza B10 vigente, demostrar que solo cambiaron las filas B8 de la entrega, sus destinatarios y su historia y conservar los contextos de las entregas ya aprobadas.
+El recibo enlaza el manifiesto anterior a una cabeza B10 aplicada y vigente, a un recibo G comprobable o a un recibo H anterior. Para una evaluación nativa de G, el antecedente incluye la creación y la cadena de autoría. El delta de asignación añade únicamente la entrega, sus destinatarios y los eventos B8 generados por esas filas. La certificación compara el resto del manifiesto y las cabezas y referencias pertinentes. Comprueba que la entrega y los destinatarios recién creados carezcan de versiones B10 y que las aprobaciones previas sigan vigentes.
 
-Una publicación nativa de G puede originar una entrega en espera de conciliación. Las nuevas relaciones se habilitan para alumnos mediante la conciliación F08 explícita y sus dos aprobaciones. Durante ese intervalo deben conservarse la autoridad de autoría que G pueda acreditar y la ejecución F de las entregas anteriores que ya tenían contexto vigente. Una corrección, incertidumbre o deriva ajena mantiene el rechazo. Esta dependencia es parte del diseño H y no convierte la asignación en aprobación F08. [B10](../arquitectura/11b10-conciliacion-contextos.md) · [Contrato G](12g-autoria-publicacion-new.md)
+Las lecturas y escrituras F pueden seguir usando las filas con contexto aprobado. Para una entrega nueva, F exige la conciliación explícita F08 con las dos aprobaciones distintas de plataforma e institución, y la aplicación de ese contexto. G puede continuar editando y publicando revisiones bajo el antecedente comprobado. Esos comandos certifican su propio delta de revisión e historia. La deriva de filas, cabezas o referencias que no corresponde a un comando verificable invalida el puente. [B10](../arquitectura/11b10-conciliacion-contextos.md)
 
-## Verificación de H
+## Instalación del fixture
 
-Verificar en HTTP real y PostgreSQL desechable ambos sentidos entre dos instituciones, la matriz de facultades, su revocación y vigencia, y las matrículas manipuladas, caducadas o retiradas. Cubrir la atomicidad con fallos de auditoría y cuota, la carrera de revisión/clase, el reintento tras respuesta perdida y la deriva de contexto. Demostrar que una entrega anterior sigue ejecutándose durante la asignación, que la nueva requiere F08 y que ambas comparten consumo y numeración después de la conciliación. Si H añade esquema, verificar instalación, repetición y recuperación.
+Use PostgreSQL desechable en `127.0.0.1`, con la base `chemicallab_t01_test`, ordenación `C` y el schema `t03_<32 hex>` configurado explícitamente. Certifique los SQL en orden hasta `t12f-v1.sql` y `t12g-v1.sql`. Ejecute `t12h-v1.sql` completo en una transacción. La certificación H vincula su catálogo al fingerprint G y rechaza divergencia. Los SQL históricos conservan sus blobs Git. El límite del recibo H es de 10 000 filas y 64 MiB lógicos por fixture, además de los límites B8, B9 y F aplicables.
 
-## Ramas y publicación futura
+`app.evaluations.institutional.new-assignment-enabled=false` por defecto. Para ensayar hacen falta el perfil único `test`, la habilitación institucional, la bandera H y el schema aprobado. La gestión posterior de destinatarios, sustituciones, readmisiones, traslados, invitaciones y el despliegue quedan fuera del alcance de H. [T11-D](../arquitectura/11d-cierre-preparacion-modelo.md)
 
-- Base local de G en develop, T12-F integrado en `2169515779c460249ad7c973625e0019a8c81125`.
-- G sigue en `feature/t12g-autoria-publicacion-new`. H parte del HEAD revisado local de G, `aa052d6a2c96b3a1ac25c948f8513e773cc64e6d`, en `feature/t12h-asignacion-publicaciones-new`. El historial propio de H empieza con este alcance.
-- Cuando vuelva el acceso, publicar primero la PR de G hacia develop. Una vez que G esté integrado, comprobar que develop contiene la corrección revisada, trasladar únicamente los commits propios de H si la estrategia de integración cambió sus SHA y abrir la PR de H hacia develop. Registrar la PR de G como dependencia. La decisión de integrar, activar o desplegar sigue pendiente.
+## Publicación futura
+
+1. Cuando vuelva el acceso, publique primero la rama de G, `feature/t12g-autoria-publicacion-new`, desde `aa052d6a2c96b3a1ac25c948f8513e773cc64e6d`. Abra la PR de G hacia `develop`.
+2. Tras la integración autorizada de G, compruebe que `develop` contiene el código revisado, incluido el sellado de recibos de `95f83a1`. Si la estrategia de integración cambió los SHA, cree una rama temporal desde el `develop` actualizado y aplique en orden solo el rango propio de H que devuelve `git log --reverse --format=%H aa052d6..feature/t12h-asignacion-publicaciones-new`. Si G conserva sus SHA y es ancestro de `develop`, compruebe igualmente el diff de H antes de publicar.
+3. Publique H y abra su PR hacia `develop`. Registre la PR de G como dependencia y adjunte la evidencia por SHA. La publicación de ramas es independiente de la autorización operativa.

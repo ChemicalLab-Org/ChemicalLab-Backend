@@ -212,6 +212,9 @@ class InstitutionalEvaluationAssignmentDbTest {
         f.ok(http("PUT", successor, f.h.teacher, f.body(f.op(), "expectedVersion", 1, "payload", payload)));
         f.ok(http("POST", successor + "/publish", f.h.teacher, f.body(f.op(), "expectedVersion", 2)));
         assertThat(f.ok(post(aPath, f.h.teacher, both))).isEqualTo(assigned);
+        f.resolve(a, null);
+        assertThat(f.begin(target(a, a.classId(), assigned.path("deliveryId").longValue()), f.op()).path("attemptNumber").intValue())
+            .isOne();
     }
 
     @Test void assignGrantAndCurrentTeachingAreIndependentOnWritesAndReplays() throws Exception {
