@@ -99,7 +99,8 @@ class InstitutionalEvaluationAssignmentDbTest {
         assertThatThrownBy(() -> context.service.apply(proposal, f.op())).isInstanceOf(DataAccessException.class);
         assertThatThrownBy(() -> context.approve(proposal, "INSTITUTION", context.platform, context.foreignSchoolGrant))
             .isInstanceOf(DataAccessException.class);
-        f.denied(f.send("GET", f.h.pupil, next, "", null));
+        assertThat(f.count("select count(*) from t11b10_approvals where proposal_id=?", proposal)).isOne();
+        assertThat(f.count("select count(*) from t11b10_versions where proposal_id=?", proposal)).isZero();
         context.approve(proposal, "INSTITUTION", context.school, context.foreignSchoolGrant);
         assertThat(context.service.apply(proposal, f.op())).isEqualTo("APPLIED");
         assertThat(f.sql().queryForObject("select " + control + ".fresh(?)", Boolean.class, oldProposal)).isFalse();
