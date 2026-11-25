@@ -193,17 +193,28 @@ class InstitutionalEvaluationAuthoringDbTest {
         try {
             var left = threads.submit(() -> send("POST", root, actor, create));
             var right = threads.submit(() -> send("POST", root, actor, create));
-            made = ok(left.get(70, TimeUnit.SECONDS));
-            assertThat(ok(right.get(70, TimeUnit.SECONDS))).isEqualTo(made);
+            var a = left.get(70, TimeUnit.SECONDS);
+            var b = right.get(70, TimeUnit.SECONDS);
+            assertThat(List.of(a.statusCode(), b.statusCode())).contains(200).allMatch(code -> code == 200 || code == 503);
+            made = ok(retryAfterContention(a, "POST", root, actor, create));
+            assertThat(ok(retryAfterContention(b, "POST", root, actor, create))).isEqualTo(made);
+            assertThat(fixture.count("select count(*) from " + control + ".receipts where evaluation_id=? and action='CREATE'",
+                made.path("evaluationId").asLong())).isOne();
         } finally {
             threads.shutdownNow();
         }
         String draft = revision(root, made);
         var versions = Executors.newFixedThreadPool(2);
         try {
-            var left = versions.submit(() -> send("PUT", draft, actor, editBody(1, payload(3, "Competing edit A"))));
-            var right = versions.submit(() -> send("PUT", draft, actor, editBody(1, payload(3, "Competing edit B"))));
-            assertThat(List.of(left.get(70, TimeUnit.SECONDS).statusCode(), right.get(70, TimeUnit.SECONDS).statusCode()))
+            String first = editBody(1, payload(3, "Competing edit A"));
+            String second = editBody(1, payload(3, "Competing edit B"));
+            var left = versions.submit(() -> send("PUT", draft, actor, first));
+            var right = versions.submit(() -> send("PUT", draft, actor, second));
+            var a = left.get(70, TimeUnit.SECONDS);
+            var b = right.get(70, TimeUnit.SECONDS);
+            assertThat(List.of(a.statusCode(), b.statusCode())).contains(200);
+            assertThat(List.of(retryAfterContention(a, "PUT", draft, actor, first).statusCode(),
+                retryAfterContention(b, "PUT", draft, actor, second).statusCode()))
                 .containsExactlyInAnyOrder(200, 409);
         } finally {
             versions.shutdownNow();
@@ -375,6 +386,11 @@ class InstitutionalEvaluationAuthoringDbTest {
         if (token != null) request.header("Authorization", "Bearer " + token);
         return fixture.f.http.send(request.method(method,
             body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body)).build(), BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> retryAfterContention(HttpResponse<String> response, String method, String path,
+            String token, String sameBody) throws Exception {
+        return response.statusCode() == 503 ? send(method, path, token, sameBody) : response;
     }
 
     private JsonNode ok(HttpResponse<String> response) throws Exception {
