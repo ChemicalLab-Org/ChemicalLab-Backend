@@ -209,7 +209,8 @@ BEGIN
     ELSIF TG_TABLE_NAME='memberships' AND (to_jsonb(OLD)-ARRAY['active','valid_until']) IS DISTINCT FROM (to_jsonb(NEW)-ARRAY['active','valid_until']) THEN
       RAISE EXCEPTION 'Immutable membership identity';
     ELSIF TG_TABLE_NAME IN ('roles','faculties') AND
-      ((to_jsonb(OLD)-'revoked_at') IS DISTINCT FROM (to_jsonb(NEW)-'revoked_at') OR OLD.revoked_at IS NOT NULL) THEN
+      ((to_jsonb(OLD)-'revoked_at') IS DISTINCT FROM (to_jsonb(NEW)-'revoked_at')
+         OR to_jsonb(OLD)->>'revoked_at' IS NOT NULL) THEN
       RAISE EXCEPTION 'Immutable grant';
     ELSIF TG_TABLE_NAME='classes' AND (to_jsonb(OLD)-'active') IS DISTINCT FROM (to_jsonb(NEW)-'active') THEN
       RAISE EXCEPTION 'Immutable class identity';

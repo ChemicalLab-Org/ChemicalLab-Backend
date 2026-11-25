@@ -15,13 +15,16 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("run", type=Path)
 parser.add_argument("--psql", required=True)
 parser.add_argument("--port", type=int, default=55472)
+parser.add_argument("--resume-authorization", type=int, metavar="DRAFT")
+parser.add_argument("--resume-revocation", type=int, metavar="DELIVERY")
 args = parser.parse_args()
 ready = json.loads((args.run / "browser/ready.json").read_text(encoding="utf-8-sig"))
 scenario = json.loads((args.run / "browser/assignments.json").read_text(encoding="utf-8-sig"))
 assert ready["mode"] == "runtime" and urlsplit(ready["origin"]).hostname == "127.0.0.1"
 opener = build_opener(ProxyHandler({}))
 base = f"host=127.0.0.1 port={args.port} dbname=chemicallab_t12_runtime_test user=t12_runtime_local"
-checks = []
+results_file = args.run / "runtime-verification.json"
+checks = json.loads(results_file.read_text(encoding="utf-8")) if args.resume_authorization or args.resume_revocation else []
 
 
 def request(method, path, token=None, data=None, expected=200, discard=False):
@@ -42,9 +45,11 @@ def request(method, path, token=None, data=None, expected=200, discard=False):
 
 
 def psql(sql, client="runtime_verify"):
-    result = subprocess.run([args.psql, "-XAtq", "-v", "ON_ERROR_STOP=1", "-d",
+    result = subprocess.run([args.psql, "-XAtq", "-P", "pager=off", "-v", "ON_ERROR_STOP=1", "-d",
                              base + " application_name=" + client, "-c", sql],
-                            capture_output=True, text=True, check=True)
+                            capture_output=True, text=True)
+    if result.returncode:
+        raise RuntimeError(result.stderr.strip())
     return result.stdout.strip()
 
 
@@ -92,7 +97,7 @@ def log(label):
 
 
 def main():
-    assert psql("select current_database()||':'||inet_server_addr()") == "chemicallab_t12_runtime_test:127.0.0.1"
+    assert psql("select current_database()||':'||host(inet_server_addr())") == "chemicallab_t12_runtime_test:127.0.0.1"
     teacher_a, teacher_b, pupil = (login(name) for name in ("teacherA", "teacherB", "student"))
     choices = request("GET", "/institutions/evaluation-catalog/NEW/v1/classes?limit=2", pupil)
     more = request("GET", "/institutions/evaluation-catalog/NEW/v1/classes?after=" + str(choices["nextAfter"]), pupil)
@@ -101,6 +106,18 @@ def main():
     aa = next(row for row in visible if row["institutionId"] == ready["a"] and "PHYS" in row["className"])
     b = next(row for row in visible if row["institutionId"] == ready["b"])
     scope_a, scope_aa, scope_b = (context(row["institutionId"], row["classId"]) for row in (a, aa, b))
+    if args.resume_authorization:
+        assert checks[-1]=="Quota rejection left counters, receipts and academic state unchanged"
+        draft=next(row for row in revisions(scope_a,teacher_a) if row["evaluationId"]==args.resume_authorization)
+        assert draft["status"]=="DRAFT"
+        verify_authorization(teacher_a,teacher_b,pupil,a,b,scope_a,scope_b,draft)
+        return
+    if args.resume_revocation:
+        assert checks[-1]=="An exact PUBLISH grant confers neither EDIT_DRAFT nor access after grant revocation"
+        current=next(row for row in request("GET",catalog(scope_b,"own-deliveries"),pupil)["items"]
+                     if row["deliveryId"]==args.resume_revocation)
+        verify_revocation(teacher_a,pupil,a,b,scope_a,scope_b,current)
+        return
     rev_a = revisions(scope_a, teacher_a)[0]
     rev_b = revisions(scope_b, teacher_b)[0]
     from_browser_a = {**rev_a, "deliveryId": scenario["a"]["delivery"]}
@@ -135,7 +152,7 @@ def main():
                     {"id": 2, "question_id": 1, "option_text": "B", "correct": False}],
     }
     # An unscoped lock that blocked the certified implementation cannot block a native root write.
-    blocker = subprocess.Popen([args.psql, "-XAtq", "-d", base + " application_name=runtime_legacy_lock", "-c",
+    blocker = subprocess.Popen([args.psql, "-XAtq", "-P", "pager=off", "-d", base + " application_name=runtime_legacy_lock", "-c",
         "begin; lock table evaluations in share mode; select pg_sleep(12); rollback"], stdout=subprocess.DEVNULL)
     try:
         end = time.monotonic() + 8
@@ -210,15 +227,19 @@ def main():
     log("Quota rejection left counters, receipts and academic state unchanged")
 
     delegated=request("POST",create_path,teacher_a,cmd(payload=payload))
+    verify_authorization(teacher_a,teacher_b,pupil,a,b,scope_a,scope_b,delegated)
+
+
+def verify_authorization(teacher_a,teacher_b,pupil,a,b,scope_a,scope_b,delegated):
     root=delegated["evaluationId"]
     institution=a["institutionId"]
     psql(f"""
       begin;
       select pg_advisory_xact_lock(evaluation_runtime.institution_lock({institution}));
       insert into evaluation_runtime.memberships(institution_id,account_id,valid_from)
-        select {institution},id,clock_timestamp() from user_accounts where username='runtime-teacher-b';
+        select {institution},id,statement_timestamp() from user_accounts where username='runtime-teacher-b';
       insert into evaluation_runtime.roles(membership_id,institution_id,role,valid_from)
-        select m.id,m.institution_id,case when u.username='runtime-teacher-a' then 'ADMIN_INSTITUCION' else 'DOCENTE' end,clock_timestamp()
+        select m.id,m.institution_id,case when u.username='runtime-teacher-a' then 'ADMIN_INSTITUCION' else 'DOCENTE' end,statement_timestamp()
         from evaluation_runtime.memberships m join user_accounts u on u.id=m.account_id
         where m.institution_id={institution} and u.username in ('runtime-teacher-a','runtime-teacher-b');
       insert into evaluation_runtime.faculties(resource_id,institution_id,membership_id,faculty,granted_by_membership_id,valid_from,valid_until)
@@ -238,15 +259,24 @@ def main():
     request("POST",edition(scope_a,delegated)+"/publish",teacher_b,pubkey,expected=403)
     log("An exact PUBLISH grant confers neither EDIT_DRAFT nor access after grant revocation")
 
-    fresh_b = request("POST",scope_b+"/evaluation-authoring/NEW/v1/evaluations",teacher_b,cmd(payload=payload))
+    draft_payload={
+        "resource": {"title":"Entrega B vigente","max_attempts":1,"question_display_mode":"ALL_AT_ONCE"},
+        "questions":[{"id":1,"question_text":"Explica un cambio","question_type":"OPEN_TEXT","points":1}],
+        "options":[],
+    }
+    fresh_b = request("POST",scope_b+"/evaluation-authoring/NEW/v1/evaluations",teacher_b,cmd(payload=draft_payload))
     fresh_b = request("POST",edition(scope_b,fresh_b)+"/publish",teacher_b,cmd(expectedVersion=1))
     episode_b = request("GET",catalog(scope_b,"enrollments"),teacher_b)["items"][0]["enrollmentId"]
     current_b = assign(scope_b,teacher_b,fresh_b,episode_b,datetime.now(timezone.utc)+timedelta(minutes=2))
+    verify_revocation(teacher_a,pupil,a,b,scope_a,scope_b,current_b)
+
+
+def verify_revocation(teacher_a,pupil,a,b,scope_a,scope_b,current_b):
     psql(f"""update evaluation_runtime.memberships set active=false where institution_id={a['institutionId']}
       and account_id=(select id from user_accounts where username='runtime-student')""")
     request("GET",catalog(scope_a,"own-deliveries"),pupil,expected=403)
     b_page=request("GET",catalog(scope_b,"own-deliveries"),pupil)
-    assert [row["evaluationId"] for row in b_page["items"]]==[fresh_b["evaluationId"]]
+    assert [row["evaluationId"] for row in b_page["items"]]==[current_b["evaluationId"]]
     request("GET",execute(scope_b,current_b),pupil)
     assert [x["institutionId"] for x in request("GET","/institutions/evaluation-catalog/NEW/v1/classes",pupil)["items"]]==[b["institutionId"]]
     psql(f"""update evaluation_runtime.teaching set ended_at=clock_timestamp() where class_id={a['classId']}
@@ -262,4 +292,4 @@ def main():
 try:
     main()
 finally:
-    (args.run/"runtime-verification.json").write_text(json.dumps(checks,indent=2)+"\n",encoding="utf-8")
+    results_file.write_text(json.dumps(checks,indent=2)+"\n",encoding="utf-8")
