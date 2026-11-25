@@ -6,6 +6,8 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
+import org.springframework.messaging.simp.SimpMessageType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -39,21 +41,34 @@ public class WhiteboardBroadcastService {
     }
 
     private void send(Long sessionId, Object payload) {
-        if (TransactionSynchronizationManager.isActualTransactionActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override public void afterCommit() { sendCommitted(sessionId, payload); }
-            });
-        } else sendCommitted(sessionId, payload);
+        if (sessionId != null) send(TOPIC_PREFIX + sessionId, payload);
     }
 
-    private void sendCommitted(Long sessionId, Object payload) {
-        if (sessionId == null) {
-            return;
-        }
+    void send(String destination, Object payload) {
+        send(destination, payload, null);
+    }
+
+    /** Zero restricts the event to teachers. A positive ID also allows the affected student. */
+    void send(String destination, Object payload, Long participantAudience) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() { sendCommitted(destination, payload, participantAudience); }
+            });
+        } else sendCommitted(destination, payload, participantAudience);
+    }
+
+    private void sendCommitted(String destination, Object payload, Long participantAudience) {
         try {
-            messagingTemplate.convertAndSend(TOPIC_PREFIX + sessionId, payload);
+            if (participantAudience == null) {
+                messagingTemplate.convertAndSend(destination, payload);
+            } else {
+                var headers = SimpMessageHeaderAccessor.create(SimpMessageType.MESSAGE);
+                headers.setHeader("boardParticipantAudience", participantAudience);
+                headers.setLeaveMutable(true);
+                messagingTemplate.convertAndSend(destination, payload, headers.getMessageHeaders());
+            }
         } catch (Exception ex) {
-            log.warn("No fue posible difundir el evento de la pizarra {}: {}", sessionId, ex.getMessage());
+            log.warn("No fue posible difundir el evento de la pizarra {}", destination);
         }
     }
 }

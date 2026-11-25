@@ -47,6 +47,8 @@ public class UsagePanelService {
     private final WhiteboardParticipantRepository whiteboardParticipantRepository;
     private final EvaluationRepository evaluationRepository;
     private final EvaluationAttemptRepository evaluationAttemptRepository;
+    private final WhiteboardRuntimeContract institutionalBoards;
+    private final AuditLogService audit;
 
     public UsagePanelResponse getPanel() {
         return new UsagePanelResponse(
@@ -66,6 +68,7 @@ public class UsagePanelService {
     }
 
     private UsagePanelResponse.WhiteboardStats buildWhiteboard() {
+        if (institutionalBoards.installed()) return new UsagePanelResponse.WhiteboardStats(0,0,0,0,0,0,0);
         return new UsagePanelResponse.WhiteboardStats(
                 whiteboardSessionRepository.count(),
                 whiteboardSessionRepository.countByStatus(WhiteboardSessionStatus.ACTIVE),
@@ -88,6 +91,12 @@ public class UsagePanelService {
     }
 
     private UsagePanelResponse.TraceabilityStats buildTraceability() {
+        if (institutionalBoards.installed()) {
+            var summary = audit.getSummary();
+            return new UsagePanelResponse.TraceabilityStats(summary.totalLogs(), summary.warningCount(), summary.errorCount(),
+                systemLogRepository.countByEventType(LogEventType.LOGIN_SUCCESS),
+                systemLogRepository.countByEventType(LogEventType.LOGIN_FAILED));
+        }
         return new UsagePanelResponse.TraceabilityStats(
                 systemLogRepository.count(),
                 systemLogRepository.countBySeverity(LogSeverity.WARNING),

@@ -36,13 +36,13 @@ public class WhiteboardStompAuthChannelInterceptor implements ChannelInterceptor
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         var accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
         if (accessor == null) throw new AccessDeniedException("PROTOCOL_REJECTED");
+        StompCommand command = accessor.getCommand();
+        if (command == StompCommand.DISCONNECT) return message; // synthetic cleanup headers can be immutable
         String id = accessor.getSessionId();
         SessionPrincipal auditActor=null;
         java.util.UUID auditId=java.util.UUID.randomUUID();
         accessor.setHeader("auditCorrelation",auditId);
         try (var auditContext=com.morales.chemicallab.security.audit.AuditContext.open(auditId)) {
-            StompCommand command = accessor.getCommand();
-            if (command == StompCommand.DISCONNECT) return message; // also synthetic cleanup
             if (command == StompCommand.CONNECT) {
                 String header = accessor.getFirstNativeHeader("Authorization");
                 accessor.removeNativeHeader("Authorization");
@@ -51,7 +51,10 @@ public class WhiteboardStompAuthChannelInterceptor implements ChannelInterceptor
                 var principal = (SessionPrincipal) authentication.getPrincipal();
                 auditActor=principal;
                 if (principal.temporaryPassword()) throw new AccessDeniedException("PASSWORD_CHANGE_REQUIRED");
-                connections.authenticated(id, principal);
+                var scopeHeaders = accessor.getNativeHeader("board-scope");
+                if (scopeHeaders != null && scopeHeaders.size() != 1) throw new AccessDeniedException("PROTOCOL_REJECTED");
+                connections.authenticated(id, principal, accessor.getFirstNativeHeader("board-scope"));
+                accessor.removeNativeHeader("board-scope");
                 accessor.setUser(authentication);
                 accessor.removeNativeHeader("Authorization");
                 return message;
@@ -63,18 +66,29 @@ public class WhiteboardStompAuthChannelInterceptor implements ChannelInterceptor
             connections.validate(id);
             if (accessor.getMessageType() == SimpMessageType.HEARTBEAT) return message;
             String destination = accessor.getDestination();
+            var scoped = connections.target(id);
             if (command == StompCommand.SUBSCRIBE) {
                 traffic.take(principal.userId(), "control");
                 if ("/user/queue/whiteboard-errors".equals(destination)) {
                     connections.subscribe(id, accessor.getSubscriptionId(), 0); return message;
                 }
-                long board = board(TOPIC, destination);
-                connections.observe(id, board);
+                long board;
+                if (scoped != null) {
+                    if (!scoped.topic().equals(destination)) throw new AccessDeniedException("PROTOCOL_REJECTED");
+                    board = scoped.board();
+                } else {
+                    board = board(TOPIC, destination);
+                    connections.observe(id, board);
+                }
                 connections.subscribe(id, accessor.getSubscriptionId(), board);
             } else if (command == StompCommand.SEND) {
-                connections.observe(id, board(SEND, destination));
+                if (scoped == null) connections.observe(id, board(SEND, destination));
+                else if (!scoped.draw().equals(destination) && !scoped.ready().equals(destination)) {
+                    throw new AccessDeniedException("PROTOCOL_REJECTED");
+                }
                 try {
-                    traffic.take(principal.userId(), destination.endsWith("/draw") ? "draw" : "presence");
+                    traffic.take(principal.userId(), destination.endsWith("/draw") ? "draw" :
+                        destination.endsWith("/ready") ? "control" : "presence");
                     if (!(message.getPayload() instanceof byte[] bytes)) throw InputRejectedException.invalid();
                     if (bytes.length > limits.getStompBytes()) throw InputRejectedException.size();
                     if (destination.endsWith("/draw")) guard.check(bytes, false, false);

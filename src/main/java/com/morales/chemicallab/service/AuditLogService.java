@@ -35,6 +35,7 @@ public class AuditLogService {
     private final SystemLogRepository systemLogRepository;
     private final UserAccountRepository userAccountRepository;
     private final AuditLogWriter auditLogWriter;
+    private final WhiteboardRuntimeContract institutionalBoards;
 
     // =========================================================================
     // REGISTRO DE EVENTOS
@@ -113,7 +114,7 @@ public class AuditLogService {
                                            LogSeverity severity, Role actorRole, String search,
                                            LocalDateTime from, LocalDateTime to, Pageable pageable) {
         Specification<SystemLog> spec =
-                buildFilterSpecification(category, eventType, severity, actorRole, search, from, to);
+                buildFilterSpecification(category, eventType, severity, actorRole, search, from, to).and(legacyVisible());
         return systemLogRepository.findAll(spec, pageable).map(this::toResponse);
     }
 
@@ -162,22 +163,44 @@ public class AuditLogService {
     }
 
     public AuditLogResponse getLogById(Long id) {
-        SystemLog systemLog = systemLogRepository.findById(id)
+        var visible = institutionalBoards.installed()
+            ? systemLogRepository.findOne(legacyVisible().and((root, query, cb) -> cb.equal(root.get("id"), id)))
+            : systemLogRepository.findById(id);
+        SystemLog systemLog = visible
                 .orElseThrow(() -> new IllegalArgumentException("El registro de log no existe."));
         return toResponse(systemLog);
     }
 
     public AuditLogSummaryResponse getSummary() {
-        long total = systemLogRepository.count();
-        long info = systemLogRepository.countBySeverity(LogSeverity.INFO);
-        long warning = systemLogRepository.countBySeverity(LogSeverity.WARNING);
-        long error = systemLogRepository.countBySeverity(LogSeverity.ERROR);
-        long auth = systemLogRepository.countByCategory(LogCategory.AUTH);
-        long users = systemLogRepository.countByCategory(LogCategory.USER_MANAGEMENT);
-        long evaluations = systemLogRepository.countByCategory(LogCategory.EVALUATION);
-        long concepts = systemLogRepository.countByCategory(LogCategory.CONCEPT_CONTENT);
+        if (!institutionalBoards.installed()) {
+            return new AuditLogSummaryResponse(systemLogRepository.count(),
+                systemLogRepository.countBySeverity(LogSeverity.INFO), systemLogRepository.countBySeverity(LogSeverity.WARNING),
+                systemLogRepository.countBySeverity(LogSeverity.ERROR), systemLogRepository.countByCategory(LogCategory.AUTH),
+                systemLogRepository.countByCategory(LogCategory.USER_MANAGEMENT),
+                systemLogRepository.countByCategory(LogCategory.EVALUATION),
+                systemLogRepository.countByCategory(LogCategory.CONCEPT_CONTENT));
+        }
+        var visible = legacyVisible();
+        long total = systemLogRepository.count(visible);
+        long info = countVisible(visible, "severity", LogSeverity.INFO);
+        long warning = countVisible(visible, "severity", LogSeverity.WARNING);
+        long error = countVisible(visible, "severity", LogSeverity.ERROR);
+        long auth = countVisible(visible, "category", LogCategory.AUTH);
+        long users = countVisible(visible, "category", LogCategory.USER_MANAGEMENT);
+        long evaluations = countVisible(visible, "category", LogCategory.EVALUATION);
+        long concepts = countVisible(visible, "category", LogCategory.CONCEPT_CONTENT);
 
         return new AuditLogSummaryResponse(total, info, warning, error, auth, users, evaluations, concepts);
+    }
+
+    private Specification<SystemLog> legacyVisible() {
+        if (!institutionalBoards.installed()) return Specification.unrestricted();
+        return (root, query, cb) -> cb.and(cb.notEqual(root.get("category"), LogCategory.WHITEBOARD),
+            cb.not(cb.coalesce(root.<String>get("targetType"), "").in("WhiteboardSession", "STOMP")));
+    }
+
+    private long countVisible(Specification<SystemLog> visible, String field, Object value) {
+        return systemLogRepository.count(visible.and((root, query, cb) -> cb.equal(root.get(field), value)));
     }
 
     // =========================================================================

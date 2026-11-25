@@ -47,6 +47,12 @@ public class WhiteboardObjectState {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public WhiteboardDrawEventResponse apply(WhiteboardSession board, UserAccount actor, WhiteboardDrawEventResponse event) {
+        return apply(board, actor, event, actor.getRole() == Role.DOCENTE);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public WhiteboardDrawEventResponse apply(WhiteboardSession board, UserAccount actor, WhiteboardDrawEventResponse event,
+                                            boolean teacher) {
         ObjectNode state = readVerified(board);
         Map<String, WhiteboardObjectOwnership> identities = new HashMap<>();
         // Fetch only visible identities and the addressed tombstone. At most T07-A's visible-object bound + one.
@@ -95,7 +101,7 @@ public class WhiteboardObjectState {
             if (row == null) {
                 if (delete) throw new IllegalArgumentException("El objeto no existe.");
                 row = ownership.save(WhiteboardObjectOwnership.builder().board(board).kind(kind).objectId(id).owner(actor).build());
-            } else if (actor.getRole() != Role.DOCENTE && (row.getOwner() == null || !row.getOwner().getId().equals(actor.getId()))) {
+            } else if (!teacher && (row.getOwner() == null || !row.getOwner().getId().equals(actor.getId()))) {
                 throw new IllegalArgumentException("Solo puedes modificar, borrar o restaurar tus propios objetos.");
             }
             ownerId = row.getOwner() == null ? null : row.getOwner().getId();

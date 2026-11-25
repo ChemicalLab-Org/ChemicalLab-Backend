@@ -38,6 +38,7 @@ import static org.mockito.Mockito.when;
  */
 @ExtendWith(MockitoExtension.class)
 class AuditLogServiceTest {
+    @org.mockito.Mock private WhiteboardRuntimeContract institutionalBoards;
 
     @Mock
     private SystemLogRepository systemLogRepository;

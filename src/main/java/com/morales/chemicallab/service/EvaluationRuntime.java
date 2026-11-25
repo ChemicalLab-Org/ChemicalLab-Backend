@@ -112,6 +112,7 @@ public class EvaluationRuntime {
         } catch (AuthenticationException failure) {
             throw unauthorized();
         } catch (DataAccessException | TransactionException failure) {
+            if (com.morales.chemicallab.security.storage.StorageErrors.quota(failure)) throw failure;
             String state = sqlState(failure);
             if ("23505".equals(state)) throw conflict();
             LOG.warn("Institutional evaluation transaction rejected sqlState={}", state);

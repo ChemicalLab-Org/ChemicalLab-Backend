@@ -55,6 +55,7 @@ public class UsageMetricService {
     private final UsageEventRepository usageEventRepository;
     private final UserAccountRepository userAccountRepository;
     private final JsonInputGuard inputGuard;
+    private final WhiteboardRuntimeContract institutionalBoards;
 
     // =========================================================================
     // REGISTRO
@@ -73,6 +74,10 @@ public class UsageMetricService {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordEvent(String username, RecordUsageEventRequest request) {
+        if ((request.module() == UsageModule.WHITEBOARD || request.eventType() == UsageEventType.WHITEBOARD_SESSION_JOINED)
+                && institutionalBoards.installed()) {
+            throw EvaluationRuntime.denied();
+        }
         UserAccount user = userAccountRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalArgumentException("El usuario autenticado no existe."));
 

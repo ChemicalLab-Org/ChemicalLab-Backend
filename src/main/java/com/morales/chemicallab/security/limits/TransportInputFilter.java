@@ -20,7 +20,8 @@ public class TransportInputFilter extends OncePerRequestFilter {
         boolean content = path.startsWith("/api/institutions/") && path.contains("/contents/NEW/v1/");
         boolean institutional = content || path.startsWith("/api/institutions/") && (path.contains("/evaluation-writes/")
             || path.contains("/evaluation-execution/") || path.contains("/evaluation-authoring/") || path.contains("/evaluation-assignments/"));
-        boolean board = path.startsWith("/api/whiteboards/");
+        boolean board = path.startsWith("/api/whiteboards/") ||
+            path.startsWith("/api/institutions/") && path.contains("/whiteboards/v1/");
         boolean sockjs = path.startsWith("/ws/") && path.endsWith("/xhr_send") && request.getMethod().equals("POST");
         if (!telemetry && !board && !sockjs && !institutional) { chain.doFilter(request, response); return; }
         try {
