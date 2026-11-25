@@ -109,8 +109,7 @@ public class InstitutionalEvaluationAuthoringService {
                 return receipt;
             }
 
-            boolean continueAssignment = !creating && assignment != null
-                && exists("select " + assignment + ".current(?,?,false)", scope.evaluationId(), scope.institutionId());
+            boolean continueAssignment = !creating && currentAssignment(assignment, scope);
             Resource resource;
             long evaluation;
             AcademicRevision updated;
@@ -226,8 +225,7 @@ public class InstitutionalEvaluationAuthoringService {
         Head head = head("evaluations", scope.evaluationId());
         if (head == null) {
             String assignment = assignmentControl();
-            require(nativeClass != null && ((assignment != null
-                && exists("select " + assignment + ".current(?,?,false)", scope.evaluationId(), scope.institutionId())) || exists("""
+            require(nativeClass != null && (currentAssignment(assignment, scope) || exists("""
                 select coalesce((select r.root_version is null and r.after_hash=%1$s.digest(t11p05_manifest(%1$s.anchor(r.evaluation_id)))
                 from %1$s.receipts r where r.evaluation_id=? order by r.ordinal desc limit 1),false)
                 """.formatted(ctl), scope.evaluationId())));
@@ -283,6 +281,15 @@ public class InstitutionalEvaluationAuthoringService {
 
     private String assignmentControl() {
         return InstitutionalFixtureUnit.assignmentControl(jdbc, jdbc.queryForObject("select current_schema()", String.class));
+    }
+
+    private boolean currentAssignment(String control, Scope scope) {
+        // H's predecessor with base_allowed=false can only match an H receipt for this root.
+        // Avoid building the B10 manifest for that branch until the first H receipt exists.
+        return control != null && exists("""
+            select case when exists(select 1 from %1$s.receipts where evaluation_id=? and institution_id=?)
+                then %1$s.current(?,?,false) else false end
+            """.formatted(control), scope.evaluationId(), scope.institutionId(), scope.evaluationId(), scope.institutionId());
     }
 
     Head head(String source, long id) {
