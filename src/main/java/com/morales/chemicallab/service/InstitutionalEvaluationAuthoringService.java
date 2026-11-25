@@ -38,7 +38,7 @@ public class InstitutionalEvaluationAuthoringService {
                           long version, String status, Instant publishedAt) {}
     public record Draft(long evaluationId, long revisionId, Long parentRevisionId, int revisionNumber, long version,
                         Map<String,Object> payload) {}
-    private record Member(long id, boolean assigned) {}
+    record Member(long id, boolean assigned) {}
     private record Resource(long id, long author, long authorMembership, int maxAttempts) {}
     private record Head(long id, long proposal, JsonNode resolution) {}
     private record Context(Resource resource, Head head) {}
@@ -92,11 +92,15 @@ public class InstitutionalEvaluationAuthoringService {
             if (creating) require(member.assigned());
             AcademicRevision selected = creating ? null : revision(ctl, scope, context);
             String canonical = request(ctl, actor, scope, action, command);
+            String assignment = assignmentControl();
+            String receiptSources = assignment == null ? ctl + ".receipts" :
+                "(select operation_id,request,result from " + ctl + ".receipts union all "
+                    + "select operation_id,request,result from " + assignment + ".receipts) receipts";
             var previous = jdbc.queryForList("select request=?::jsonb identical, result::text result from "
-                + ctl + ".receipts where operation_id=?", canonical, command.key());
+                + receiptSources + " where operation_id=?", canonical, command.key());
             if (!previous.isEmpty()) {
                 var row = previous.get(0);
-                if (!Boolean.TRUE.equals(row.get("identical"))) throw conflict();
+                if (previous.size() != 1 || !Boolean.TRUE.equals(row.get("identical"))) throw conflict();
                 Receipt receipt = decode((String) row.get("result"));
                 Scope replayScope = creating
                     ? new Scope(scope.institutionId(), scope.classId(), receipt.evaluationId(), receipt.revisionId()) : scope;
@@ -104,6 +108,8 @@ public class InstitutionalEvaluationAuthoringService {
                 return receipt;
             }
 
+            boolean continueAssignment = !creating && assignment != null
+                && exists("select " + assignment + ".current(?,?,false)", scope.evaluationId(), scope.institutionId());
             Resource resource;
             long evaluation;
             AcademicRevision updated;
@@ -130,9 +136,15 @@ public class InstitutionalEvaluationAuthoringService {
             audit.persist(event);
             entities.flush();
             jdbc.execute("set local synchronous_commit=on");
-            jdbc.queryForObject("select " + ctl + ".record_receipt(?,?,?,?,?,?,?,?,?,?::jsonb,?::jsonb,?::jsonb,?)",
-                Object.class, command.key(), action.name(), actor.userId(), scope.institutionId(), scope.classId(),
-                evaluation, resource.id(), updated.id(), head, before, canonical, encode(receipt), event.getId());
+            if (continueAssignment) {
+                jdbc.update("insert into " + assignment + ".receipt_commands values(?,?,?,?,?,?,?,?,null,?::jsonb,?::jsonb,?::jsonb,?)",
+                    command.key(), action.name(), actor.userId(), scope.institutionId(), scope.classId(),
+                    evaluation, resource.id(), updated.id(), before, canonical, encode(receipt), event.getId());
+            } else {
+                jdbc.queryForObject("select " + ctl + ".record_receipt(?,?,?,?,?,?,?,?,?,?::jsonb,?::jsonb,?::jsonb,?)",
+                    Object.class, command.key(), action.name(), actor.userId(), scope.institutionId(), scope.classId(),
+                    evaluation, resource.id(), updated.id(), head, before, canonical, encode(receipt), event.getId());
+            }
             Scope resolved = new Scope(scope.institutionId(), scope.classId(), evaluation, updated.id());
             Member current = member(actor, resolved);
             if (creating) require(current.assigned());
@@ -167,7 +179,7 @@ public class InstitutionalEvaluationAuthoringService {
         }
     }
 
-    private Member member(SessionPrincipal actor, Scope scope) {
+    Member member(SessionPrincipal actor, Scope scope) {
         Timestamp now = jdbc.queryForObject("select clock_timestamp()", Timestamp.class);
         var rows = jdbc.query("""
             select m.id, exists(
@@ -206,10 +218,12 @@ public class InstitutionalEvaluationAuthoringService {
             rs -> rs.next() ? rs.getLong(1) : null, scope.evaluationId());
         Head head = head("evaluations", scope.evaluationId());
         if (head == null) {
-            require(nativeClass != null && exists("""
+            String assignment = assignmentControl();
+            require(nativeClass != null && ((assignment != null
+                && exists("select " + assignment + ".current(?,?,false)", scope.evaluationId(), scope.institutionId())) || exists("""
                 select coalesce((select r.root_version is null and r.after_hash=%1$s.digest(t11p05_manifest(%1$s.anchor(r.evaluation_id)))
                 from %1$s.receipts r where r.evaluation_id=? order by r.ordinal desc limit 1),false)
-                """.formatted(ctl), scope.evaluationId()));
+                """.formatted(ctl), scope.evaluationId())));
         } else {
             require(sameScope(head, scope) && fresh(ctl, head.proposal()));
             Head resourceHead = head("t11b8_resources", resource.id());
@@ -219,12 +233,16 @@ public class InstitutionalEvaluationAuthoringService {
 
         boolean owner = resource.author() == actor.userId() && resource.authorMembership() == member.id() && member.assigned()
             && originClass(scope, resource, nativeClass, head);
-        if (!owner) require(exists("""
+        if (!owner) require(granted(ctl, resource.id(), scope, member, faculty));
+        return new Context(resource, head);
+    }
+
+    boolean granted(String ctl, long resourceId, Scope scope, Member member, String faculty) {
+        return exists("""
             select exists(select 1 from %s.grants g cross join (select clock_timestamp() ts) at
               where g.resource_id=? and g.institution_id=? and g.membership_id=? and g.faculty=?
                and g.status='ACTIVE' and g.revoked_at is null and g.valid_from<=at.ts and at.ts<g.valid_until)
-            """.formatted(ctl), resource.id(), scope.institutionId(), member.id(), faculty));
-        return new Context(resource, head);
+            """.formatted(ctl), resourceId, scope.institutionId(), member.id(), faculty);
     }
 
     private boolean originClass(Scope scope, Resource resource, Long nativeClass, Head head) {
@@ -243,8 +261,14 @@ public class InstitutionalEvaluationAuthoringService {
 
     private boolean fresh(String ctl, long proposal) {
         String schema = jdbc.queryForObject("select current_schema()", String.class);
-        return exists("select t11p05_fresh(?) or " + InstitutionalFixtureUnit.writeControl(jdbc, schema)
-            + ".fresh(?) or " + ctl + ".fresh(?)", proposal, proposal, proposal);
+        if (exists("select t11p05_fresh(?) or " + InstitutionalFixtureUnit.writeControl(jdbc, schema)
+            + ".fresh(?) or " + ctl + ".fresh(?)", proposal, proposal, proposal)) return true;
+        String assignment = InstitutionalFixtureUnit.assignmentControl(jdbc, schema);
+        return assignment != null && exists("select " + assignment + ".fresh(?)", proposal);
+    }
+
+    private String assignmentControl() {
+        return InstitutionalFixtureUnit.assignmentControl(jdbc, jdbc.queryForObject("select current_schema()", String.class));
     }
 
     private Head head(String source, long id) {
@@ -284,13 +308,22 @@ public class InstitutionalEvaluationAuthoringService {
             if (revisionHead != null) {
                 require(revisionHead.proposal() == context.head().proposal() && sameScope(revisionHead, scope));
             } else {
-                require(exists("""
-                    select exists(select 1 from %s.receipts where action='SUCCESSOR'
-                      and resource_id=? and revision_id=? and root_version=?)
-                    """.formatted(ctl), context.resource().id(), scope.revisionId(), context.head().id()));
+                require(successor(ctl, context.resource().id(), scope.revisionId(), context.head().id()));
             }
         }
         return revisions.revision(scope.revisionId());
+    }
+
+    boolean successor(String ctl, long resource, long revision, long head) {
+        if (exists("""
+            select exists(select 1 from %s.receipts where action='SUCCESSOR'
+              and resource_id=? and revision_id=? and root_version=?)
+            """.formatted(ctl), resource, revision, head)) return true;
+        String assignment = assignmentControl();
+        return assignment != null && exists("""
+            select exists(select 1 from %s.receipts where action='SUCCESSOR'
+              and resource_id=? and revision_id=? and after_stamp->'rootVersion'=to_jsonb(?::bigint))
+            """.formatted(assignment), resource, revision, head);
     }
 
     private AcademicRevision change(Action action, Command command, Resource resource, AcademicRevision revision) {

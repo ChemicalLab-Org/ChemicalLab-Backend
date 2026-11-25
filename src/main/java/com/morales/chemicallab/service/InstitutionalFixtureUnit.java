@@ -20,6 +20,12 @@ final class InstitutionalFixtureUnit {
         return Boolean.TRUE.equals(jdbc.queryForObject("select to_regprocedure(?::text) is not null",
             Boolean.class, control + ".fresh(bigint)")) ? control : null;
     }
+    static String assignmentControl(JdbcTemplate jdbc, String schema) {
+        if (schema == null || !schema.matches("t03_[a-f0-9]{32}")) return null;
+        String control = "t12h_" + schema.substring(4);
+        return Boolean.TRUE.equals(jdbc.queryForObject("select to_regprocedure(?::text) is not null",
+            Boolean.class, control + ".fresh(bigint)")) ? control : null;
+    }
     /** Successor academic rows share institutional limits with C/D/E, in both directions. */
     static void checkExecutionQuotas(JdbcTemplate jdbc,String schema) {
         String control="t12f_"+schema.substring(4);
