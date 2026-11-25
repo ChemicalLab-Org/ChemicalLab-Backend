@@ -41,3 +41,30 @@ Use PostgreSQL desechable en `127.0.0.1`, con la base `chemicallab_t01_test`, or
 1. Cuando vuelva el acceso, publique primero la rama de G, `feature/t12g-autoria-publicacion-new`, desde `aa052d6a2c96b3a1ac25c948f8513e773cc64e6d`. Abra la PR de G hacia `develop`.
 2. Tras la integración autorizada de G, compruebe que `develop` contiene el código revisado, incluido el sellado de recibos de `95f83a1`. Si la estrategia de integración cambió los SHA, cree una rama temporal desde el `develop` actualizado y aplique en orden solo el rango propio de H que devuelve `git log --reverse --format=%H aa052d6..feature/t12h-asignacion-publicaciones-new`. Si G conserva sus SHA y es ancestro de `develop`, compruebe igualmente el diff de H antes de publicar.
 3. Publique H y abra su PR hacia `develop`. Registre la PR de G como dependencia y adjunte la evidencia por SHA. La publicación de ramas es independiente de la autorización operativa.
+
+## Verificación y revisión local
+
+La sonda de `391f994fa9285d3da3cb05b443218969cfb78508` certificó el delta B10 antes de conectar la ruta H. Ejecutó SQL H y HTTP real F en PostgreSQL 18.4 desechable. Conservó la cabeza anterior, la lectura y escritura F, y el número compartido tras la conciliación. Consta un caso aprobado. El intento con loopback bloqueado por el sandbox terminó antes de Maven. El intento en un clúster con ordenación regional llegó a B10 y falló al certificar su catálogo. Los tres resultados se conservan por separado.
+
+La selección HTTP de `fa1c30760f98e1542378765a985c3d345f087767` ejecutó diez casos. Pasaron los cuatro casos de transporte, el caso focalizado de G sobre facultades y continuidad F09, el caso focalizado de F sobre readmisión y consumo, y dos casos H sobre delegación, reintentos, atomicidad, concurrencia y recuperación. La copia física restaurada tuvo 143 firmas coincidentes y devolvió el recibo H por HTTP. Quedaron dos errores del ensayo H. El alumno adicional requería un docente para crear su perfil y el rechazo HTTP intercalado entre aprobaciones cambió la medición que B10 firma. La revisión corrigió el fixture y dejó la comprobación de la aplicación prematura dentro del censo aprobado.
+
+La revisión de código añadió la comprobación de que toda cabeza existente del agregado pertenezca a la propuesta que ancla el recibo, reforzó la comparación de la ventana con la solicitud y volvió a comprobar los episodios tras sellar el delta. Se probaron deriva, rollback ante auditoría diferida y cuota y rechazo de divergencia del catálogo. Los informes por SHA, XML de Surefire, registros de PostgreSQL y huellas de recuperación se guardan bajo `.codex-work/t12h-evidence`.
+
+Se compararon 192 archivos protegidos, incluidas las 16 huellas E2E originales, y los 19 SQL históricos hasta G. Se conservaron el frontend, los checkouts anteriores y los resultados G. El bundle de G coincide con su SHA-256 anterior y la copia Git restaurada pasó `git fsck --full`.
+
+En la carrera de revisión/clase se observó un 503 por el límite de espera. El registro técnico de rechazo T08 tuvo un fallo de persistencia durante esa contención. Se verificó una única entrega, un único recibo y un único SUCCESS transaccional. El cliente de prueba descartó el cuerpo de la respuesta inicial y recuperó el resultado con el mismo UUID. El comando competidor devolvió 409 al repetirlo.
+
+La ejecución final en `04039750d9fe25b27b84f1fb93e29be3e55d49f8` aprobó los cuatro casos H con HTTP real y PostgreSQL 18.4, sin fallos, errores ni omisiones. Cubrió el aislamiento bilateral y la correspondencia de episodios, la matriz de facultades y revocaciones, el rollback y reintento bajo contención, y el contexto pendiente con dos aprobaciones F08 distintas. La entrega anterior mantuvo lectura, escritura y consumo compartido. Se repitió la certificación F/G/H antes y después de la restauración física con WAL en streaming. `pg_verifybackup` confirmó la copia, las 143 firmas coincidieron y el recibo se recuperó por HTTP.
+
+- XML Surefire final SHA-256 `a2f948ed0ff415370089dfc63058f55ed4bd5217e086d97b18bedb6aef5fa982`.
+- Firmas de recuperación SHA-256 `7e05dc70d99eee64874271ce6007a107fe762e6641dece53d7719d956d18b058`.
+- `.codex-work/t12h-evidence/results.json` conserva los resultados y fallos por SHA. `preservation.json` registra el cotejo de archivos y checkouts.
+
+## Recuperación de Git
+
+El bundle de H, `t12h-<SHA>.bundle` bajo `.codex-work/t12h-evidence`, contiene el historial completo y las referencias de `develop`, G y H. Consulte el manifiesto `bundle-<SHA>-verification.json` para obtener el nombre exacto y la huella SHA-256. Clone el bundle en un directorio nuevo.
+
+```powershell
+git clone --branch feature/t12h-asignacion-publicaciones-new <bundle> <directorio-nuevo>
+git -C <directorio-nuevo> fsck --full
+```
