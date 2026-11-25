@@ -43,7 +43,7 @@ public class InstitutionalEvaluationAuthoringService {
     private record Resource(long id, long author, long authorMembership, int maxAttempts) {}
     record Head(long id, long proposal, JsonNode resolution) {}
     private record Context(Resource resource, Head head, boolean owner) {}
-    private record Command(UUID key, Long version, ObjectNode payload) {}
+    record Command(UUID key, Long version, ObjectNode payload) {}
 
     private final JdbcTemplate jdbc;
     private final Environment env;
@@ -53,10 +53,12 @@ public class InstitutionalEvaluationAuthoringService {
     private final EntityManager entities;
     private final ObjectMapper json;
     private final TransactionTemplate transaction;
+    private final EvaluationRuntime runtime;
+    private final EvaluationRuntimeAuthoring nativeAuthoring;
 
     public InstitutionalEvaluationAuthoringService(JdbcTemplate jdbc, Environment env, AccountSessionService sessions,
             AcademicRevisionRepository revisions, AuditLogWriter audit, EntityManager entities, ObjectMapper json,
-            PlatformTransactionManager manager) {
+            PlatformTransactionManager manager, EvaluationRuntime runtime, EvaluationRuntimeAuthoring nativeAuthoring) {
         this.jdbc = jdbc;
         this.env = env;
         this.sessions = sessions;
@@ -64,6 +66,8 @@ public class InstitutionalEvaluationAuthoringService {
         this.audit = audit;
         this.entities = entities;
         this.json = json;
+        this.runtime = runtime;
+        this.nativeAuthoring = nativeAuthoring;
         transaction = new TransactionTemplate(manager);
         transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         transaction.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
@@ -71,6 +75,7 @@ public class InstitutionalEvaluationAuthoringService {
     }
 
     public Draft read(SessionPrincipal actor, Scope scope) {
+        if (runtime.installed()) return nativeAuthoring.read(actor, scope);
         return unit(actor, false, ctl -> {
             Member member = member(actor, scope);
             Context context = authorize(ctl, actor, scope, member, "EDIT_DRAFT");
@@ -84,6 +89,7 @@ public class InstitutionalEvaluationAuthoringService {
     }
 
     public Receipt write(SessionPrincipal actor, Scope scope, Action action, byte[] body) {
+        if (runtime.installed()) return nativeAuthoring.write(actor, scope, action, command(action,input(body)));
         return unit(actor, true, ctl -> {
             Command command = command(action, input(body));
             Member member = member(actor, scope);

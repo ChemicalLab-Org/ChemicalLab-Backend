@@ -46,15 +46,20 @@ public class InstitutionalEvaluationAssignmentService {
     private final AuditLogWriter audit;
     private final ObjectMapper json;
     private final TransactionTemplate transaction;
+    private final EvaluationRuntime runtime;
+    private final EvaluationRuntimeAuthoring nativeAuthoring;
 
     public InstitutionalEvaluationAssignmentService(JdbcTemplate jdbc, Environment environment, AccountSessionService sessions,
-            InstitutionalEvaluationAuthoringService authoring, AuditLogWriter audit, ObjectMapper json, PlatformTransactionManager manager) {
+            InstitutionalEvaluationAuthoringService authoring, AuditLogWriter audit, ObjectMapper json, PlatformTransactionManager manager,
+            EvaluationRuntime runtime, EvaluationRuntimeAuthoring nativeAuthoring) {
         this.jdbc = jdbc;
         this.environment = environment;
         this.sessions = sessions;
         this.authoring = authoring;
         this.audit = audit;
         this.json = json;
+        this.runtime = runtime;
+        this.nativeAuthoring = nativeAuthoring;
         transaction = new TransactionTemplate(manager);
         transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         transaction.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
@@ -62,6 +67,11 @@ public class InstitutionalEvaluationAssignmentService {
     }
 
     public Receipt assign(SessionPrincipal actor, Scope scope, byte[] body) {
+        if (runtime.installed()) {
+            if (actor==null) throw unauthorized();
+            JsonNode data = input(body);
+            return nativeAuthoring.assign(actor,scope,operation(data),canonical(actor,scope,data));
+        }
         String schema = environment.getProperty("app.evaluations.institutional.fixture-schema", "");
         if (!environment.getProperty("app.evaluations.institutional.enabled", Boolean.class, false)
             || !assignmentEnabled()
@@ -77,9 +87,7 @@ public class InstitutionalEvaluationAssignmentService {
                 sessions.revalidate(actor);
 
                 JsonNode data = input(body);
-                JsonNode key = data.get("operationId");
-                if (!key.isTextual() || !key.textValue().matches("(?i)[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}")) throw invalid();
-                UUID operation = UUID.fromString(key.textValue());
+                UUID operation = operation(data);
                 String request = canonical(actor, scope, data).toString();
                 authorize(actor, scope, g, h);
 
@@ -190,6 +198,12 @@ public class InstitutionalEvaluationAssignmentService {
         var list = request.putArray("enrollmentIds");
         episodes.forEach(list::add);
         return request;
+    }
+
+    private UUID operation(JsonNode data) {
+        JsonNode key = data.get("operationId");
+        if (!key.isTextual() || !key.textValue().matches("(?i)[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}")) throw invalid();
+        return UUID.fromString(key.textValue());
     }
 
     private static long positiveLong(JsonNode id) {

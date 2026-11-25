@@ -77,19 +77,24 @@ public class InstitutionalEvaluationCatalog {
     private final EvaluationDeliveryAccessService access;
     private final InstitutionalEvaluationAuthoringService authoring;
     private final InstitutionalEvaluationAssignmentService assignment;
+    private final EvaluationRuntime runtime;
+    private final EvaluationRuntimeCatalog nativeCatalog;
 
     public InstitutionalEvaluationCatalog(JdbcTemplate jdbc, NewEvaluationExecutionService execution,
             EvaluationDeliveryAccessService access, InstitutionalEvaluationAuthoringService authoring,
-            InstitutionalEvaluationAssignmentService assignment) {
+            InstitutionalEvaluationAssignmentService assignment, EvaluationRuntime runtime, EvaluationRuntimeCatalog nativeCatalog) {
         this.jdbc = jdbc;
         this.execution = execution;
         this.access = access;
         this.authoring = authoring;
         this.assignment = assignment;
+        this.runtime = runtime;
+        this.nativeCatalog = nativeCatalog;
     }
 
     public Page<ClassChoice> classes(SessionPrincipal actor, long after, int limit) {
         validate(after, limit);
+        if (runtime.installed()) return nativeCatalog.classes(actor,after,limit);
         return execution.unit(actor, false, ctl -> page(jdbc.query(CLASS_RIGHTS + """
             select * from rights where class_id>? and (student or teacher) order by class_id limit ?
             """, (rs, row) -> new ClassChoice(rs.getLong(1), rs.getString(2), rs.getLong(3), rs.getString(4),
@@ -98,6 +103,7 @@ public class InstitutionalEvaluationCatalog {
 
     public Page<Delivery> deliveries(SessionPrincipal actor, long institution, long clazz, long after, int limit) {
         validate(after, limit);
+        if (runtime.installed()) return nativeCatalog.deliveries(actor,institution,clazz,after,limit);
         return execution.unit(actor, false, ctl -> {
             requireClass(actor, institution, clazz, false);
             var candidates = jdbc.query("""
@@ -153,6 +159,7 @@ public class InstitutionalEvaluationCatalog {
                                      boolean teacher, long after, int limit) {
         validate(after, limit);
         if (!teacher && (delivery == null || delivery <= 0)) throw badPage();
+        if (runtime.installed()) return nativeCatalog.attempts(actor,institution,clazz,delivery,teacher,after,limit);
         return execution.unit(actor, false, ctl -> {
             requireClass(actor, institution, clazz, teacher);
             String actorFilter = teacher ? "a.account_id<>? and a.status<>'IN_PROGRESS'" : "a.account_id=? and a.delivery_id=?";
@@ -181,6 +188,7 @@ public class InstitutionalEvaluationCatalog {
 
     public Page<EnrollmentRow> enrollments(SessionPrincipal actor, long institution, long clazz, long after, int limit) {
         validate(after, limit);
+        if (runtime.installed()) return nativeCatalog.enrollments(actor,institution,clazz,after,limit);
         return execution.unit(actor, false, ctl -> {
             requireClass(actor, institution, clazz, true);
             return page(jdbc.query("""
@@ -199,6 +207,7 @@ public class InstitutionalEvaluationCatalog {
 
     public Page<RevisionRow> revisions(SessionPrincipal actor, long institution, long clazz, long after, int limit) {
         validate(after, limit);
+        if (runtime.installed()) return nativeCatalog.revisions(actor,institution,clazz,after,limit);
         return authoring.unit(actor, false, g -> {
             var member = authoring.member(actor, new Scope(institution, clazz, null, null));
             String h = assignment.assignmentEnabled()
@@ -271,7 +280,7 @@ public class InstitutionalEvaluationCatalog {
         return page(rows, limit, id);
     }
 
-    private static <T> Page<T> page(List<T> rows, int limit, ToLongFunction<T> id) {
+    static <T> Page<T> page(List<T> rows, int limit, ToLongFunction<T> id) {
         int size = Math.min(rows.size(), limit);
         return new Page<>(List.copyOf(rows.subList(0, size)), rows.size() > limit ? id.applyAsLong(rows.get(size - 1)) : null);
     }
