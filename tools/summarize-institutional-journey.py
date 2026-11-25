@@ -46,16 +46,18 @@ with (args.run / "postgres.log").open(encoding="utf-8", errors="replace") as log
             if started <= stamp <= ended:
                 queries.append((stamp, float(match["ms"]), match["sql"].upper()))
 
-phases = {}
+phases = []
 for first, last in zip(browser["steps"], browser["steps"][1:]):
     start = datetime.fromisoformat(first["timestamp"])
     end = datetime.fromisoformat(last["timestamp"])
     statements = [q for q in queries if start <= q[0] < end]
-    phases[last["step"]] = {
+    phases.append({
+        "from": first["step"],
+        "to": last["step"],
         "wall_ms": round((end - start).total_seconds() * 1000),
         "postgres_statements": len(statements),
         "postgres_reported_execution_ms": round(sum(q[1] for q in statements), 3),
-    }
+    })
 
 rows = browser["requests"]
 api = [row for row in rows if row["path"].startswith("/api/")]
@@ -83,4 +85,4 @@ result = {
     },
     "elapsed_ms_including_manual_approval_and_academic_wait": round((ended - started).total_seconds() * 1000),
 }
-print(json.dumps(result, indent=2, ensure_ascii=False))
+print(json.dumps(result, indent=2))
