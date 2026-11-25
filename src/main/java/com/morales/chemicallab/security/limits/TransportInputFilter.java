@@ -17,7 +17,8 @@ public class TransportInputFilter extends OncePerRequestFilter {
     @Override protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws ServletException, IOException {
         String path = request.getServletPath();
         boolean telemetry = path.equals("/api/usage-metrics/events") || path.matches("/api/evaluations/student/attempts/[0-9]+/events");
-        boolean institutional = path.startsWith("/api/institutions/") && (path.contains("/evaluation-writes/")
+        boolean content = path.startsWith("/api/institutions/") && path.contains("/contents/NEW/v1/");
+        boolean institutional = content || path.startsWith("/api/institutions/") && (path.contains("/evaluation-writes/")
             || path.contains("/evaluation-execution/") || path.contains("/evaluation-authoring/") || path.contains("/evaluation-assignments/"));
         boolean board = path.startsWith("/api/whiteboards/");
         boolean sockjs = path.startsWith("/ws/") && path.endsWith("/xhr_send") && request.getMethod().equals("POST");
@@ -27,14 +28,15 @@ public class TransportInputFilter extends OncePerRequestFilter {
             if (!sockjs && !institutional && authentication != null && authentication.getPrincipal() instanceof SessionPrincipal principal)
                 traffic.take(principal.userId(), telemetry ? "telemetry" : "rest");
             String contentType = request.getContentType();
-            if (!institutional && contentType != null && contentType.toLowerCase(java.util.Locale.ROOT).startsWith("multipart/")) { chain.doFilter(request, response); return; }
+            if ((!institutional || content && path.endsWith("/file")) && contentType != null && contentType.toLowerCase(java.util.Locale.ROOT).startsWith("multipart/")) { chain.doFilter(request, response); return; }
             // Do not let a different Content-Type evade byte limits on affected JSON endpoints.
-            int max = institutional ? Math.min(1048576,limits.getHttpBytes()) : sockjs ? limits.getStompBytes() * 2 : telemetry ? limits.getTelemetryBytes() : limits.getHttpBytes();
+            int max = content ? Math.min(196608, limits.getHttpBytes()) : institutional ? Math.min(1048576,limits.getHttpBytes()) : sockjs ? limits.getStompBytes() * 2 : telemetry ? limits.getTelemetryBytes() : limits.getHttpBytes();
             if (request.getContentLengthLong() > max) throw InputRejectedException.size();
             byte[] bytes = request.getInputStream().readNBytes(max + 1);
             if (bytes.length > max) throw InputRejectedException.size();
             if (!sockjs && bytes.length > 0) {
-                if(institutional && path.contains("/evaluation-execution/"))guard.checkExecution(bytes);
+                if (content) guard.checkContent(bytes);
+                else if(institutional && path.contains("/evaluation-execution/"))guard.checkExecution(bytes);
                 else guard.check(bytes, board && path.endsWith("/state"), telemetry);
             }
             chain.doFilter(new HttpServletRequestWrapper(request) {

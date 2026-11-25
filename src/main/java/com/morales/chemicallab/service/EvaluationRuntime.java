@@ -170,7 +170,7 @@ public class EvaluationRuntime {
         }
     }
 
-    private <T> T decode(String value, Class<T> type) {
+    <T> T decode(String value, Class<T> type) {
         try {
             return json.readValue(value, type);
         } catch (JsonProcessingException failure) {
@@ -178,7 +178,7 @@ public class EvaluationRuntime {
         }
     }
 
-    private String digest(String value) {
+    String digest(String value) {
         return jdbc.queryForObject("select encode(sha256(convert_to(?::jsonb::text,'UTF8')),'hex')", String.class, value);
     }
 

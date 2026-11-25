@@ -28,6 +28,12 @@ public class JsonInputGuard {
         catch (com.fasterxml.jackson.core.exc.StreamConstraintsException ex) { throw InputRejectedException.size(); }
         catch (IOException ex) { throw InputRejectedException.invalid(); }
     }
+    public void checkContent(byte[] bytes) {
+        try (var parser = factory.createParser(bytes)) { check(parser, false, false, 20000); }
+        catch (InputRejectedException ex) { throw ex; }
+        catch (com.fasterxml.jackson.core.exc.StreamConstraintsException ex) { throw InputRejectedException.size(); }
+        catch (IOException ex) { throw InputRejectedException.invalid(); }
+    }
     public void checkState(String raw) {
         if (raw.length() > limits.getStateChars()) throw InputRejectedException.size();
         try (var parser = ordinaryFactory.createParser(raw)) { check(parser, false, false); }
@@ -69,6 +75,9 @@ public class JsonInputGuard {
           catch(IOException ex){throw InputRejectedException.invalid();}
     }
     private void check(JsonParser parser, boolean envelope, boolean telemetry) throws IOException {
+        check(parser, envelope, telemetry, limits.getJsonStringChars());
+    }
+    private void check(JsonParser parser, boolean envelope, boolean telemetry, int stringChars) throws IOException {
         record Frame(boolean object, boolean metadata, int[] count) {}
         var stack = new ArrayDeque<Frame>();
         int roots = 0;
@@ -96,7 +105,7 @@ public class JsonInputGuard {
                 if (parent != null && parent.metadata() && token != JsonToken.VALUE_STRING && token != JsonToken.VALUE_NULL) throw InputRejectedException.invalid();
                 if (token == JsonToken.VALUE_STRING) {
                     int max = parent != null && parent.metadata() ? limits.getMetadataValueChars()
-                            : envelope && stack.size() == 1 && "stateJson".equals(field) ? limits.getStateChars() : limits.getJsonStringChars();
+                            : envelope && stack.size() == 1 && "stateJson".equals(field) ? limits.getStateChars() : stringChars;
                     if (parser.getTextLength() > max) throw InputRejectedException.size();
                 }
             }

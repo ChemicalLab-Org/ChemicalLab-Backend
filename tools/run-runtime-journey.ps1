@@ -3,12 +3,16 @@ param(
     [Parameter(Mandatory)][string]$Java,
     [Parameter(Mandatory)][string]$Jar,
     [Parameter(Mandatory)][string]$RunDirectory,
+    [switch]$Content,
+    [string]$PredecessorJar,
     [int]$DatabasePort = 55472,
     [int]$HttpPort = 18092
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 $jarFile = (Resolve-Path -LiteralPath $Jar).Path
+if ($Content -and $PredecessorJar) { throw 'Choose a fresh content install or an upgrade.' }
+$applicationJar = if ($PredecessorJar) { (Resolve-Path -LiteralPath $PredecessorJar).Path } else { $jarFile }
 $run = [IO.Path]::GetFullPath($RunDirectory)
 if (Test-Path -LiteralPath $run) { throw 'Choose a new directory for the disposable cluster.' }
 New-Item -ItemType Directory -Path $run | Out-Null
@@ -25,7 +29,7 @@ $pg = Start-Process "$PostgresBin/pg_ctl.exe" -ArgumentList $pgArgs -WindowStyle
 if (!$pg.WaitForExit(30000) -or $pg.ExitCode -ne 0) { throw 'PostgreSQL startup failed.' }
 
 function Start-Application([string]$Stage, [string]$Ddl, [switch]$PrepareEmptySchema) {
-    $arguments = @('-jar', ('"'+$jarFile+'"'), '--spring.profiles.active=dev', '--server.address=127.0.0.1',
+    $arguments = @('-jar', ('"'+$applicationJar+'"'), '--spring.profiles.active=dev', '--server.address=127.0.0.1',
         "--server.port=$HttpPort", "--spring.datasource.url=jdbc:postgresql://127.0.0.1:$DatabasePort/$db",
         "--spring.datasource.username=$role", '--spring.datasource.password=fictitious', "--app.jwt.secret=$secret",
         "--spring.jpa.hibernate.ddl-auto=$Ddl", '--app.demo.enabled=false', '--app.bootstrap.admin.enabled=false')
@@ -62,6 +66,10 @@ try {
     if ($LASTEXITCODE -ne 0) { Get-Content "$run/preparation-prerequisites.log" -Tail 15; throw 'T07B or T08 preparation failed.' }
     & "$PostgresBin/psql.exe" @sql -f "$repo/src/main/resources/db/runtime/evaluation-v1.sql" -f "$PSScriptRoot/runtime-demo.sql" *> "$run/preparation.log"
     if ($LASTEXITCODE -ne 0) { Get-Content "$run/preparation.log" -Tail 15; throw 'Schema or dataset preparation failed.' }
+    if ($Content) {
+        & "$PostgresBin/psql.exe" @sql -f "$repo/src/main/resources/db/runtime/content-v1.sql" *> "$run/content-install.log"
+        if ($LASTEXITCODE -ne 0) { throw 'Content installation failed.' }
+    }
     $app = Start-Application 'runtime' 'validate'
     $ready = @{origin="http://127.0.0.1:$HttpPort";mode='runtime';teacherA='runtime-teacher-a';teacherB='runtime-teacher-b';
         student='runtime-student';password='FictitiousRuntime-2026!';a=1;b=2;pid=$app.Id}
@@ -69,6 +77,28 @@ try {
     Write-Output "Ready: $($browser.FullName)"
     $restart = Join-Path $browser.FullName 'restart'
     while (!$app.HasExited -and !(Test-Path -LiteralPath (Join-Path $browser.FullName 'stop'))) {
+        if ($PredecessorJar -and (Test-Path "$browser/upgrade") -and !(Test-Path "$run/upgraded.pid")) {
+            Stop-Process -Id $app.Id
+            $app.WaitForExit()
+            & "$PostgresBin/psql.exe" @sql -f "$repo/src/main/resources/db/runtime/content-v1.sql" *> "$run/content-install.log"
+            if ($LASTEXITCODE -ne 0) { throw 'Content upgrade failed.' }
+            $applicationJar = $jarFile
+            $app = Start-Application 'upgrade' 'validate'
+            $app.Id | Set-Content "$run/upgraded.pid"
+        }
+        if (($Content -or $PredecessorJar) -and (Test-Path "$browser/recover") -and !(Test-Path "$run/recovered.pid")) {
+            Stop-Process -Id $app.Id
+            $app.WaitForExit()
+            & "$PostgresBin/pg_dump.exe" -h 127.0.0.1 -p $DatabasePort -U $role -d $db --format=custom --file="$run/recovery.dump" *> "$run/dump.log"
+            if ($LASTEXITCODE -ne 0) { throw 'Content recovery dump failed.' }
+            $db = 'chemicallab_t12_content_recovered_test'
+            & "$PostgresBin/createdb.exe" -h 127.0.0.1 -p $DatabasePort -U $role $db
+            if ($LASTEXITCODE -ne 0) { throw 'Content recovery database creation failed.' }
+            & "$PostgresBin/pg_restore.exe" -h 127.0.0.1 -p $DatabasePort -U $role -d $db --exit-on-error "$run/recovery.dump" *> "$run/restore.log"
+            if ($LASTEXITCODE -ne 0) { throw 'Content restore failed.' }
+            $app = Start-Application 'recovery' 'validate'
+            $app.Id | Set-Content "$run/recovered.pid"
+        }
         if ((Test-Path -LiteralPath $restart) -and !(Test-Path "$run/restarted.pid")) {
             Stop-Process -Id $app.Id
             $app.WaitForExit()

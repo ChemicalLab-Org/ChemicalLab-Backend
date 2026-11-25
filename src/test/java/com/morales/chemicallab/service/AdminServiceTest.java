@@ -63,6 +63,7 @@ class AdminServiceTest {
 
     @Mock private AdminQueryRepository queries;
     @Mock private LegacyEvaluationVisibility legacyVisibility;
+    @Mock private InstitutionalContentService institutionalContents;
     @InjectMocks
     private AdminService service;
 

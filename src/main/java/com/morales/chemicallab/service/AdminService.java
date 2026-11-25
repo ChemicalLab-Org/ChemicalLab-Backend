@@ -45,6 +45,7 @@ public class AdminService {
     private final TeacherProfileRepository teacherProfileRepository;
     private final StudentProfileRepository studentProfileRepository;
     private final ConceptContentRepository conceptContentRepository;
+    private final InstitutionalContentService institutionalContents;
     private final EvaluationRepository evaluationRepository;
     private final EvaluationAttemptRepository evaluationAttemptRepository;
     private final com.morales.chemicallab.security.AccountSessionService sessions;
@@ -73,8 +74,9 @@ public class AdminService {
         long activeStudents = userAccountRepository.countByRoleAndActive(Role.ESTUDIANTE, true);
 
         // Métricas complementarias de módulos. Si un módulo no tiene datos, el conteo es 0.
-        long totalConcepts = conceptContentRepository.count();
-        long publishedConcepts = conceptContentRepository.countByStatus(ConceptStatus.PUBLISHED);
+        boolean institutional = institutionalContents.installed();
+        long totalConcepts = institutional ? 0 : conceptContentRepository.count();
+        long publishedConcepts = institutional ? 0 : conceptContentRepository.countByStatus(ConceptStatus.PUBLISHED);
         var excludedEvaluations = legacyVisibility.excludedIds();
         long totalEvaluations = excludedEvaluations.isEmpty() ? evaluationRepository.count()
                 : evaluationRepository.countByIdNotIn(excludedEvaluations);
@@ -433,7 +435,7 @@ public class AdminService {
                 .map(e -> new AdminActivityItem(e.getTitle(), teacherFullName(e.getCreatedByTeacher()), e.getCreatedAt()))
                 .toList();
 
-        List<AdminActivityItem> recentConcepts = conceptContentRepository.findTop5ByOrderByCreatedAtDesc().stream()
+        List<AdminActivityItem> recentConcepts = institutionalContents.installed() ? List.of() : conceptContentRepository.findTop5ByOrderByCreatedAtDesc().stream()
                 .map(c -> new AdminActivityItem(c.getTitle(), teacherFullName(c.getCreatedByTeacher()), c.getCreatedAt()))
                 .toList();
 
