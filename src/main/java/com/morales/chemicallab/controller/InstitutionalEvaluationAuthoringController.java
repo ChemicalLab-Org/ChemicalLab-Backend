@@ -1,6 +1,5 @@
 package com.morales.chemicallab.controller;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.morales.chemicallab.security.SessionPrincipal;
 import com.morales.chemicallab.service.InstitutionalEvaluationAuthoringService;
 import com.morales.chemicallab.service.InstitutionalEvaluationAuthoringService.*;
@@ -19,7 +18,7 @@ public class InstitutionalEvaluationAuthoringController {
 
     @PostMapping
     public ResponseEntity<Receipt> create(@AuthenticationPrincipal SessionPrincipal actor, @PathVariable long institutionId,
-            @PathVariable long classId, @RequestBody JsonNode body) {
+            @PathVariable long classId, @RequestBody byte[] body) {
         return result(authoring.write(actor, new Scope(institutionId, classId, null, null), Action.CREATE, body));
     }
 
@@ -31,19 +30,19 @@ public class InstitutionalEvaluationAuthoringController {
 
     @PutMapping(REVISION)
     public ResponseEntity<Receipt> edit(@AuthenticationPrincipal SessionPrincipal actor, @PathVariable long institutionId,
-            @PathVariable long classId, @PathVariable long evaluationId, @PathVariable long revisionId, @RequestBody JsonNode body) {
+            @PathVariable long classId, @PathVariable long evaluationId, @PathVariable long revisionId, @RequestBody byte[] body) {
         return result(authoring.write(actor, new Scope(institutionId, classId, evaluationId, revisionId), Action.EDIT, body));
     }
 
     @PostMapping(REVISION + "/publish")
     public ResponseEntity<Receipt> publish(@AuthenticationPrincipal SessionPrincipal actor, @PathVariable long institutionId,
-            @PathVariable long classId, @PathVariable long evaluationId, @PathVariable long revisionId, @RequestBody JsonNode body) {
+            @PathVariable long classId, @PathVariable long evaluationId, @PathVariable long revisionId, @RequestBody byte[] body) {
         return result(authoring.write(actor, new Scope(institutionId, classId, evaluationId, revisionId), Action.PUBLISH, body));
     }
 
     @PostMapping(REVISION + "/successor")
     public ResponseEntity<Receipt> successor(@AuthenticationPrincipal SessionPrincipal actor, @PathVariable long institutionId,
-            @PathVariable long classId, @PathVariable long evaluationId, @PathVariable long revisionId, @RequestBody JsonNode body) {
+            @PathVariable long classId, @PathVariable long evaluationId, @PathVariable long revisionId, @RequestBody byte[] body) {
         return result(authoring.write(actor, new Scope(institutionId, classId, evaluationId, revisionId), Action.SUCCESSOR, body));
     }
 

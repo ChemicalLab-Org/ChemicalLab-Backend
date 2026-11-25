@@ -7,15 +7,20 @@ import com.morales.chemicallab.entity.institution.TeachingAssignment;
 import com.morales.chemicallab.service.DelegationMaintenanceService;
 import org.junit.jupiter.api.*;
 import org.springframework.dao.DataAccessException;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.net.http.HttpResponse;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse.BodyHandlers;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.DriverManager;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -80,6 +85,9 @@ class InstitutionalEvaluationAuthoringDbTest {
         status(403, send("GET", revision(createB, madeA), co, null));
         status(403, send("GET", revision(createA, madeB), teacher, null));
         status(403, send("GET", createA + "/" + madeA.path("evaluationId") + "/revisions/" + madeB.path("revisionId"), teacher, null));
+        assertThat(ok(send("POST", revisionB + "/publish", co, command(1))).path("status").asText()).isEqualTo("PUBLISHED");
+        String expired = addCoTeacher(b, classB, fixture.r.from.plusSeconds(12), Instant.now().minusSeconds(60));
+        status(403, send("POST", createB, expired, createBody(payload(3, "Expired co-teaching"))));
 
         String legacy = "/api/evaluations/teacher";
         status(404, send("GET", legacy + "/" + madeA.path("evaluationId"), teacher, null));
@@ -98,9 +106,9 @@ class InstitutionalEvaluationAuthoringDbTest {
         status(403, send("GET", revisionA, teacher, null));
         status(403, send("POST", createA, teacher, first));
         var delegates = fixture.f.app.getBean(DelegationMaintenanceService.class);
-        long coId = fixture.count("select id from t11b6_co_assignments where class_id=?", classB);
+        long coId = fixture.count("select id from t11b6_co_assignments where class_id=? and valid_until>clock_timestamp()", classB);
         delegates.transitionCoTeacher(coId, TeachingAssignment.Status.ENDED, Instant.now());
-        status(403, send("GET", revisionB, co, null));
+        status(403, send("POST", revisionB + "/successor", co, command(2)));
     }
 
     @Test void grantsSeparateFacultiesAndPublicationContinuesTheApprovedF09Root() throws Exception {
@@ -162,6 +170,9 @@ class InstitutionalEvaluationAuthoringDbTest {
         fixture.save(q, attempt, fixture.op(), 17, null, "Existing attempt after the successor publication");
         fixture.submit(q, attempt, fixture.op(), List.of(fixture.answer(q, 18, 31L, null)));
         assertThat(fixture.own(q, attempt).path("attemptNumber").asInt()).isOne();
+        fixture.revisions.nextDraft(published.path("revisionId").asLong(), fixture.op());
+        fixture.denied(fixture.send("GET", fixture.h.pupil, q, "/own-attempts/" + attempt, null));
+        status(403, send("POST", draft + "/successor", fixture.h.teacher, command(3)));
         var next = fixture.deliver(resource, published.path("revisionId").asLong(), q.institutionId(), fixture.r.otherClass,
             fixture.r.otherEpisode, Instant.now().minusSeconds(1), Instant.now().plusSeconds(800));
         fixture.resolve(q, null);
@@ -213,13 +224,16 @@ class InstitutionalEvaluationAuthoringDbTest {
         assertThat(state(aggregate)).isEqualTo(before);
         assertThat(fixture.count("select count(*) from system_logs where action like '%_NEW_AUTHORING' and outcome='SUCCESS'")).isEqualTo(successes);
 
-        long old = fixture.count("select maximum_rows from t11b9_limits where institution_id=? and category='ORIGINAL'", fixture.r.institution);
-        fixture.sql().update("update t11b9_limits set maximum_rows=0 where institution_id=? and category='ORIGINAL'", fixture.r.institution);
+        long institution = fixture.r.institution;
+        var old = fixture.sql().queryForMap(
+            "select maximum_rows,maximum_bytes from t11b9_limits where institution_id=? and category='ORIGINAL'", institution);
+        fixture.e.c.b.service.limit(institution,"ORIGINAL",1,1,fixture.op());
         String quota = createBody(payload(3, "Quota rollback"));
         status(503, send("POST", root, actor, quota));
         assertThat(state(aggregate)).isEqualTo(before);
         assertThat(fixture.count("select count(*) from system_logs where action like '%_NEW_AUTHORING' and outcome='SUCCESS'")).isEqualTo(successes);
-        fixture.sql().update("update t11b9_limits set maximum_rows=? where institution_id=? and category='ORIGINAL'", old, fixture.r.institution);
+        fixture.e.c.b.service.limit(institution, "ORIGINAL", ((Number)old.get("maximum_rows")).longValue(),
+            ((Number)old.get("maximum_bytes")).longValue(), fixture.op());
         var committed = ok(send("POST", draft + "/publish", actor, publish));
         assertThat(ok(send("POST", draft + "/publish", actor, publish))).isEqualTo(committed);
 
@@ -234,28 +248,40 @@ class InstitutionalEvaluationAuthoringDbTest {
             assertThatThrownBy(() -> fixture.sql().execute(expansion)).isInstanceOf(DataAccessException.class).hasMessageContaining("divergence");
             s.setRollbackOnly();
         });
-        restore();
+        restore(fExpansion, draft, actor, publish, committed);
     }
 
-    private void restore() throws Exception {
+    private void restore(String predecessor, String draft, String actor, String publish, JsonNode committed) throws Exception {
         String url = fixture.f.setting("spring.datasource.url");
         String port = url.substring(url.indexOf(':',18)+1,url.lastIndexOf('/'));
         String owner = fixture.f.setting("spring.datasource.username");
-        String database = "t12g_restore_" + fixture.f.schema.substring(4);
         var dir = Files.createDirectories(Path.of("target/t12g-recovery",fixture.f.schema)).toAbsolutePath();
         var args = List.of("-h","127.0.0.1","-p",port,"-U",owner);
+        fixture.sql().update("update authentication_limits set expires_at=greatest(expires_at,floor(extract(epoch from clock_timestamp())*1000)::bigint+3600000)");
         var signatures = new TreeMap<String,String>();
-        for (String schema : List.of(fixture.f.schema, fixture.ctl, control))
+        String suffix = fixture.f.schema.substring(4);
+        for (String schema : List.of(fixture.f.schema, "t06_" + suffix, "t12c_" + suffix, "t12d_" + suffix,
+                "t12e_" + suffix, fixture.ctl, control))
             for (String table : fixture.sql().queryForList("select tablename from pg_tables where schemaname=? order by tablename", String.class, schema))
                 signatures.put(schema + "." + table, fixture.sql().queryForObject(fixture.r.signature(schema + "." + table), String.class));
-        String dump = dir.resolve("fixture.dump").toString();
-        fixture.r.nativeTool("pg_dump",args,List.of("-Fc","-d","chemicallab_t01_test","-f",dump),dir);
-        fixture.r.nativeTool("createdb",args,List.of(database),dir);
+        var copy = dir.resolve("copy");
+        fixture.r.nativeTool("pg_basebackup", args, List.of("-D",copy.toString(),"--wal-method=stream","--checkpoint=fast"), dir);
+        fixture.r.nativeTool("pg_verifybackup", List.of(), List.of(copy.toString()), dir);
+        int copyPort = TransitionWalRecoveryFixture.port();
+        Files.writeString(copy.resolve("postgresql.auto.conf"), "listen_addresses='127.0.0.1'\nport=" + copyPort
+            + "\nmax_connections=20\nmax_locks_per_transaction=512\nshared_buffers='16MB'\n");
+        String copyUrl = "jdbc:postgresql://127.0.0.1:" + copyPort + "/chemicallab_t01_test";
+        boolean started = false;
+        String origin = fixture.f.origin;
+        ConfigurableApplicationContext copyApp = null;
         try {
-            fixture.r.nativeTool("pg_restore",args,List.of("--exit-on-error","--single-transaction","-d",database,dump),dir);
-            try (var copy = DriverManager.getConnection("jdbc:postgresql://127.0.0.1:" + port + "/" + database,
-                    owner, fixture.f.setting("spring.datasource.password")); var statement = copy.createStatement()) {
+            fixture.r.nativeTool("pg_ctl", List.of(), List.of("-D",copy.toString(),"-l",dir.resolve("copy-postgres.log").toString(),"-w","start"), dir);
+            started = true;
+            try (var connection = DriverManager.getConnection(copyUrl,
+                    owner, fixture.f.setting("spring.datasource.password")); var statement = connection.createStatement()) {
                 statement.execute("set search_path to " + fixture.f.schema + ",public");
+                statement.execute(predecessor);
+                statement.execute(expansion);
                 var restored = new TreeMap<String,String>();
                 for (String table : signatures.keySet()) {
                     try (var rows = statement.executeQuery(fixture.r.signature(table))) {
@@ -264,13 +290,17 @@ class InstitutionalEvaluationAuthoringDbTest {
                     }
                 }
                 assertThat(restored).isEqualTo(signatures);
-                // The fixture installation guard deliberately permits only the original fixture DB name.
-                assertThatThrownBy(() -> statement.execute(expansion)).isInstanceOf(java.sql.SQLException.class)
-                    .hasMessageContaining("fixture");
                 Files.writeString(dir.resolve("signatures.json"), fixture.f.json.writeValueAsString(Map.of("original",signatures,"restored",restored)));
             }
+            copyApp = fixture.f.startApp("--spring.datasource.url=" + copyUrl + "?currentSchema=" + fixture.f.schema,
+                "--spring.jpa.hibernate.ddl-auto=none", "--app.evaluations.institutional.enabled=true",
+                "--" + FLAG + "=true", "--app.evaluations.institutional.fixture-schema=" + fixture.f.schema);
+            fixture.f.origin = fixture.f.origin(copyApp);
+            assertThat(ok(send("POST", draft + "/publish", actor, publish))).isEqualTo(committed);
         } finally {
-            fixture.r.nativeTool("dropdb",args,List.of(database),dir);
+            fixture.f.origin = origin;
+            if (copyApp != null) copyApp.close();
+            if (started) fixture.r.nativeTool("pg_ctl",List.of(),List.of("-D",copy.toString(),"-m","fast","-w","stop"),dir);
         }
     }
 
@@ -340,7 +370,11 @@ class InstitutionalEvaluationAuthoringDbTest {
     }
 
     private HttpResponse<String> send(String method, String path, String token, String body) throws Exception {
-        return fixture.f.request(method, path, token, body);
+        var request = HttpRequest.newBuilder(URI.create(fixture.f.origin + path))
+            .timeout(Duration.ofSeconds(60)).header("Content-Type", "application/json");
+        if (token != null) request.header("Authorization", "Bearer " + token);
+        return fixture.f.http.send(request.method(method,
+            body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body)).build(), BodyHandlers.ofString());
     }
 
     private JsonNode ok(HttpResponse<String> response) throws Exception {

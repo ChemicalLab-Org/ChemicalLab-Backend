@@ -1,6 +1,7 @@
 package com.morales.chemicallab.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -20,9 +21,11 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -33,11 +36,12 @@ public class InstitutionalEvaluationAuthoringService {
     public record Scope(long institutionId, long classId, Long evaluationId, Long revisionId) {}
     public record Receipt(UUID operationId, long evaluationId, long revisionId, Long parentRevisionId, int revisionNumber,
                           long version, String status, Instant publishedAt) {}
-    public record Draft(long evaluationId, long revisionId, Long parentRevisionId, int revisionNumber, long version, JsonNode payload) {}
+    public record Draft(long evaluationId, long revisionId, Long parentRevisionId, int revisionNumber, long version,
+                        Map<String,Object> payload) {}
     private record Member(long id, boolean assigned) {}
     private record Resource(long id, long author, long authorMembership, int maxAttempts) {}
     private record Head(long id, long proposal, JsonNode resolution) {}
-    private record Context(Resource resource, Long version) {}
+    private record Context(Resource resource, Head head) {}
     private record Command(UUID key, Long version, ObjectNode payload) {}
 
     private final JdbcTemplate jdbc;
@@ -69,23 +73,24 @@ public class InstitutionalEvaluationAuthoringService {
         return unit(actor, false, ctl -> {
             Member member = member(actor, scope);
             Context context = authorize(ctl, actor, scope, member, "EDIT_DRAFT");
-            AcademicRevision revision = revision(scope, context.resource());
+            AcademicRevision revision = revision(ctl, scope, context);
             require(revision.status().equals("DRAFT"));
             var payload = EvaluationAuthoringContent.draftView((ObjectNode) parse(revision.payload()));
             authorize(ctl, actor, scope, member(actor, scope), "EDIT_DRAFT");
-            return new Draft(scope.evaluationId(), revision.id(), revision.parentId(), revision.number(), revision.version(), payload);
+            return new Draft(scope.evaluationId(), revision.id(), revision.parentId(), revision.number(), revision.version(),
+                json.convertValue(payload, new TypeReference<Map<String,Object>>() {}));
         });
     }
 
-    public Receipt write(SessionPrincipal actor, Scope scope, Action action, JsonNode body) {
+    public Receipt write(SessionPrincipal actor, Scope scope, Action action, byte[] body) {
         return unit(actor, true, ctl -> {
-            Command command = command(action, body);
+            Command command = command(action, input(body));
             Member member = member(actor, scope);
             boolean creating = action == Action.CREATE;
             String faculty = action == Action.PUBLISH ? "PUBLISH" : "EDIT_DRAFT";
             Context context = creating ? null : authorize(ctl, actor, scope, member, faculty);
             if (creating) require(member.assigned());
-            AcademicRevision selected = creating ? null : revision(scope, context.resource());
+            AcademicRevision selected = creating ? null : revision(ctl, scope, context);
             String canonical = request(ctl, actor, scope, action, command);
             var previous = jdbc.queryForList("select request=?::jsonb identical, result::text result from "
                 + ctl + ".receipts where operation_id=?", canonical, command.key());
@@ -115,7 +120,7 @@ public class InstitutionalEvaluationAuthoringService {
                 resource = context.resource();
                 evaluation = scope.evaluationId();
                 before = jdbc.queryForObject("select t11p05_manifest(" + ctl + ".anchor(?))::text", String.class, evaluation);
-                head = context.version();
+                head = context.head() == null ? null : context.head().id();
                 updated = change(action, command, resource, selected);
             }
 
@@ -219,7 +224,7 @@ public class InstitutionalEvaluationAuthoringService {
               where g.resource_id=? and g.institution_id=? and g.membership_id=? and g.faculty=?
                and g.status='ACTIVE' and g.revoked_at is null and g.valid_from<=at.ts and at.ts<g.valid_until)
             """.formatted(ctl), resource.id(), scope.institutionId(), member.id(), faculty));
-        return new Context(resource, head == null ? null : head.id());
+        return new Context(resource, head);
     }
 
     private boolean originClass(Scope scope, Resource resource, Long nativeClass, Head head) {
@@ -271,9 +276,20 @@ public class InstitutionalEvaluationAuthoringService {
         return new Resource(resource, actor.userId(), member.id(), max);
     }
 
-    private AcademicRevision revision(Scope scope, Resource resource) {
+    private AcademicRevision revision(String ctl, Scope scope, Context context) {
         require(exists("select exists(select 1 from t11b8_revisions where id=? and resource_id=? and institution_id=?)",
-            scope.revisionId(), resource.id(), scope.institutionId()));
+            scope.revisionId(), context.resource().id(), scope.institutionId()));
+        if (context.head() != null) {
+            Head revisionHead = head("t11b8_revisions", scope.revisionId());
+            if (revisionHead != null) {
+                require(revisionHead.proposal() == context.head().proposal() && sameScope(revisionHead, scope));
+            } else {
+                require(exists("""
+                    select exists(select 1 from %s.receipts where action='SUCCESSOR'
+                      and resource_id=? and revision_id=? and root_version=?)
+                    """.formatted(ctl), context.resource().id(), scope.revisionId(), context.head().id()));
+            }
+        }
         return revisions.revision(scope.revisionId());
     }
 
@@ -355,6 +371,11 @@ public class InstitutionalEvaluationAuthoringService {
     private JsonNode parse(String value) {
         try { return json.readTree(value); }
         catch (JsonProcessingException invalid) { throw new IllegalStateException(invalid); }
+    }
+
+    private JsonNode input(byte[] body) {
+        try { return json.readTree(body); }
+        catch (IOException invalid) { throw invalid(); }
     }
 
     private String encode(Receipt value) {
