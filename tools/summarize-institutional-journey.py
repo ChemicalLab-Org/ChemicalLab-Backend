@@ -59,6 +59,10 @@ for first, last in zip(browser["steps"], browser["steps"][1:]):
 
 rows = browser["requests"]
 api = [row for row in rows if row["path"].startswith("/api/")]
+resources = browser.get("resources", {})
+browser_cpu_before = {row["id"]: row["cpuTime"] for row in resources.get("browserCpuBefore", [])}
+browser_cpu = sum(max(0, row["cpuTime"] - browser_cpu_before.get(row["id"], 0))
+                  for row in resources.get("browserCpuAfter", []))
 result = {
     "browser_total": row_summary(rows),
     "browser_api": row_summary(api),
@@ -70,6 +74,13 @@ result = {
         "reported_execution_ms": round(sum(q[1] for q in queries), 3),
     },
     "phases": phases,
+    "local_process_metrics": {
+        "browser_version": resources.get("browserVersion"),
+        "chromium_cpu_seconds_processes_present_at_end": round(browser_cpu, 3),
+        "renderer_js_heap_bytes_at_end": resources.get("rendererHeaps"),
+        "node_proxy_and_runner_cpu_ms": resources.get("nodeCpuMs"),
+        "node_proxy_and_runner_peak_rss_kib": resources.get("nodePeakRssKiB"),
+    },
     "elapsed_ms_including_manual_approval_and_academic_wait": round((ended - started).total_seconds() * 1000),
 }
 print(json.dumps(result, indent=2, ensure_ascii=False))
