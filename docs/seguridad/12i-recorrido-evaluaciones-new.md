@@ -41,12 +41,14 @@ Para la navegación manual se puede servir la compilación o usar el proxy de de
 
 ### Conciliación F08 para cada entrega
 
-El runner de navegador se detiene tras crear ambas asignaciones y escribe sus IDs en `browser/assignments.json`. Desde otra terminal, usa el script de mantenimiento para proponer cada evaluación. Revisa que el mapa coincida con las filas ficticias exactas de la entrega y del episodio. Cada aprobador usa su propia cuenta y el checksum revisado. Ejecuta toda la secuencia para una evaluación antes de proponer la siguiente, con el runner en pausa.
+El runner de navegador se detiene tras crear ambas asignaciones y escribe sus IDs en `browser/assignments.json`. Abre las dos sesiones de aprobación antes de proponer. Así los eventos de autenticación ya forman parte de la fotografía cuando se registra el checksum. Conserva los tokens ficticios en variables de la terminal. Revisa que el mapa coincida con las filas exactas de la entrega y del episodio. Cada aprobador usa su sesión y el checksum revisado. Ejecuta toda la secuencia para una evaluación antes de proponer la siguiente, con el runner en pausa.
 
 ```powershell
 $fixture = "$run/browser"
 $identidades = Get-Content "$fixture/ready.json" -Raw | ConvertFrom-Json
 $asignaciones = Get-Content "$fixture/assignments.json" -Raw | ConvertFrom-Json
+$plataforma = ./tools/reconcile-institutional-journey.ps1 -FixtureDirectory $fixture -Action authenticate -Approver $identidades.platform
+$colegio = ./tools/reconcile-institutional-journey.ps1 -FixtureDirectory $fixture -Action authenticate -Approver $identidades.school
 $propuesta = ./tools/reconcile-institutional-journey.ps1 -FixtureDirectory $fixture -Action propose -Evaluation $asignaciones.a.evaluation | ConvertFrom-Json
 $propuesta.mapping | ConvertTo-Json -Depth 20
 ```
@@ -54,8 +56,8 @@ $propuesta.mapping | ConvertTo-Json -Depth 20
 Tras revisar el mapa, registra las dos decisiones de forma individual y aplica la propuesta. Para el colegio B, repite desde `propose` usando `$asignaciones.b.evaluation`.
 
 ```powershell
-./tools/reconcile-institutional-journey.ps1 -FixtureDirectory $fixture -Action approve -Proposal $propuesta.proposal -ApprovalRole PLATFORM -Approver $identidades.platform -Checksum $propuesta.checksum -Evidence FIXTURE-PLATFORM-REVIEW
-./tools/reconcile-institutional-journey.ps1 -FixtureDirectory $fixture -Action approve -Proposal $propuesta.proposal -ApprovalRole INSTITUTION -Approver $identidades.school -Checksum $propuesta.checksum -Evidence FIXTURE-SCHOOL-REVIEW
+./tools/reconcile-institutional-journey.ps1 -FixtureDirectory $fixture -Action approve -Proposal $propuesta.proposal -ApprovalRole PLATFORM -SessionToken $plataforma -Checksum $propuesta.checksum -Evidence FIXTURE-PLATFORM-REVIEW
+./tools/reconcile-institutional-journey.ps1 -FixtureDirectory $fixture -Action approve -Proposal $propuesta.proposal -ApprovalRole INSTITUTION -SessionToken $colegio -Checksum $propuesta.checksum -Evidence FIXTURE-SCHOOL-REVIEW
 ./tools/reconcile-institutional-journey.ps1 -FixtureDirectory $fixture -Action apply -Proposal $propuesta.proposal
 ```
 
