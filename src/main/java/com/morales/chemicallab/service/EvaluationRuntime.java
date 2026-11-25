@@ -41,6 +41,8 @@ public class EvaluationRuntime {
             exists(select 1 from evaluation_runtime.roles g join evaluation_runtime.teaching a on a.membership_id=g.membership_id
               where g.membership_id=m.id and g.role='DOCENTE' and a.class_id=c.id and %1$s and %3$s) teacher,
             exists(select 1 from evaluation_runtime.roles g
+              where g.membership_id=m.id and g.role='DOCENTE' and %1$s) teachingRole,
+            exists(select 1 from evaluation_runtime.roles g
               where g.membership_id=m.id and g.role='ADMIN_INSTITUCION' and %1$s) admin
           from evaluation_runtime.memberships m join user_accounts u on u.id=m.account_id
           join evaluation_runtime.institutions i on i.id=m.institution_id
@@ -49,7 +51,7 @@ public class EvaluationRuntime {
           cross join t where m.account_id=? and %4$s
         )
         """.formatted(ROLE, EPISODE, TEACHING, CLASS);
-    record Rights(long membership, boolean student, boolean teacher, boolean admin) {}
+    record Rights(long membership, boolean student, boolean teacher, boolean teachingRole, boolean admin) {}
     private record Existing(long actor, long institution, long clazz, String action, String hash, String result) {}
     private static final Logger LOG = LoggerFactory.getLogger(EvaluationRuntime.class);
     private final JdbcTemplate jdbc;
@@ -119,8 +121,8 @@ public class EvaluationRuntime {
 
     Rights rights(SessionPrincipal actor, long institution, long clazz) {
         var rows = jdbc.query(RIGHTS + """
-            select member_id,student,teacher,admin from rights where institution_id=? and class_id=?
-            """, (rs, n) -> new Rights(rs.getLong(1),rs.getBoolean(2),rs.getBoolean(3),rs.getBoolean(4)),
+            select member_id,student,teacher,teachingRole,admin from rights where institution_id=? and class_id=?
+            """, (rs, n) -> new Rights(rs.getLong(1),rs.getBoolean(2),rs.getBoolean(3),rs.getBoolean(4),rs.getBoolean(5)),
             actor.userId(), institution, clazz);
         if (rows.size()!=1) throw denied();
         return rows.get(0);

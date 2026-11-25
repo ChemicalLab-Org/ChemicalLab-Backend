@@ -23,6 +23,8 @@ A–H mantienen sus guardas y estructuras. La implementación comparte los valid
 
 Contadores y recibos cubren los agregados nativos. El checksum acompaña la FK a la publicación inmutable. La cuota cuenta los bytes de la representación JSON de las filas en UTC, incluidos los recibos. T08 conserva sus tablas y presupuesto técnico independientes. El cierre global toma en cuenta todas las ventanas y notas de la raíz, incluidas entregas sin destinatarios. F09 mantiene `(raíz, cuenta, número)` y un solo intento activo de la cuenta por raíz.
 
+El selector ofrece clases con matrícula o docencia efectiva. La autoría delegada conserva las facultades independientes de G. Un DOCENTE vigente puede editar o publicar con el grant exacto aunque carezca de asignación docente en la clase elegida de ese colegio. Asignar y calificar requieren docencia vigente en la clase. La ejecución nativa usa la cuenta T02 y la membresía del ámbito. El perfil docente legacy deja de ser una dependencia de la nota nativa.
+
 ## Reproducir con un JAR normal
 
 Use Windows, Java 17, Maven con caché local, PostgreSQL 18 y Node.js con las dependencias Angular del lockfile. El script de preparación usa un directorio nuevo y dos puertos de loopback. En una base vacía la preparación deja que Hibernate cree las tablas base y que el guard existente se detenga ante el prerrequisito T07-B/T08. Aplica después esos SQL históricos mediante `psql`. Instala el nuevo contrato y carga dos instituciones ficticias y tres cuentas. El servidor del recorrido arranca con `ddl-auto=validate`.

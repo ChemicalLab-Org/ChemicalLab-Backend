@@ -103,19 +103,19 @@ public class EvaluationRuntimeCatalog {
     Page<RevisionRow> revisions(SessionPrincipal actor,long institution,long clazz,long after,int limit) {
         return runtime.unit(actor,institution,null,false,null,()->{
             var rights=runtime.rights(actor,institution,clazz);
-            require(rights.teacher());
+            require(rights.teachingRole());
             return page(jdbc.query("""
                 with selected as (
                   select v.id,v.resource_id,v.version,v.revision_number,v.status,v.payload->'resource'->>'title' title,
                     v.status='DRAFT' and (owner.author and owner.origin or 'EDIT_DRAFT'=any(g.faculties)) edit,
                     v.status='DRAFT' and (owner.author and owner.origin or 'PUBLISH'=any(g.faculties)) publish,
-                    v.status='PUBLISHED' and (owner.author or 'ASSIGN'=any(g.faculties)) assign,
+                    v.status='PUBLISHED' and ? and (owner.author or 'ASSIGN'=any(g.faculties)) assign,
                     exists(select 1 from evaluation_runtime.deliveries d where d.revision_id=v.id and d.class_id=?) assigned,
                     exists(select 1 from evaluation_runtime.deliveries w where w.resource_id=s.id)
                     and not exists(select 1 from evaluation_runtime.deliveries w
                         where w.resource_id=s.id and w.due_at>statement_timestamp()) closed
                   from evaluation_runtime.revisions v join evaluation_runtime.resources s on s.id=v.resource_id
-                  cross join lateral (select s.author_membership_id=? and s.author_account_id=? author,
+                  cross join lateral (select ? and s.author_membership_id=? and s.author_account_id=? author,
                     s.origin_class_id=? origin) owner
                   cross join lateral (select array(select x.faculty from evaluation_runtime.faculties x
                     where x.resource_id=s.id and x.membership_id=? and x.revoked_at is null
@@ -125,7 +125,7 @@ public class EvaluationRuntimeCatalog {
                 select id,resource_id,version,revision_number,status,title,edit,publish,assign and not assigned and not closed
                 from selected where edit or publish or assign order by id limit ?
                 """,(rs,n)->new RevisionRow(rs.getLong(1),rs.getLong(2),rs.getLong(3),rs.getInt(4),rs.getString(5),
-                rs.getString(6),rs.getBoolean(7),rs.getBoolean(8),rs.getBoolean(9)),clazz,rights.membership(),actor.userId(),
+                rs.getString(6),rs.getBoolean(7),rs.getBoolean(8),rs.getBoolean(9)),rights.teacher(),clazz,rights.teacher(),rights.membership(),actor.userId(),
                 clazz,rights.membership(),institution,after,limit+1),limit,RevisionRow::revisionId);
         });
     }

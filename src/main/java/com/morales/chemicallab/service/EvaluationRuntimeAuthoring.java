@@ -67,7 +67,7 @@ public class EvaluationRuntimeAuthoring {
             boolean create = action==Action.CREATE;
             String faculty = action==Action.PUBLISH ? "PUBLISH" : "EDIT_DRAFT";
             Rights rights = runtime.rights(actor, scope.institutionId(), scope.classId());
-            require(rights.teacher());
+            require(create ? rights.teacher() : rights.teachingRole());
             Revision revision = create ? null : revision(scope);
             if (!create) authorize(actor, scope, revision, faculty, rights);
             Receipt replay = runtime.replay(actor,scope.institutionId(),scope.classId(),command.key(),kind,request,Receipt.class);
@@ -209,9 +209,10 @@ public class EvaluationRuntimeAuthoring {
     }
 
     private void authorize(SessionPrincipal actor,Scope scope,Revision revision,String faculty,Rights rights) {
-        require(rights.teacher());
-        boolean owner = revision.authorMembership()==rights.membership() && revision.authorAccount()==actor.userId()
-            && ("ASSIGN".equals(faculty) || revision.originClass()==scope.classId());
+        boolean assigning="ASSIGN".equals(faculty);
+        require(assigning ? rights.teacher() : rights.teachingRole());
+        boolean owner = rights.teacher() && revision.authorMembership()==rights.membership()
+            && revision.authorAccount()==actor.userId() && (assigning || revision.originClass()==scope.classId());
         require(owner || Boolean.TRUE.equals(jdbc.queryForObject("""
             select exists(select 1 from evaluation_runtime.faculties x
              where x.resource_id=? and x.institution_id=? and x.membership_id=? and x.faculty=?

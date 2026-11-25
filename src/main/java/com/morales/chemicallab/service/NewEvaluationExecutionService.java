@@ -203,7 +203,8 @@ public class NewEvaluationExecutionService {
                 access.authorizeExecution(actor,requested);
             }
             var content=content(bound);
-            if(teacher && !Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from teacher_profiles where user_id=?)",Boolean.class,actor.userId())))throw denied();
+            if(!nativeRuntime && teacher && !Boolean.TRUE.equals(jdbc.queryForObject(
+                "select exists(select 1 from teacher_profiles where user_id=?)",Boolean.class,actor.userId())))throw denied();
             if(nativeRuntime) runtime.begin(actor,institution,clazz,evaluation,key,auditAction,encoded);
             else beginFixtureOperation(ctl,key,encoded,bound.get("context"));
             var prior=id==null?null:attempt(ctl,id);

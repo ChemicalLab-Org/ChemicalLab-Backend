@@ -209,6 +209,35 @@ def main():
         psql(f"update evaluation_runtime.quotas set max_rows={int(maximum)} where institution_id={a['institutionId']}")
     log("Quota rejection left counters, receipts and academic state unchanged")
 
+    delegated=request("POST",create_path,teacher_a,cmd(payload=payload))
+    root=delegated["evaluationId"]
+    institution=a["institutionId"]
+    psql(f"""
+      begin;
+      select pg_advisory_xact_lock(evaluation_runtime.institution_lock({institution}));
+      insert into evaluation_runtime.memberships(institution_id,account_id,valid_from)
+        select {institution},id,clock_timestamp() from user_accounts where username='runtime-teacher-b';
+      insert into evaluation_runtime.roles(membership_id,institution_id,role,valid_from)
+        select m.id,m.institution_id,case when u.username='runtime-teacher-a' then 'ADMIN_INSTITUCION' else 'DOCENTE' end,clock_timestamp()
+        from evaluation_runtime.memberships m join user_accounts u on u.id=m.account_id
+        where m.institution_id={institution} and u.username in ('runtime-teacher-a','runtime-teacher-b');
+      insert into evaluation_runtime.faculties(resource_id,institution_id,membership_id,faculty,granted_by_membership_id,valid_from,valid_until)
+        select {root},{institution},b.id,'PUBLISH',a.id,clock_timestamp(),clock_timestamp()+interval '5 minutes'
+        from evaluation_runtime.memberships a join user_accounts ua on ua.id=a.account_id
+        cross join evaluation_runtime.memberships b join user_accounts ub on ub.id=b.account_id
+        where a.institution_id={institution} and b.institution_id={institution}
+          and ua.username='runtime-teacher-a' and ub.username='runtime-teacher-b';
+      commit;
+    """)
+    listing=revisions(scope_a,teacher_b)
+    assert [row["evaluationId"] for row in listing]==[root] and listing[0]["canPublish"] and not listing[0]["canEdit"]
+    request("GET",edition(scope_a,delegated),teacher_b,expected=403)
+    pubkey=cmd(expectedVersion=delegated["version"])
+    request("POST",edition(scope_a,delegated)+"/publish",teacher_b,pubkey)
+    psql(f"update evaluation_runtime.faculties set revoked_at=clock_timestamp() where resource_id={root}")
+    request("POST",edition(scope_a,delegated)+"/publish",teacher_b,pubkey,expected=403)
+    log("An exact PUBLISH grant confers neither EDIT_DRAFT nor access after grant revocation")
+
     fresh_b = request("POST",scope_b+"/evaluation-authoring/NEW/v1/evaluations",teacher_b,cmd(payload=payload))
     fresh_b = request("POST",edition(scope_b,fresh_b)+"/publish",teacher_b,cmd(expectedVersion=1))
     episode_b = request("GET",catalog(scope_b,"enrollments"),teacher_b)["items"][0]["enrollmentId"]
