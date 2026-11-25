@@ -203,6 +203,8 @@ class InstitutionalEvaluationAuthoringDbTest {
         } finally {
             threads.shutdownNow();
         }
+        assertThatThrownBy(() -> fixture.sql().update("insert into " + control + ".receipts(operation_id) values(?)", fixture.op()))
+            .isInstanceOf(DataAccessException.class).hasMessageContaining("T12-G generated history only");
         String draft = revision(root, made);
         var versions = Executors.newFixedThreadPool(2);
         try {

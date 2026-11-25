@@ -52,6 +52,11 @@ BEGIN
     CHECK((root_version IS NULL)=(references_hash IS NULL)));
    CREATE INDEX receipt_evaluation ON @g@.receipts(evaluation_id,ordinal DESC);
    CREATE UNIQUE INDEX creation_per_evaluation ON @g@.receipts(evaluation_id) WHERE action='CREATE';
+   CREATE VIEW @g@.receipt_commands AS
+    SELECT NULL::uuid operation_id, NULL::text action, NULL::bigint actor_id, NULL::bigint institution_id,
+      NULL::bigint class_id, NULL::bigint evaluation_id, NULL::bigint resource_id, NULL::bigint revision_id,
+      NULL::bigint root_version, NULL::jsonb before_manifest, NULL::jsonb request, NULL::jsonb result,
+      NULL::bigint audit_id WHERE false;
 
    CREATE FUNCTION @g@.immutable() RETURNS trigger LANGUAGE plpgsql AS $fn$
    BEGIN RAISE EXCEPTION 'T12-G immutable history';END $fn$;
@@ -84,6 +89,7 @@ BEGIN
    CREATE TRIGGER grant_event AFTER INSERT OR UPDATE ON @g@.grants FOR EACH ROW EXECUTE FUNCTION @g@.grant_event();
    CREATE TRIGGER generated BEFORE INSERT ON @g@.grant_history FOR EACH ROW EXECUTE FUNCTION @g@.history_insert();
    CREATE TRIGGER immutable BEFORE UPDATE OR DELETE ON @g@.grant_history FOR EACH ROW EXECUTE FUNCTION @g@.immutable();
+   CREATE TRIGGER generated BEFORE INSERT ON @g@.receipts FOR EACH ROW EXECUTE FUNCTION @g@.history_insert();
    CREATE TRIGGER immutable BEFORE UPDATE OR DELETE ON @g@.receipts FOR EACH ROW EXECUTE FUNCTION @g@.immutable();
    CREATE TRIGGER immutable BEFORE UPDATE OR DELETE ON @g@.schema_version FOR EACH ROW EXECUTE FUNCTION @g@.immutable();
    CREATE TRIGGER no_truncate BEFORE TRUNCATE ON @g@.grant_history FOR EACH STATEMENT EXECUTE FUNCTION @g@.immutable();
@@ -157,24 +163,27 @@ BEGIN
         t11p05_heads(current_manifest),t11p05_references(p.proposed,p.root));
    END $fn$;
 
-   CREATE FUNCTION @g@.record_receipt(op uuid, kind text, actor bigint, institution bigint, clazz bigint, evaluation bigint,
-      resource bigint, revision bigint, anchor_version bigint, before_manifest jsonb, input jsonb, receipt jsonb, audit bigint)
-     RETURNS void LANGUAGE plpgsql AS $fn$
-   DECLARE after_manifest jsonb; refs text; p t11b10_proposals%ROWTYPE;
+   CREATE FUNCTION @g@.store_receipt() RETURNS trigger LANGUAGE plpgsql AS $fn$
+   DECLARE evaluation bigint:=NEW.evaluation_id; revision bigint:=NEW.revision_id;
+     before_manifest jsonb:=NEW.before_manifest; after_manifest jsonb;
+     before_digest text:=@g@.digest(NEW.before_manifest); refs text;
+     p t11b10_proposals%ROWTYPE; prior @g@.receipts%ROWTYPE;
    BEGIN
     PERFORM t11b5_fixture();
-    IF NOT EXISTS(SELECT 1 FROM system_logs l WHERE l.id=audit AND l.correlation_id=op
-      AND l.actor_user_id=actor AND l.action=kind||'_NEW_AUTHORING' AND l.outcome='SUCCESS'
+    LOCK TABLE evaluations IN EXCLUSIVE MODE;
+    IF NOT EXISTS(SELECT 1 FROM system_logs l WHERE l.id=NEW.audit_id AND l.correlation_id=NEW.operation_id
+      AND l.actor_user_id=NEW.actor_id AND l.action=NEW.action||'_NEW_AUTHORING' AND l.outcome='SUCCESS'
       AND l.target_type='ContextResolution' AND l.target_id=evaluation
       AND l.xmin=pg_current_xact_id()::text::xid) THEN RAISE EXCEPTION 'T12-G mandatory audit';END IF;
     IF NOT EXISTS(SELECT 1 FROM t11b8_resources s JOIN t11b8_revisions v ON v.resource_id=s.id
-      WHERE s.id=resource AND s.evaluation_id=evaluation AND s.institution_id=institution AND s.creation='EXPLICIT_NEW'
+      WHERE s.id=NEW.resource_id AND s.evaluation_id=evaluation AND s.institution_id=NEW.institution_id AND s.creation='EXPLICIT_NEW'
       AND v.id=revision AND v.xmin=pg_current_xact_id()::text::xid)
      THEN RAISE EXCEPTION 'T12-G one atomic revision required';END IF;
+    SELECT * INTO prior FROM @g@.receipts WHERE evaluation_id=evaluation ORDER BY ordinal DESC LIMIT 1;
     after_manifest:=t11p05_manifest(@g@.anchor(evaluation));
-    IF kind='CREATE' THEN
-     IF before_manifest<>'[]' OR anchor_version IS NOT NULL OR NOT EXISTS(
-      SELECT 1 FROM t11b8_creations c WHERE c.operation_id=op AND c.resource_id=resource AND c.author_account_id=actor
+    IF NEW.action='CREATE' THEN
+     IF before_manifest IS DISTINCT FROM '[]'::jsonb OR NEW.root_version IS NOT NULL OR prior.operation_id IS NOT NULL OR NOT EXISTS(
+      SELECT 1 FROM t11b8_creations c WHERE c.operation_id=NEW.operation_id AND c.resource_id=NEW.resource_id AND c.author_account_id=NEW.actor_id
        AND c.xmin=pg_current_xact_id()::text::xid)
       THEN RAISE EXCEPTION 'T12-G explicit native creation required';END IF;
     ELSIF (SELECT coalesce(jsonb_agg(x ORDER BY ord),'[]') FROM jsonb_array_elements(before_manifest) WITH ORDINALITY m(x,ord)
@@ -184,22 +193,39 @@ BEGIN
        WHERE NOT ((x->>'source_table'='t11b8_revisions' AND x->'source_pk'=jsonb_build_object('id',revision))
             OR (x->>'source_table'='t11b8_events' AND x#>>'{snapshot,entity_table}'='t11b8_revisions' AND x#>'{snapshot,entity_id}'=to_jsonb(revision))))
       THEN RAISE EXCEPTION 'T12-G unrelated authority changed';END IF;
-    IF anchor_version IS NOT NULL THEN
+    IF NEW.root_version IS NOT NULL THEN
      SELECT proposal.* INTO STRICT p FROM t11b10_proposals proposal JOIN t11b10_versions v ON v.proposal_id=proposal.id
-      WHERE v.id=anchor_version AND v.source_table='evaluations' AND v.source_pk=jsonb_build_object('id',evaluation)
-       AND v.resolution->>'scope'='INSTITUTION' AND v.resolution->'institutionId'=to_jsonb(institution)
+      WHERE v.id=NEW.root_version AND v.source_table='evaluations' AND v.source_pk=jsonb_build_object('id',evaluation)
+       AND v.resolution->>'scope'='INSTITUTION' AND v.resolution->'institutionId'=to_jsonb(NEW.institution_id)
        AND NOT EXISTS(SELECT 1 FROM t11b10_versions n WHERE n.predecessor_id=v.id);
      refs:=@g@.digest(t11p05_references(p.proposed,p.root));
+     IF t11p05_status(p.id) IS DISTINCT FROM 'APPLIED' OR (
+       (p.manifest=before_manifest AND refs=@g@.digest(p.references_snapshot))
+       OR (prior.root_version=NEW.root_version AND prior.after_hash=before_digest AND prior.references_hash=refs
+         AND prior.heads_hash=@g@.digest(t11p05_heads(before_manifest)))
+     ) IS NOT TRUE THEN RAISE EXCEPTION 'T12-G verified predecessor required';END IF;
+    ELSIF NEW.action<>'CREATE' AND (
+      prior.operation_id IS NULL OR prior.root_version IS NOT NULL OR prior.after_hash IS DISTINCT FROM before_digest
+      OR EXISTS(SELECT 1 FROM t11b10_versions WHERE source_table='evaluations' AND source_pk=jsonb_build_object('id',evaluation))
+    ) THEN RAISE EXCEPTION 'T12-G verified native predecessor required';
     END IF;
     INSERT INTO @g@.receipts(operation_id,action,actor_id,institution_id,class_id,evaluation_id,resource_id,revision_id,
       root_version,before_hash,after_hash,heads_hash,references_hash,request,result,audit_id)
-     VALUES(op,kind,actor,institution,clazz,evaluation,resource,revision,anchor_version,@g@.digest(before_manifest),
-      @g@.digest(after_manifest),@g@.digest(t11p05_heads(after_manifest)),refs,input,receipt,audit);
+     VALUES(NEW.operation_id,NEW.action,NEW.actor_id,NEW.institution_id,NEW.class_id,evaluation,NEW.resource_id,revision,NEW.root_version,
+      before_digest,@g@.digest(after_manifest),@g@.digest(t11p05_heads(after_manifest)),refs,NEW.request,NEW.result,NEW.audit_id);
     PERFORM @f@.check_quotas();
     PERFORM @g@.control_quota();
+    RETURN NEW;
    END $fn$;
+   CREATE TRIGGER receipt_command INSTEAD OF INSERT ON @g@.receipt_commands
+    FOR EACH ROW EXECUTE FUNCTION @g@.store_receipt();
 
-   CREATE TRIGGER fixture_write BEFORE INSERT ON @g@.receipts FOR EACH STATEMENT EXECUTE FUNCTION @g@.fixture_write();
+   CREATE FUNCTION @g@.record_receipt(op uuid, kind text, actor bigint, institution bigint, clazz bigint, evaluation bigint,
+      resource bigint, revision bigint, anchor_version bigint, before_manifest jsonb, input jsonb, receipt jsonb, audit bigint)
+    RETURNS void LANGUAGE sql AS $fn$
+    INSERT INTO @g@.receipt_commands VALUES(op,kind,actor,institution,clazz,evaluation,resource,revision,anchor_version,
+      before_manifest,input,receipt,audit)
+   $fn$;
   $ddl$,'@g@',ctl),'@f@',execution);
  END IF;
  SELECT md5(string_agg(s,E'\n' ORDER BY s)) INTO actual FROM (
@@ -209,6 +235,7 @@ BEGIN
   UNION ALL SELECT 'k:'||r.relname||':'||c.conname||':'||t11p05_source_constraint(pg_get_constraintdef(c.oid))||':'||c.convalidated FROM pg_constraint c JOIN pg_class r ON r.oid=c.conrelid WHERE r.relnamespace=ctl::regnamespace
   UNION ALL SELECT 'i:'||indexdef FROM pg_indexes WHERE schemaname=ctl
   UNION ALL SELECT 'r:'||relname||':'||relkind::text FROM pg_class WHERE relnamespace=ctl::regnamespace
+  UNION ALL SELECT 'v:'||c.relname||':'||pg_get_viewdef(c.oid) FROM pg_class c WHERE c.relnamespace=ctl::regnamespace AND c.relkind='v'
   UNION ALL SELECT 'j:'||i.relname||':'||x.indisvalid||':'||x.indisready FROM pg_index x JOIN pg_class r ON r.oid=x.indrelid JOIN pg_class i ON i.oid=x.indexrelid WHERE r.relnamespace=ctl::regnamespace
   UNION ALL SELECT 't:'||pg_get_triggerdef(t.oid)||':'||t.tgenabled::text FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid WHERE c.relnamespace=ctl::regnamespace AND NOT t.tgisinternal
   UNION ALL SELECT 's:'||c.relname||':'||s.seqstart||':'||s.seqincrement||':'||s.seqmax||':'||s.seqcache||':'||s.seqcycle FROM pg_sequence s JOIN pg_class c ON c.oid=s.seqrelid WHERE c.relnamespace=ctl::regnamespace
