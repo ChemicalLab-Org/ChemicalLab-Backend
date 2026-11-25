@@ -64,7 +64,7 @@ public class InstitutionalEvaluationAssignmentService {
     public Receipt assign(SessionPrincipal actor, Scope scope, byte[] body) {
         String schema = environment.getProperty("app.evaluations.institutional.fixture-schema", "");
         if (!environment.getProperty("app.evaluations.institutional.enabled", Boolean.class, false)
-            || !environment.getProperty("app.evaluations.institutional.new-assignment-enabled", Boolean.class, false)
+            || !assignmentEnabled()
             || !Arrays.equals(environment.getActiveProfiles(), new String[]{"test"}) || !schema.matches("t03_[a-f0-9]{32}"))
             throw disabled();
         if (actor == null) throw unauthorized();
@@ -121,8 +121,15 @@ public class InstitutionalEvaluationAssignmentService {
         }
     }
 
+    boolean assignmentEnabled() {
+        return environment.getProperty("app.evaluations.institutional.new-assignment-enabled", Boolean.class, false);
+    }
+
     private void authorize(SessionPrincipal actor, Scope scope, String g, String h) {
-        var member = authoring.member(actor, scope);
+        authorize(actor, scope, g, h, authoring.member(actor, scope));
+    }
+
+    void authorize(SessionPrincipal actor, Scope scope, String g, String h, InstitutionalEvaluationAuthoringService.Member member) {
         if (!member.assigned()) throw denied();
         var resources = jdbc.query("""
             select s.id,s.author_account_id,s.author_membership_id from t11b8_resources s

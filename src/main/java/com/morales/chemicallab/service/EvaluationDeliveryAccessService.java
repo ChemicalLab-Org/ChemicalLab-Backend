@@ -192,6 +192,7 @@ public class EvaluationDeliveryAccessService {
         b10.get(delivery.revisionSource(), q.revisionId(), false, null, null);
         Resolved recipient = b10.get(delivery.recipientSource(), delivery.recipientId(), true, q.recipientAccountId(), null);
         require(recipient.enrollment() != null);
+        if (execution) require(recipient.enrollment().equals(delivery.physicalEnrollment()));
         long targetMember = member(q.recipientAccountId(), q.institutionId(), at);
         require(role(targetMember, "ESTUDIANTE", at));
         require(exists("""
@@ -411,7 +412,8 @@ public class EvaluationDeliveryAccessService {
     }
 
     private record Delivery(String source, String revisionSource, String recipientSource, long recipientId,
-                            Long assignmentId, Long resourceId, boolean started, boolean available, boolean correctionAvailable, boolean closable) {}
+                            Long assignmentId, Long resourceId, Long physicalEnrollment, boolean started, boolean available,
+                            boolean correctionAvailable, boolean closable) {}
     private Delivery legacy(Request q, CurrentContexts b10, Instant now) {
         var rows = jdbc.queryForList("""
             select d.legacy_assignment_id,r.id recipient_id from t11b3_evaluation_deliveries d
@@ -430,14 +432,15 @@ public class EvaluationDeliveryAccessService {
         EvaluationAssignment assignment = assignments.stream().filter(a -> a.getId() == assignmentId).findFirst().orElseThrow(Denied::new);
         var policy = policy(now);
         return new Delivery("t11b3_evaluation_deliveries", "t11b3_evaluation_revisions", "t11b3_evaluation_recipients",
-                number(row, "recipient_id"), assignmentId, null, !policy.beforeStart(assignment),
+                number(row, "recipient_id"), assignmentId, null, null, !policy.beforeStart(assignment),
                 policy.window(assignment) == EvaluationAccessPolicy.Window.AVAILABLE, policy.reviewAvailable(evaluation, assignments),
                 policy.window(assignment)==EvaluationAccessPolicy.Window.AVAILABLE || policy.window(assignment)==EvaluationAccessPolicy.Window.EXPIRED);
     }
 
     private Delivery academic(Request q, CurrentContexts b10, Observation observation, boolean execution) {
         var rows = jdbc.queryForList("""
-            select d.resource_id,d.starts_at,d.due_at,d.status,r.id recipient_id,s.availability
+            select d.resource_id,d.institution_id,d.class_id,d.starts_at,d.due_at,d.status,
+                   r.id recipient_id,r.enrollment_id,s.availability
             from t11b8_deliveries d join t11b8_resources s on s.id=d.resource_id
               join t11b8_revisions v on v.id=d.revision_id and v.resource_id=s.id
               join t11b8_recipients r on r.delivery_id=d.id and r.resource_id=s.id
@@ -447,6 +450,7 @@ public class EvaluationDeliveryAccessService {
         require(rows.size() == 1);
         var row = rows.get(0);
         long resource = number(row, "resource_id");
+        if (execution) require(number(row, "institution_id") == q.institutionId() && number(row, "class_id") == q.classId());
         if(!execution) {
             String ctl="t12f_"+jdbc.queryForObject("select current_schema()",String.class).substring(4);
             if(exists("select to_regclass(?::text) is not null",ctl+".attempts")
@@ -464,7 +468,7 @@ public class EvaluationDeliveryAccessService {
         boolean started = !now.isBefore(((Timestamp) row.get("starts_at")).toInstant());
         boolean available = started && !rootClosed && "OPEN".equals(row.get("status")) && "AVAILABLE".equals(row.get("availability"))
                 && (row.get("due_at") == null || now.isBefore(((Timestamp) row.get("due_at")).toInstant()));
-        boolean closed = rootClosed && !exists("""
+        boolean closed = !execution && rootClosed && !exists("""
             select exists(select 1 from t11b8_fixture_attempts where resource_id=? and (status<>'FINAL' or not grade_closed))
             """, resource);
         if(execution) {
@@ -473,7 +477,8 @@ public class EvaluationDeliveryAccessService {
             closed=rootClosed && !exists("select exists(select 1 from "+ctl+".attempts where resource_id=? and (status<>'GRADED' or not grade_closed))",resource);
         }
         return new Delivery("t11b8_deliveries", "t11b8_revisions", "t11b8_recipients", number(row, "recipient_id"),
-                null, resource, started, available, closed, execution && started && "OPEN".equals(row.get("status")) && "AVAILABLE".equals(row.get("availability")));
+                null, resource, (Long) row.get("enrollment_id"), started, available, closed,
+                execution && started && "OPEN".equals(row.get("status")) && "AVAILABLE".equals(row.get("availability")));
     }
 
     private record Attempt(boolean terminal, boolean closed, boolean correctionVisible) {}

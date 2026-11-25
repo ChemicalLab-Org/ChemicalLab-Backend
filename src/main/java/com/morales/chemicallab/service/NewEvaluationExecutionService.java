@@ -59,7 +59,7 @@ public class NewEvaluationExecutionService {
         }
         return new Request(Contract.NEW,action,institution,clazz,evaluation,delivery,revision,recipient,attempt);
     }
-    private <T>T unit(SessionPrincipal actor,boolean writing,java.util.function.Function<String,T> work) {
+    <T>T unit(SessionPrincipal actor,boolean writing,java.util.function.Function<String,T> work) {
         String schema=enabled();
         return guarded(()->transaction.execute(status->{
             InstitutionalFixtureUnit.lock(jdbc,schema,writing);

@@ -39,9 +39,10 @@ public class InstitutionalEvaluationAuthoringService {
     public record Draft(long evaluationId, long revisionId, Long parentRevisionId, int revisionNumber, long version,
                         Map<String,Object> payload) {}
     record Member(long id, boolean assigned) {}
+    record DraftFaculties(boolean edit, boolean publish) {}
     private record Resource(long id, long author, long authorMembership, int maxAttempts) {}
     record Head(long id, long proposal, JsonNode resolution) {}
-    private record Context(Resource resource, Head head) {}
+    private record Context(Resource resource, Head head, boolean owner) {}
     private record Command(UUID key, Long version, ObjectNode payload) {}
 
     private final JdbcTemplate jdbc;
@@ -153,7 +154,7 @@ public class InstitutionalEvaluationAuthoringService {
         });
     }
 
-    private <T> T unit(SessionPrincipal actor, boolean writing, Function<String,T> work) {
+    <T> T unit(SessionPrincipal actor, boolean writing, Function<String,T> work) {
         String schema = env.getProperty("app.evaluations.institutional.fixture-schema", "");
         if (!env.getProperty("app.evaluations.institutional.enabled", Boolean.class, false)
             || !env.getProperty("app.evaluations.institutional.new-authoring-enabled", Boolean.class, false)
@@ -207,6 +208,12 @@ public class InstitutionalEvaluationAuthoringService {
     }
 
     private Context authorize(String ctl, SessionPrincipal actor, Scope scope, Member member, String faculty) {
+        Context context = authoringContext(ctl, actor, scope, member);
+        require(context.owner() || granted(ctl, context.resource().id(), scope, member, faculty));
+        return context;
+    }
+
+    private Context authoringContext(String ctl, SessionPrincipal actor, Scope scope, Member member) {
         var resources = jdbc.query("""
             select id,author_account_id,author_membership_id,max_attempts from t11b8_resources
             where evaluation_id=? and institution_id=? and creation='EXPLICIT_NEW' and availability='AVAILABLE'
@@ -233,8 +240,15 @@ public class InstitutionalEvaluationAuthoringService {
 
         boolean owner = resource.author() == actor.userId() && resource.authorMembership() == member.id() && member.assigned()
             && originClass(scope, resource, nativeClass, head);
-        if (!owner) require(granted(ctl, resource.id(), scope, member, faculty));
-        return new Context(resource, head);
+        return new Context(resource, head, owner);
+    }
+
+    DraftFaculties draftFaculties(String ctl, SessionPrincipal actor, Scope scope, Member member) {
+        Context context = authoringContext(ctl, actor, scope, member);
+        verifyRevision(ctl, scope, context);
+        long resource = context.resource().id();
+        return new DraftFaculties(context.owner() || granted(ctl, resource, scope, member, "EDIT_DRAFT"),
+            context.owner() || granted(ctl, resource, scope, member, "PUBLISH"));
     }
 
     boolean granted(String ctl, long resourceId, Scope scope, Member member, String faculty) {
@@ -301,6 +315,11 @@ public class InstitutionalEvaluationAuthoringService {
     }
 
     private AcademicRevision revision(String ctl, Scope scope, Context context) {
+        verifyRevision(ctl, scope, context);
+        return revisions.revision(scope.revisionId());
+    }
+
+    private void verifyRevision(String ctl, Scope scope, Context context) {
         require(exists("select exists(select 1 from t11b8_revisions where id=? and resource_id=? and institution_id=?)",
             scope.revisionId(), context.resource().id(), scope.institutionId()));
         if (context.head() != null) {
@@ -311,7 +330,6 @@ public class InstitutionalEvaluationAuthoringService {
                 require(successor(ctl, context.resource().id(), scope.revisionId(), context.head().id()));
             }
         }
-        return revisions.revision(scope.revisionId());
     }
 
     boolean successor(String ctl, long resource, long revision, long head) {
