@@ -18,7 +18,7 @@ public class TransportInputFilter extends OncePerRequestFilter {
         String path = request.getServletPath();
         boolean telemetry = path.equals("/api/usage-metrics/events") || path.matches("/api/evaluations/student/attempts/[0-9]+/events");
         boolean institutional = path.startsWith("/api/institutions/") && (path.contains("/evaluation-writes/")
-            || path.contains("/evaluation-execution/") || path.contains("/evaluation-authoring/"));
+            || path.contains("/evaluation-execution/") || path.contains("/evaluation-authoring/") || path.contains("/evaluation-assignments/"));
         boolean board = path.startsWith("/api/whiteboards/");
         boolean sockjs = path.startsWith("/ws/") && path.endsWith("/xhr_send") && request.getMethod().equals("POST");
         if (!telemetry && !board && !sockjs && !institutional) { chain.doFilter(request, response); return; }

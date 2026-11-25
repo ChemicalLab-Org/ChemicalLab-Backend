@@ -40,7 +40,7 @@ public class InstitutionalEvaluationAuthoringService {
                         Map<String,Object> payload) {}
     record Member(long id, boolean assigned) {}
     private record Resource(long id, long author, long authorMembership, int maxAttempts) {}
-    private record Head(long id, long proposal, JsonNode resolution) {}
+    record Head(long id, long proposal, JsonNode resolution) {}
     private record Context(Resource resource, Head head) {}
     private record Command(UUID key, Long version, ObjectNode payload) {}
 
@@ -271,7 +271,7 @@ public class InstitutionalEvaluationAuthoringService {
         return InstitutionalFixtureUnit.assignmentControl(jdbc, jdbc.queryForObject("select current_schema()", String.class));
     }
 
-    private Head head(String source, long id) {
+    Head head(String source, long id) {
         var rows = jdbc.query("""
             select v.id,v.proposal_id,v.resolution::text from t11b10_versions v
             where v.source_table=? and v.source_pk=jsonb_build_object('id',?::bigint)
@@ -281,7 +281,7 @@ public class InstitutionalEvaluationAuthoringService {
         return rows.isEmpty() ? null : rows.get(0);
     }
 
-    private static boolean sameScope(Head head, Scope scope) {
+    static boolean sameScope(Head head, Scope scope) {
         JsonNode resolution = head.resolution();
         JsonNode clazz = resolution.path("classId");
         return resolution.path("scope").asText().equals("INSTITUTION")
