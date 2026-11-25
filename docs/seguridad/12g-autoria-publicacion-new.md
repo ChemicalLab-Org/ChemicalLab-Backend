@@ -63,13 +63,13 @@ Cuando la cabeza B10 vigente existe, un recibo G queda vinculado a ella y al man
 
 ## Diagnóstico de partida
 
-La aplicación y los SQL del merge `2169515779c460249ad7c973625e0019a8c81125` se compilaron para una sonda externa a la rama. La sonda ejecutó HTTP real y PostgreSQL 18.4 desechable. Observó (1) la respuesta 200 de detalle legacy para un ancla técnica NEW propia, (2) el rechazo PostgreSQL de una delegación de ese recurso por la FK B6 a B3 y (3) una transición 200 → 403 al leer un intento existente tras un borrador sucesor B8, con retorno a 200 tras conciliación F08 y número de intento preservado. Un caso de diagnóstico aprobado. Su fuente, registro y SHA de la aplicación están en `.codex-work/t12g-evidence`.
+La aplicación y los SQL del merge `2169515779c460249ad7c973625e0019a8c81125` se compilaron para una sonda externa a la rama. La sonda ejecutó HTTP real y PostgreSQL 18.4 desechable. Observó (1) la respuesta 200 de detalle legacy para un ancla técnica NEW propia, (2) el rechazo PostgreSQL de una delegación de ese recurso por la FK B6 a B3 y (3) una transición 200 → 403 al leer un intento existente tras un borrador sucesor B8, con retorno a 200 tras conciliación F08 y número de intento preservado. El diagnóstico histórico usó un arnés conservado por separado. Para repetir la comprobación de los contratos vigentes, usa las pruebas versionadas de autoría, ejecución y asignación con PostgreSQL desechable.
 
 Evidencia reutilizada para la preparación: T11-D atribuye B6 a `b99a3be4b230c14095e6429ffea42557477c9142`, B8 a `6893c2743daa1e18491768b91db56e72543ddd40` y B10 a `578837a6ebdf19f5c3b8c88b5f9b9060dad26d3b`. El cierre F conserva su selección aprobada de A–F y las pruebas de presupuesto y continuidad de publicación. Se mantiene la atribución de cada bloque a la ejecución original.
 
 ## Verificación seleccionada
 
-Entorno Windows, JDK 17, Maven 3.9.15 offline, PostgreSQL 18.4 desechable en loopback y HTTP real para los casos G y F. Los XML Surefire, sus hashes, la invocación y los registros se conservan en `.codex-work/t12g-evidence`. Las filas cuentan casos distintos, sin sumar ejecuciones que los repiten.
+Entorno Windows, JDK 17, Maven 3.9.15 offline, PostgreSQL 18.4 desechable en loopback y HTTP real para los casos G y F. Las filas cuentan casos distintos, sin sumar ejecuciones que los repiten. [Reproducción con suites versionadas](12m-administracion-institucional.md#pruebas-de-postgresql-desechable).
 
 | Evidencia aceptada | SHA de fuente probado | Resultado |
 | --- | --- | --- |
@@ -95,6 +95,6 @@ La corrección pertenece al SQL de ensayo de G, que todavía está en su rama lo
 
 La corrida de revisión del 25 de noviembre de 2026 probó `95f83a1f6f56742cdb0630237501bd56a2d8bcf6` con HTTP real y PostgreSQL 18.4 desechable. Pasaron los 3 casos G, sin fallos, errores ni omisiones. La copia física restaurada conservó 141 firmas de tablas y el recibo reproducido por HTTP. La evidencia anterior conserva su atribución. Los tres casos de revisión reiteran los escenarios G y no aumentan el recuento de escenarios distintos.
 
-El informe verificable se guardó como `.codex-work/t12g-evidence/local-review-verified.json`, junto con el XML Surefire, los registros y las firmas restauradas. El SHA-256 del XML es `a234b043a01cef26f21360c222d2960a47fab2e6a5a9fef4c682ea55da52177d`. La revisión comparó sin diferencias 192 archivos protegidos, incluidos los 16 E2E, y 7 archivos de evidencia G previamente atribuidos.
+El XML histórico de Surefire tiene SHA-256 `a234b043a01cef26f21360c222d2960a47fab2e6a5a9fef4c682ea55da52177d`. La revisión comparó sin diferencias 192 archivos protegidos, incluidos los 16 E2E, y 7 archivos de evidencia G previamente atribuidos.
 
 El despliegue sigue pendiente. T12 integral y etapa 4 permanecen abiertos.

@@ -34,6 +34,35 @@ node tools/verify-institutional-journey.mjs "$run/browser" 'C:/Program Files (x8
 
 Para la ampliación usa un directorio y puertos distintos, con `-Administration -PredecessorJar` y el JAR de la base de pizarras. Los modos `evaluations`, `contents` y `boards` del corredor Angular pueblan intentos, notas, contenido, archivos y pizarras antes del corte. Ejecuta `node tools/verify-administration-runtime.mjs $run $psql $port before` desde el checkout backend. Crea `$run/browser/upgrade`, espera `$run/upgraded.pid` y vuelve a ejecutar el mismo corredor sin `before`. En esta segunda ejecución comprueba firmas, rutas, facultades, revocaciones, auditoría, reinicio y restauración de la base desechable.
 
+## Pruebas de PostgreSQL desechable
+
+Usa un clúster nuevo de PostgreSQL 18 en loopback, con una base vacía llamada `chemicallab_t01_test`. Para los ensayos G/H configura al menos 512 locks por transacción. Las suites preparan y limpian sus esquemas. Los recorridos de J+K+L usan la base distinta que crea `run-runtime-journey.ps1`.
+
+```powershell
+$jdbc = 'jdbc:postgresql://127.0.0.1:55761/chemicallab_t01_test'
+mvn -o '-Dtest=InstitutionalEvaluationAuthoringDbTest,NewEvaluationExecutionDbTest,InstitutionalEvaluationAssignmentDbTest' "-Dspring.datasource.url=$jdbc" "-Dspring.datasource.username=$fixtureUser" "-Dspring.datasource.password=$fixturePassword" test
+```
+
+Usa la misma clase de base desechable para el ensayo T03 de reconciliación legacy. En el backend ejecuta el fixture en un proceso separado. La variable `$run` indica un directorio local escribible. El fixture publica su origen en loopback, el puerto 18087 y las credenciales ficticias en `fixture.json`.
+
+```powershell
+mvn -o '-Dtest=WhiteboardBrowserFixture' "-Dspring.datasource.url=$jdbc" "-Dspring.datasource.username=$fixtureUser" "-Dspring.datasource.password=$fixturePassword" "-Dt03.fixture-file=$run/fixture.json" "-Dt03.stop-file=$run/stop" test
+```
+
+En el checkout Angular, una vez que el fixture esté listo, ejecuta las variantes docente y estudiante. El bloque final retira la variable del proceso y señala al fixture que cierre la aplicación. Detén PostgreSQL al terminar.
+
+```powershell
+$env:T03_LIVE_FIXTURE = Get-Content "$run/fixture.json" -Raw
+try {
+  npm run test -- --watch=false --include=src/app/shared/whiteboard/whiteboard-reconciliation-live.spec.ts
+} finally {
+  Remove-Item Env:T03_LIVE_FIXTURE
+  New-Item -ItemType File -Path "$run/stop" | Out-Null
+}
+```
+
+Conserva los resultados atribuidos al SHA que ejecutaste. Los XML, logs, volcados y archivos `fixture.json` y `browser/ready.json` quedan en el directorio local del ensayo.
+
 ## Matriz de superficies
 
 | Superficie | Aplicación adoptada | Cobertura o pendiente |

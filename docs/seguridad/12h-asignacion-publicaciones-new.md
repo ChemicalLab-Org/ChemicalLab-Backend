@@ -48,7 +48,7 @@ La sonda de `391f994fa9285d3da3cb05b443218969cfb78508` certificó el delta B10 a
 
 La selección HTTP de `fa1c30760f98e1542378765a985c3d345f087767` ejecutó diez casos. Pasaron los cuatro casos de transporte, el caso focalizado de G sobre facultades y continuidad F09, el caso focalizado de F sobre readmisión y consumo, y dos casos H sobre delegación, reintentos, atomicidad, concurrencia y recuperación. La copia física restaurada tuvo 143 firmas coincidentes y devolvió el recibo H por HTTP. Quedaron dos errores del ensayo H. El alumno adicional requería un docente para crear su perfil y el rechazo HTTP intercalado entre aprobaciones cambió la medición que B10 firma. La revisión corrigió el fixture y dejó la comprobación de la aplicación prematura dentro del censo aprobado.
 
-La revisión de código añadió la comprobación de que toda cabeza existente del agregado pertenezca a la propuesta que ancla el recibo, reforzó la comparación de la ventana con la solicitud y volvió a comprobar los episodios tras sellar el delta. Se probaron deriva, rollback ante auditoría diferida y cuota y rechazo de divergencia del catálogo. Los informes por SHA, XML de Surefire, registros de PostgreSQL y huellas de recuperación se guardan bajo `.codex-work/t12h-evidence`.
+La revisión de código añadió la comprobación de que toda cabeza existente del agregado pertenezca a la propuesta que ancla el recibo, reforzó la comparación de la ventana con la solicitud y volvió a comprobar los episodios tras sellar el delta. Se probaron deriva, rollback ante auditoría diferida y cuota y rechazo de divergencia del catálogo. [Reproducción con suites versionadas](12m-administracion-institucional.md#pruebas-de-postgresql-desechable).
 
 Se compararon 192 archivos protegidos, incluidas las 16 huellas E2E originales, y los 19 SQL históricos hasta G. Se conservaron el frontend, los checkouts anteriores y los resultados G. El bundle de G coincide con su SHA-256 anterior y la copia Git restaurada pasó `git fsck --full`.
 
@@ -58,15 +58,13 @@ La ejecución final en `04039750d9fe25b27b84f1fb93e29be3e55d49f8` aprobó los cu
 
 - XML Surefire final SHA-256 `a2f948ed0ff415370089dfc63058f55ed4bd5217e086d97b18bedb6aef5fa982`.
 - Firmas de recuperación SHA-256 `7e05dc70d99eee64874271ce6007a107fe762e6641dece53d7719d956d18b058`.
-- `.codex-work/t12h-evidence/results.json` conserva los resultados y fallos por SHA. `preservation.json` registra el cotejo de archivos y checkouts.
 
-## Recuperación de Git
+## Código de la ejecución histórica
 
-El bundle de H, `t12h-<SHA>.bundle` bajo `.codex-work/t12h-evidence`, contiene el historial completo y las referencias de `develop`, G y H. Consulte el manifiesto `bundle-<SHA>-verification.json` para obtener el nombre exacto y la huella SHA-256. Clone el bundle en un directorio nuevo.
+Para inspeccionar el código de la ejecución final, abre su commit en un checkout separado desde un clon que contenga la rama del piloto.
 
 ```powershell
-git clone --branch feature/t12h-asignacion-publicaciones-new <bundle> <directorio-nuevo>
-git -C <directorio-nuevo> fsck --full
+git worktree add --detach ../chemicallab-t12h-verificacion 04039750d9fe25b27b84f1fb93e29be3e55d49f8
 ```
 
 ## Comprobación focalizada de auditoría T08 en la carrera H
@@ -77,7 +75,7 @@ La revisión del 25 de noviembre de 2026 cotejó la evidencia existente de dos c
 
 **Registro técnico del rechazo.** El primer lock de H vence antes de autorizar o escribir la asignación competidora. El filtro T08 observa el estado HTTP ya resuelto y clasifica el 503 como `OPERATION_FAILED`. El intento de evidenciarlo usa una transacción `REQUIRES_NEW` con espera de lock de 250 ms. Ante la excepción, `AuditRejections` registra la señal mediante `AuditSignals`. Primero incrementa el contador Micrometer `security.audit{signal="rejection_persist_failed"}` y luego emite, sujeto al límite de un aviso por minuto e instancia, el código fijo por SLF4J. Ambas salidas son independientes de `system_logs` y de la reserva fallida. El mensaje observado contiene solo el código y la etiqueta fija. El filtro conserva el estado HTTP y el tratamiento del fallo prescinde del texto de la excepción y de los datos de la petición. [Contrato T08](02-08-auditoria-eventos.md#rechazos-señales-y-límites) · [Filtro HTTP](../../src/main/java/com/morales/chemicallab/security/audit/AuditRequestFilter.java) · [Señales](../../src/main/java/com/morales/chemicallab/security/audit/AuditSignals.java)
 
-En ambos registros, la competencia dejó una sola entrega de esa revisión/clase, un recibo y un SUCCESS. El competidor obtuvo 409 al repetir el comando. El cliente recuperó con el mismo UUID el resultado confirmado cuyo cuerpo había descartado y volvió a obtenerlo desde la copia restaurada. H observó el aviso SLF4J. La medición directa del contador procede de los ensayos históricos `AuditSafetyTest#failedDestinationIsObservableAndDbAttemptsStopAtLocalBudget` y `AuditReliabilityDbTest#destinationFailureRejectsBusinessCommitAndRecoveryNeedsNoQueue`, que también verifican el límite local y la conservación de 401 ante el destino averiado. Los SHA y fallos originales siguen en `.codex-work/t12h-evidence/results.json`. El comportamiento comprobado cumple T08. Esta revisión reutilizó la evidencia y añadió únicamente documentación. La recolección y conservación externas de las señales continúan como trabajo operativo T08. [Caso HTTP de H](../../src/test/java/com/morales/chemicallab/security/InstitutionalEvaluationAssignmentDbTest.java) · [Verificación histórica T08](02-08-auditoria-eventos.md#verificación-y-cierre)
+En ambos registros, la competencia dejó una sola entrega de esa revisión/clase, un recibo y un SUCCESS. El competidor obtuvo 409 al repetir el comando. El cliente recuperó con el mismo UUID el resultado confirmado cuyo cuerpo había descartado y volvió a obtenerlo desde la copia restaurada. H observó el aviso SLF4J. La medición directa del contador procede de los ensayos históricos `AuditSafetyTest#failedDestinationIsObservableAndDbAttemptsStopAtLocalBudget` y `AuditReliabilityDbTest#destinationFailureRejectsBusinessCommitAndRecoveryNeedsNoQueue`, que también verifican el límite local y la conservación de 401 ante el destino averiado. El comportamiento comprobado cumple T08. Esta revisión reutilizó la evidencia y añadió únicamente documentación. La recolección y conservación externas de las señales continúan como trabajo operativo T08. [Caso HTTP de H](../../src/test/java/com/morales/chemicallab/security/InstitutionalEvaluationAssignmentDbTest.java) · [Verificación histórica T08](02-08-auditoria-eventos.md#verificación-y-cierre)
 
 ## Propuesta para el siguiente bloque de T12
 
