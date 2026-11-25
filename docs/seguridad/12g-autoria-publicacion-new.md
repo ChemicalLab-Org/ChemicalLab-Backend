@@ -85,4 +85,16 @@ La recuperación ejecutó `pg_basebackup` con WAL en streaming, `pg_verifybackup
 
 La rama agrega este documento después de los SHA ejecutados. El código de aplicación y el SQL son idénticos en los dos SHA aceptados de G. La única diferencia de prueba entre ambos reintenta las mismas operaciones si vence el lock de la carrera.
 
+## Revisión local
+
+T12-G sigue en la rama local `feature/t12g-autoria-publicacion-new`. El checkout de `develop` conserva el merge de T12-F `2169515779c460249ad7c973625e0019a8c81125`.
+
+La revisión identificó que una inserción ordinaria en la tabla de recibos podía omitir la función que comprobaba la auditoría y el manifiesto. La tabla solo recibe ahora filas generadas por el disparador de comandos. La escritura certifica un antecedente exacto de B10 o un recibo anterior válido de la misma cadena y conserva la comprobación transaccional de auditoría, manifiesto, referencias y cuota. La prueba focalizada comprueba también el rechazo de la inserción directa.
+
+La corrección pertenece al SQL de ensayo de G, que todavía está en su rama local. Los 18 SQL anteriores conservan sus bytes. El bundle y la evidencia de `36fe2149de25ff214e43eab68d6fb9b50902c4da` conservan el catálogo previo a esta revisión. Para repetir los ensayos de la revisión, iniciar el fixture con el G revisado sobre F certificado. El certificador conserva el rechazo de un catálogo divergente.
+
+La corrida de revisión del 25 de noviembre de 2026 probó `95f83a1f6f56742cdb0630237501bd56a2d8bcf6` con HTTP real y PostgreSQL 18.4 desechable. Pasaron los 3 casos G, sin fallos, errores ni omisiones. La copia física restaurada conservó 141 firmas de tablas y el recibo reproducido por HTTP. La evidencia anterior conserva su atribución. Los tres casos de revisión reiteran los escenarios G y no aumentan el recuento de escenarios distintos.
+
+El informe verificable se guardó como `.codex-work/t12g-evidence/local-review-verified.json`, junto con el XML Surefire, los registros y las firmas restauradas. El SHA-256 del XML es `a234b043a01cef26f21360c222d2960a47fab2e6a5a9fef4c682ea55da52177d`. La revisión comparó sin diferencias 192 archivos protegidos, incluidos los 16 E2E, y 7 archivos de evidencia G previamente atribuidos.
+
 El despliegue sigue pendiente. T12 integral y etapa 4 permanecen abiertos.
