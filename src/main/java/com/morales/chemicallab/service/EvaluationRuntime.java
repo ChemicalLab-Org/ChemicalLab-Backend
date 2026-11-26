@@ -91,7 +91,7 @@ public class EvaluationRuntime {
                 // revocation of this actor for the duration of the transaction.
                 jdbc.queryForList("select id from user_accounts where id=? for share", Long.class, actor.userId());
                 jdbc.queryForList("select id from account_sessions where id=? for share", UUID.class, actor.sessionId());
-                sessions.revalidate(actor);
+                sessions.revalidateLocked(actor);
                 if (institution != null) {
                     jdbc.queryForObject("select pg_advisory_xact_lock_shared(evaluation_runtime.institution_lock(?))",
                         Object.class, institution);
@@ -106,7 +106,7 @@ public class EvaluationRuntime {
                     if (roots.isEmpty()) throw denied();
                 }
                 T result = work.get();
-                sessions.revalidate(actor);
+                sessions.revalidateLocked(actor);
                 return result;
             });
         } catch (AuthenticationException failure) {
