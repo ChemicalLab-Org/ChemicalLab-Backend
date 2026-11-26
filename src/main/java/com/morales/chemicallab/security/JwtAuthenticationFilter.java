@@ -21,9 +21,16 @@ import java.io.IOException;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final AntPathMatcher PATHS = new AntPathMatcher();
     private static final String CLASS_PATH = "/api/institutions/*/classes/*";
+    private static final String AGREEMENTS = "/api/agreements";
     private final AccountSessionService sessions;
     private final RestAuthenticationEntryPoint entryPoint;
     private final AgreementService agreements;
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getServletPath();
+        return read(request) && (path.equals(AGREEMENTS + "/public") || PATHS.match(AGREEMENTS + "/public/*", path));
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
@@ -57,12 +64,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 try {
                     String path = request.getServletPath();
                     Long institution = institution(path);
-                    if (agreements.requiredOutstanding(principal.userId(), institution)) {
-                        reject(response, 403, "AGREEMENTS_REQUIRED", "Revise los acuerdos pendientes para continuar.");
+                    var pending = agreements.pendingScope(principal.userId(), institution);
+                    if (pending != null) {
+                        Long affected = pending == AgreementService.PendingScope.INSTITUTION ? institution : null;
+                        reject(response, 403, "AGREEMENTS_REQUIRED", "Revise los acuerdos pendientes para continuar.", affected);
                         return;
                     }
                     if (institution != null && path.contains("/classes/") && agreements.academicHold(principal.userId(), institution)) {
-                        reject(response, 403, "ACADEMIC_AUTHORIZATION_REQUIRED", "La participación académica está pendiente en este colegio.");
+                        reject(response, 403, "ACADEMIC_AUTHORIZATION_REQUIRED", "La participación académica está pendiente en este colegio.", institution);
                         return;
                     }
                 } catch (DataAccessException ex) {
@@ -76,7 +85,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private static boolean publishedHistory(HttpServletRequest request) {
-        if (!"GET".equals(request.getMethod())) return false;
+        if (!read(request)) return false;
         String path = request.getServletPath();
         return path.equals("/api/evaluations/student/results")
                 || PATHS.match("/api/evaluations/student/attempts/*/result", path)
@@ -89,14 +98,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static boolean recoveryOrAgreement(HttpServletRequest request) {
         String path = request.getServletPath();
         return switch (request.getMethod()) {
-            case "GET" -> path.equals("/api/auth/me") || path.equals("/api/health")
-                    || path.equals("/api/agreements/public") || path.startsWith("/api/agreements/public/")
-                    || path.equals("/api/agreements/account") || path.startsWith("/api/agreements/account/");
+            case "GET", "HEAD" -> path.equals("/api/auth/me") || path.equals("/api/health")
+                    || path.equals(AGREEMENTS + "/account") || path.equals(AGREEMENTS + "/account/history")
+                    || path.equals(AGREEMENTS + "/account/family-status") || PATHS.match(AGREEMENTS + "/account/versions/*", path);
             case "PATCH" -> path.equals("/api/auth/change-temporary-password");
             case "POST" -> path.equals("/api/auth/logout") || path.equals("/api/auth/logout-all")
-                    || path.equals("/api/auth/login") || path.startsWith("/api/agreements/account/versions/");
+                    || path.equals("/api/auth/login") || PATHS.match(AGREEMENTS + "/account/versions/*/decisions", path);
             default -> false;
         };
+    }
+
+    private static boolean read(HttpServletRequest request) {
+        return "GET".equals(request.getMethod()) || "HEAD".equals(request.getMethod());
     }
 
     private static Long institution(String path) {
@@ -109,10 +122,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private static void reject(HttpServletResponse response, int status, String code, String message) throws IOException {
+        reject(response, status, code, message, null);
+    }
+
+    private static void reject(HttpServletResponse response, int status, String code, String message, Long institution) throws IOException {
         response.setStatus(status);
         response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
         response.setContentType("application/json");
         response.setCharacterEncoding("UTF-8");
-        response.getWriter().write("{\"status\":" + status + ",\"code\":\"" + code + "\",\"message\":\"" + message + "\"}");
+        String scope = institution == null ? "" : ",\"institutionId\":" + institution;
+        response.getWriter().write("{\"status\":" + status + ",\"code\":\"" + code + "\",\"message\":\"" + message + "\"" + scope + "}");
     }
 }

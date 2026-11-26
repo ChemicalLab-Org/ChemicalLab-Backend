@@ -17,6 +17,7 @@ const api = '/api/institutions/evaluation-catalog/NEW/v1/classes';
 const steps = [];
 let requests = 0;
 let error = null;
+const openSockets = new Set();
 
 function sql(query) {
   return execFileSync(psql, ['-h', '127.0.0.1', '-p', port, '-U', 't12_runtime_local', '-d', database,
@@ -27,7 +28,7 @@ async function call(method, path, token, expected = 200, body) {
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  if (method === 'POST' && path.includes('/whiteboards/')) headers['Idempotency-Key'] = randomUUID();
+  if (method !== 'GET' && path.includes('/whiteboards/')) headers['Idempotency-Key'] = randomUUID();
   const res = await fetch(new URL(path, origin), { method, headers,
     body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(12000) });
   const payload = await res.text();
@@ -88,6 +89,39 @@ async function stompDenied(token, institution, clazz, reason) {
   }
 }
 
+async function observeBoard(token, institution, clazz, board) {
+  const address = new URL(`/ws/000/${randomUUID()}/websocket`, origin);
+  address.protocol = 'ws:';
+  const socket = new WebSocket(address);
+  const topic = `/institutions/${institution}/classes/${clazz}/whiteboards/v1/${board}`;
+  const state = { ready: false, close: null, messages: 0 };
+  openSockets.add(socket);
+  const send = (command, headers) => socket.send(JSON.stringify([command + '\n' +
+    Object.entries(headers).map(([key, value]) => `${key}:${value}`).join('\n') + '\n\n\0']));
+  socket.addEventListener('close', ({ code, reason }) => { state.close ??= [code, reason]; });
+  socket.addEventListener('message', ({ data }) => {
+    if (data === 'o') {
+      send('CONNECT', { 'accept-version': '1.2', Authorization: `Bearer ${token}`,
+        'board-scope': `${institution}/${clazz}/${board}/student` });
+    } else if (data.startsWith('c')) {
+      state.close = JSON.parse(data.slice(1));
+    } else if (data.startsWith('a')) {
+      for (const frame of JSON.parse(data.slice(1))) {
+        if (frame.startsWith('CONNECTED')) {
+          send('SUBSCRIBE', { destination: '/user/queue/whiteboard-errors', id: 'errors', ack: 'auto' });
+          send('SUBSCRIBE', { destination: `/topic${topic}`, id: 'board', ack: 'auto' });
+          send('SEND', { destination: `/app${topic}/ready` });
+        }
+        if (frame.startsWith('MESSAGE') && frame.includes('"ready":true')) state.ready = true;
+        if (frame.startsWith('MESSAGE') && frame.includes('/topic' + topic)) state.messages++;
+      }
+    }
+  });
+  await waitFor(() => state.ready || state.close, 'suscripción de pizarra');
+  assert.equal(state.ready, true, JSON.stringify(state.close));
+  return state;
+}
+
 try {
   assert.equal(sql('select current_database() || \'/\' || host(inet_server_addr())'), `${database}/127.0.0.1`);
   const [classA, classB] = sql("select id from evaluation_runtime.classes where code='CHEM' order by institution_id")
@@ -124,6 +158,8 @@ try {
   });
   const platform = platformResponse.token;
   await get('/api/auth/me', platformTemporary, 401);
+  await get(`${base}/public/${noticeId}`, platformTemporary);
+  await call('HEAD', `${base}/public/${noticeId}`, platformTemporary);
   const platformId = Number(sql("select account_id from administration_runtime.platform_authority"));
   assert.equal((await get(api, platform, 403)).code, 'AGREEMENTS_REQUIRED');
   await submit(platform, termsId, platformId, 'ACCEPT');
@@ -149,7 +185,9 @@ try {
   await submit(teacherA, contractA, null, 'ACCEPT');
   await get(scopeA, student);
   await get(boardHistory, student);
-  assert.equal((await get(scopeB, student, 403)).code, 'AGREEMENTS_REQUIRED');
+  const pendingB = await get(scopeB, student, 403);
+  assert.equal(pendingB.code, 'AGREEMENTS_REQUIRED');
+  assert.equal(pendingB.institutionId, ready.b);
   await submit(teacherB, contractB, null, 'ACCEPT');
   await get(scopeB, student);
   mark('reintentos concurrentes y una cuenta compartida con contratos independientes por colegio');
@@ -178,6 +216,26 @@ try {
   await submit(director, docC, null, 'ACCEPT');
   await patch(state, platform, { active: true }, 204);
   mark('alta de colegio inactivo, revisión con referencia y activación tras firma del director');
+
+  const directorPassword = 'Fictitious-Replacement-Setup-2026!';
+  const directorToken = (await patch('/api/auth/change-temporary-password', director, {
+    currentPassword: first.temporaryPassword, newPassword: directorPassword, confirmPassword: directorPassword,
+  })).token;
+  const directorAccount = Number(sql("select id from user_accounts where username='FixtureDirector'"));
+  await submit(directorToken, termsId, directorAccount, 'ACCEPT');
+  const successor = await post(`/api/institutions/${third}/administration/v1/members`, directorToken,
+    { username: 'FixtureSuccessor', displayName: 'Dirección sucesora de ensayo' });
+  const successorToken = await login(successor.username, successor.temporaryPassword);
+  await patch(state, platform, { active: false }, 204);
+  await post(review, platform, { documentId: docC, result: 'REVOKED', evidenceReference: 'DEMO-RELEVO', requestId: randomUUID() });
+  await post(`${base}/review/directors/${third}/${successor.membershipId}`, platform,
+    { ...verified, evidenceReference: 'DEMO-SUCESOR', requestId: randomUUID() });
+  await patch(state, platform, { active: true }, 409);
+  assert.equal(item(await overview(successorToken), 'acuerdo-demo', third).currentAction, null);
+  await submit(successorToken, docC, null, 'ACCEPT');
+  await patch(state, platform, { active: true }, 204);
+  assert.equal(sql(`select count(distinct actor_id) from agreement_runtime.decisions where version_id=${docC} and action='ACCEPT'`), '2');
+  mark('un sucesor verificado firma la versión vigente y permite reactivar el colegio con ambas evidencias intactas');
 
   const schoolMember = Number(sql(`select id from evaluation_runtime.memberships where account_id=${studentId} and institution_id=${ready.a}`));
   const family = `${base}/review/families/${ready.a}/${schoolMember}`;
@@ -222,9 +280,42 @@ try {
   assert.equal(sql(`select count(*) from board_runtime.boards where board_id=${board.id} and institution_id=${ready.a}`), '1');
   mark('docente crea una pizarra y la cuenta compartida participa con su pertenencia autorizada');
 
+  const boardsB = `/api/institutions/${ready.b}/classes/${classB}/whiteboards/v1`;
+  const boardB = await post(`${boardsB}/teacher`, teacherB, { name: 'Fictitious board B' });
+  await post(`${boardsB}/student/${boardB.id}/join`, student);
+  const streamA = await observeBoard(student, ready.a, classA, board.id);
+  const streamB = await observeBoard(student, ready.b, classB, boardB.id);
+  await post(family, platform, { result: 'WITHDRAWN', evidenceReference: 'DEMO-SOCKET', requestId: randomUUID() });
+  await waitFor(() => streamA.close, 'cierre del socket tras la retirada');
+  assert.deepEqual(streamA.close, [4003, 'ACADEMIC_AUTHORIZATION_REQUIRED']);
+  const messagesB = streamB.messages;
+  await patch(`${boardsB}/teacher/${boardB.id}/interaction`, teacherB, { interactionEnabled: true });
+  await waitFor(() => streamB.messages > messagesB || streamB.close, 'tráfico de la otra institución');
+  assert.equal(streamB.close, null);
+  await get(boardHistory, student);
+
+  await post(family, teacherA, { ...approved, validUntil: new Date(Date.now() + 6000).toISOString(), requestId: randomUUID() });
+  const expiring = await observeBoard(student, ready.a, classA, board.id);
+  await waitFor(() => expiring.close, 'cierre del socket tras el vencimiento');
+  assert.deepEqual(expiring.close, [4003, 'ACADEMIC_AUTHORIZATION_REQUIRED']);
+  const hold = await get(scopeA, student, 403);
+  assert.equal(hold.code, 'ACADEMIC_AUTHORIZATION_REQUIRED');
+  assert.equal(hold.institutionId, ready.a);
+  assert.equal((await get(`${base}/account/family-status`, student))[0].status, 'EXPIRED');
+  await get(boardHistory, student);
+  await get(scopeB, student);
+  await post(family, platform, { result: 'NOT_REQUIRED', evidenceReference: 'DEMO-LEGAL', requestId: randomUUID() });
+  mark('retirada y vencimiento cierran un socket abierto de A sin interrumpir el tráfico de B');
+
   const publish = (version, renewal) => Number(sql(`insert into agreement_runtime.versions(series_id,version,renewal,title,body,change_summary)
     select id,${version},${renewal},'Condiciones de ensayo','Texto distinto.','Cambio de ensayo.'
     from agreement_runtime.series where code='terminos-demo' returning id`));
+  const publishDraft = body => sql(`insert into agreement_runtime.versions(series_id,version,renewal,title,body,change_summary)
+    select id,2,1,'Condiciones de ensayo','${body}','Cambio de ensayo.'
+    from agreement_runtime.series where code='terminos-demo'`);
+  for (const body of ['Nombre {{TITULAR}}', '**Borrador del piloto peruano**']) {
+    assert.throws(() => publishDraft(body), /Agreement draft cannot be published/);
+  }
   publish(2, 1);
   await get(api, student);
   const renewed = publish(3, 2);
@@ -254,6 +345,7 @@ try {
   console.error(failure);
   process.exitCode = 1;
 } finally {
+  for (const socket of openSockets) if (socket.readyState < WebSocket.CLOSING) socket.close();
   writeFileSync(join(run, 'agreement-http.json'), JSON.stringify({ sha: readFileSync(join(run, 'backend-sha.txt'), 'utf8').trim(),
     steps, requests, error }, null, 2));
 }

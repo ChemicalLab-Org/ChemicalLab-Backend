@@ -25,10 +25,14 @@ El sistema no deduce edad del grado. Si se requiere consentimiento y el supuesto
 
 ## Recorrido de operación
 
+La publicación rechaza los marcadores de plantilla y el encabezado de borrador incluidos en los documentos de esta entrega. ChemicalLab conserva y verifica la copia aprobada antes de publicarla.
+
 1. El operador de ChemicalLab crea el colegio. Con acuerdos habilitados el colegio nace inactivo. Crea la primera cuenta autorizada y entrega el acuerdo aprobado por el canal acordado. Publica la serie institucional obligatoria del colegio.
 2. En **Mis acuerdos y privacidad → Revisar representación y autorizaciones**, usa los identificadores del colegio, de la pertenencia del director y de la versión publicada. Verifica por un canal institucional la identidad y el cargo, más la facultad para contratar cuando el nombramiento no sea suficiente. Conserva una constancia o referencia verificable del documento consultado sin cargar una copia en la aplicación. Registra el resultado, un código de expediente y, para la verificación favorable, una fecha de vigencia justificada. El colegio pasa a activo solo después de la aceptación del director desde su propia cuenta. El sistema conserva todas las revisiones de la facultad.
 3. Si el colegio determina que un alumno necesita autorización para la participación académica, documenta la información previa y la evidencia familiar fuera de la plataforma. En una pertenencia ya identificada, el administrador registra un caso pendiente o verificado antes de habilitar la participación. Registra quién autorizó, vigencia y referencia del expediente. La decisión de **no exigible** requiere revisión de ChemicalLab y el fundamento revisado queda en ese expediente. Cualquier familia puede solicitar atención al colegio o a ChemicalLab directamente.
 4. El servidor limita las operaciones interactivas del alumno en las clases del colegio afectado cuando el caso está pendiente, rechazado, vencido o retirado. Incluye REST y pizarra en vivo. Mantiene la consulta de acuerdos, el historial de decisiones, la contraseña y el cierre de sesión. Las rutas individuales de resultados y correcciones publicadas y de pizarras cerradas siguen sujetas a los permisos de lectura académica existentes. El control de participación requiere que la información y la legitimación se hayan resuelto antes del alta. El código de expediente solo se muestra a quienes pueden gestionar ese ámbito.
+
+Cuando cambia el director, registra la nueva facultad en la misma serie institucional. El sucesor puede firmar la versión vigente para habilitar nuevamente el colegio. Se conserva la actuación anterior y el cambio de director no crea por sí solo una renovación del documento para las demás cuentas.
 
 ## Guía de verificación local
 

@@ -49,6 +49,10 @@ BEGIN
      OR (document_kind = 'NOTICE' AND NEW.renewal <> 1) THEN
     RAISE EXCEPTION 'Invalid agreement version or renewal';
   END IF;
+  IF concat_ws(E'\n', NEW.title, NEW.body) ~ '\{\{[A-Z_]+\}\}'
+     OR concat_ws(E'\n', NEW.title, NEW.body) ~* '(^|\n)[[:blank:]]*[*_#]*[[:blank:]]*borrador([[:blank:].!*_]|$)' THEN
+    RAISE EXCEPTION 'Agreement draft cannot be published';
+  END IF;
   NEW.body_sha256 := encode(sha256(convert_to(NEW.body, 'UTF8')), 'hex');
   NEW.published_at := clock_timestamp();
   RETURN NEW;

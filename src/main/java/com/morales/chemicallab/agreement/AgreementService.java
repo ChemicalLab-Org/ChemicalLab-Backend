@@ -16,6 +16,7 @@ import java.util.UUID;
 @Service
 public class AgreementService {
     public enum Action { ACCEPT, ACKNOWLEDGE, GRANT, DECLINE, WITHDRAW }
+    public enum PendingScope { ACCOUNT, INSTITUTION }
 
     public record Document(long id, String code, int version, String kind, String title, String sha256,
                            String changeSummary, OffsetDateTime publishedAt, Long institutionId,
@@ -60,6 +61,7 @@ public class AgreementService {
                 JOIN agreement_runtime.versions signed ON signed.id = d.version_id
                 WHERE d.series_id = s.id AND d.subject_id IS NOT DISTINCT FROM target.subject_id
                   AND signed.renewal = v.renewal AND (s.kind <> 'NOTICE' OR signed.id = v.id)
+                  AND (s.kind <> 'INSTITUTIONAL' OR grant_row.id IS NULL OR d.actor_id = :actor)
                 ORDER BY d.id DESC LIMIT 1
             ) latest ON true
             """;
@@ -169,10 +171,14 @@ public class AgreementService {
     }
 
     public boolean requiredOutstanding(long actor, Long institution) {
-        if (!enabled) return false;
+        return pendingScope(actor, institution) != null;
+    }
+
+    public PendingScope pendingScope(long actor, Long institution) {
+        if (!enabled) return null;
         return sql.sql("""
-                SELECT EXISTS (
-                    SELECT 1 FROM agreement_runtime.current_versions v
+                    SELECT CASE WHEN s.institution_id IS NULL THEN 'ACCOUNT' ELSE 'INSTITUTION' END
+                    FROM agreement_runtime.current_versions v
                     JOIN agreement_runtime.series s ON s.id = v.series_id
                     WHERE s.required AND (s.institution_id IS NULL OR (s.institution_id = :institution
                         AND EXISTS (SELECT 1 FROM agreement_runtime.active_memberships m
@@ -181,9 +187,10 @@ public class AgreementService {
                         SELECT 1 FROM agreement_runtime.decisions d
                         JOIN agreement_runtime.versions signed ON signed.id = d.version_id
                         WHERE d.series_id = s.id AND signed.renewal = v.renewal AND d.action = 'ACCEPT'
-                          AND d.subject_id IS NOT DISTINCT FROM CASE WHEN s.authority = 'INSTITUTION' THEN NULL ELSE :actor END))
+                          AND d.subject_id IS NOT DISTINCT FROM CASE WHEN s.authority = 'INSTITUTION' THEN NULL ELSE :actor END)
+                    ORDER BY s.institution_id NULLS FIRST LIMIT 1
                 """).param("actor", actor).param("institution", institution, java.sql.Types.BIGINT)
-                .query(Boolean.class).single();
+                .query((rs, n) -> PendingScope.valueOf(rs.getString(1))).optional().orElse(null);
     }
 
     /** Only consumers of the approved purpose should consult this permission. */

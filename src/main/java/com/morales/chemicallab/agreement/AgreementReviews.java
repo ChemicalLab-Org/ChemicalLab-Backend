@@ -80,9 +80,13 @@ public class AgreementReviews {
     public Review director(long actor, long institution, long membership, DirectorInput input) {
         requireReviewer(actor, institution, true);
         validate(input.result(), input.evidenceReference(), input.validUntil(), input.requestId());
+        lockInstitution(institution);
         long subject = member(institution, membership);
         if (subject == actor) throw failure(HttpStatus.FORBIDDEN, "La revisión requiere otra cuenta.");
         long series = directorSeries(institution, input.documentId());
+        // Serialize reviews before PostgreSQL allocates a new history ID.
+        sql.sql("SELECT id FROM agreement_runtime.series WHERE id = :id FOR UPDATE")
+                .param("id", series).query(Long.class).single();
         if (recorded("authorities", "verified_by", actor, input.requestId())) {
             return replay(DIRECTOR_HISTORY, series, subject, "verified_by", actor,
                     input.result().name(), "INSTITUTION", input.evidenceReference(), input.validUntil(), input.requestId());
@@ -103,6 +107,7 @@ public class AgreementReviews {
 
     @Transactional
     public Review family(long actor, long institution, long membership, FamilyInput input) {
+        if (agreements.enabled()) lockInstitution(institution);
         requireReviewer(actor, institution, false);
         validate(input.result(), input.evidenceReference(), input.validUntil(), input.requestId());
         long subject = sql.sql("""
@@ -195,6 +200,12 @@ public class AgreementReviews {
                 WHERE p.account_id = :actor AND u.active AND u.role = 'ADMINISTRADOR')
                 """)
                 .param("actor", actor).query(Boolean.class).single();
+    }
+
+    private void lockInstitution(long institution) {
+        // Administration writes take the exclusive form of this same lock.
+        sql.sql("SELECT true FROM pg_advisory_xact_lock_shared(evaluation_runtime.institution_lock(:institution))")
+                .param("institution", institution).query(Boolean.class).single();
     }
 
     private long member(long institution, long membership) {
