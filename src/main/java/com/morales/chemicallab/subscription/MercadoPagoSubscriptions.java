@@ -43,7 +43,6 @@ class MercadoPagoSubscriptions {
     }
 
     JsonNode create(UUID reference, String name, BigDecimal amount, String currency) {
-        verifyTestSeller();
         return send("POST", "/preapproval", Map.of("status", "pending", "reason", reason(name, reference),
                 "external_reference", reference.toString(), "payer_email", settings.buyerEmail(),
                 "back_url", settings.returnUrl().toString(), "auto_recurring", Map.of(

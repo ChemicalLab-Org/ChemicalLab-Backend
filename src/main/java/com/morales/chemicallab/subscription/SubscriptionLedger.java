@@ -126,7 +126,7 @@ public class SubscriptionLedger implements InitializingBean {
                             : "authorized".equals(provider) ? "AUTHORIZED_UNPAID"
                             : "paused".equals(provider) ? "RENEWAL_PAUSED"
                             : "pending".equals(provider) ? "CHECKOUT_PENDING"
-                            : rs.getObject("ref") != null ? "VERIFYING"
+                            : rs.getObject("sent_at") != null ? "VERIFYING"
                             : "EXPIRED";
                     String checkout = "pending".equals(provider) && representative && active && !closing && rs.getLong("actor_id") == actor
                             ? rs.getString("checkout_url") : null;
@@ -185,7 +185,7 @@ public class SubscriptionLedger implements InitializingBean {
                 SELECT :school,:actor,:operator,:evidence,:until
                 WHERE :actor<>:operator AND EXISTS (SELECT 1 FROM subscription_runtime.school WHERE institution_id=:school)
                 AND EXISTS (SELECT 1 FROM evaluation_runtime.memberships m
-                    WHERE m.account_id=:actor AND m.institution_id=:school AND (:until IS NULL OR m.active))
+                    WHERE m.account_id=:actor AND m.institution_id=:school AND (CAST(:until AS timestamptz) IS NULL OR m.active))
                 AND (CAST(:until AS timestamptz) IS NULL OR CAST(:until AS timestamptz)>statement_timestamp())
                 """).param("school", school).param("actor", actor).param("operator", operator).param("evidence", evidence)
                 .param("until", until, java.sql.Types.TIMESTAMP_WITH_TIMEZONE).update();
@@ -263,6 +263,7 @@ public class SubscriptionLedger implements InitializingBean {
         return sql.sql("""
                 UPDATE subscription_runtime.contract SET sent_at=clock_timestamp(),reconcile_at=clock_timestamp()+interval '30 seconds'
                 WHERE ref=:ref AND sent_at IS NULL AND cancel_requested_at IS NULL AND closed_at IS NULL
+                  AND EXISTS (SELECT 1 FROM evaluation_runtime.institutions i WHERE i.id=institution_id AND i.active)
                 """).param("ref", contract.ref()).update() == 1;
     }
 

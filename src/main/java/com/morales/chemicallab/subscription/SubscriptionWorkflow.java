@@ -35,6 +35,13 @@ class SubscriptionWorkflow {
 
     void checkout(long school, long actor) {
         var contract = ledger.reserve(school, actor);
+        if (contract.sentAt() != null || contract.cancelAt() != null) return;
+        try {
+            provider.verifyTestSeller();
+        } catch (Unverified ex) {
+            ledger.audit(school, actor, contract.ref(), "TEST_SELLER_UNVERIFIED", null);
+            return;
+        }
         if (!ledger.claimCreation(contract)) return;
         try {
             var created = provider.create(contract.ref(), contract.plan().name(), contract.plan().monthlyAmount(),

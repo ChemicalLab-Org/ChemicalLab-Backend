@@ -178,7 +178,7 @@ try {
   assert.equal((await get(billing(2), teacherB)).status, 'TRIAL');
 
   const outcomes = await Promise.all([1,2,3].map(() => post(billing(1) + '/checkout', teacherA, { confirmed: true })));
-  assert(outcomes.every(value => value.status === 'VERIFYING'));
+  assert(outcomes.every(value => ['EXPIRED', 'VERIFYING'].includes(value.status)));
   assert.equal(posts, 1);
   assert.equal(sql('SELECT count(*) FROM subscription_runtime.contract'), '1');
   sql('UPDATE subscription_runtime.contract SET reconcile_at=clock_timestamp()');
