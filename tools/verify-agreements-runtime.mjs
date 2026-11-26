@@ -94,6 +94,7 @@ try {
     .split(/\r?\n/).map(Number);
   const scopeA = `/api/institutions/${ready.a}/classes/${classA}/evaluation-catalog/NEW/v1/own-deliveries`;
   const scopeB = `/api/institutions/${ready.b}/classes/${classB}/evaluation-catalog/NEW/v1/own-deliveries`;
+  const boardHistory = `/api/institutions/${ready.a}/classes/${classA}/whiteboards/v1/student/history`;
   const [{ id: termsId }, { id: noticeId }] = await get(`${base}/public`).then(docs =>
     ['TERMS', 'NOTICE'].map(kind => docs.find(doc => doc.kind === kind)));
   const text = await get(`${base}/public/${termsId}`);
@@ -105,6 +106,7 @@ try {
   const [studentId, teacherAId, teacherBId] = sql(`select id from user_accounts where username in ('${ready.student}', '${ready.teacherA}', '${ready.teacherB}') order by username`)
     .split(/\r?\n/).map(Number);
   assert.equal((await get(api, student, 403)).code, 'AGREEMENTS_REQUIRED');
+  await get(boardHistory, student);
   await stompDenied(student, ready.a, classA, 'AGREEMENTS_REQUIRED');
   assert.equal((await overview(student)).globalBlocked, true);
   await me(student);
@@ -146,6 +148,7 @@ try {
   await submit(teacherB, termsId, teacherBId, 'ACCEPT');
   await submit(teacherA, contractA, null, 'ACCEPT');
   await get(scopeA, student);
+  await get(boardHistory, student);
   assert.equal((await get(scopeB, student, 403)).code, 'AGREEMENTS_REQUIRED');
   await submit(teacherB, contractB, null, 'ACCEPT');
   await get(scopeB, student);
@@ -186,6 +189,7 @@ try {
   await post(family, teacherA, pending);
   await post(`${base}/review/families/${ready.b}/${schoolMember}`, teacherA, pending, 403);
   assert.equal((await get(scopeA, student, 403)).code, 'ACADEMIC_AUTHORIZATION_REQUIRED');
+  await get(boardHistory, student);
   await stompDenied(student, ready.a, classA, 'ACADEMIC_AUTHORIZATION_REQUIRED');
   await get(scopeB, student);
   const approved = { result: 'VERIFIED', basis: 'PARENT_OR_GUARDIAN', evidenceReference: 'DEMO-VERIFIED',
@@ -197,6 +201,7 @@ try {
   await post(family, platform, { result: 'WITHDRAWN', evidenceReference: 'DEMO-DIRECT', requestId: randomUUID() });
   assert.equal((await get(`${base}/account/family-status`, student))[0].status, 'WITHDRAWN');
   assert.equal((await get(scopeA, student, 403)).code, 'ACADEMIC_AUTHORIZATION_REQUIRED');
+  await get(boardHistory, student);
   await get(scopeB, student);
   await post(family, platform, { result: 'NOT_REQUIRED', evidenceReference: 'DEMO-LEGAL', requestId: randomUUID() });
   await get(scopeA, student);
@@ -214,7 +219,7 @@ try {
   const boards = `/api/institutions/${ready.a}/classes/${classA}/whiteboards/v1`;
   const board = await post(`${boards}/teacher`, teacherA, { name: 'Pizarra ficticia de acuerdos' });
   await post(`${boards}/student/${board.id}/join`, student);
-  assert.equal(sql(`select count(*) from board_runtime.boards where id=${board.id} and institution_id=${ready.a}`), '1');
+  assert.equal(sql(`select count(*) from board_runtime.boards where board_id=${board.id} and institution_id=${ready.a}`), '1');
   mark('docente crea una pizarra y la cuenta compartida participa con su pertenencia autorizada');
 
   const publish = (version, renewal) => Number(sql(`insert into agreement_runtime.versions(series_id,version,renewal,title,body,change_summary)
@@ -240,7 +245,7 @@ try {
   assert.deepEqual(await get(`${base}/account/family-status`, student), families);
   await get(scopeA, student);
   await get(scopeB, student);
-  assert.equal(sql(`select count(*) from board_runtime.boards where id=${board.id} and institution_id=${ready.a}`), '1');
+  assert.equal(sql(`select count(*) from board_runtime.boards where board_id=${board.id} and institution_id=${ready.a}`), '1');
   await post('/api/auth/logout', student, undefined, 204);
   await get(`${base}/account`, student, 401);
   mark('renovación selectiva, rechazo de versión obsoleta, inmutabilidad, reinicio, restauración y cierre de sesión');

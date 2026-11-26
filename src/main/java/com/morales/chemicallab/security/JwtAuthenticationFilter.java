@@ -12,12 +12,15 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
+import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 
 @Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+    private static final AntPathMatcher PATHS = new AntPathMatcher();
+    private static final String CLASS_PATH = "/api/institutions/*/classes/*";
     private final AccountSessionService sessions;
     private final RestAuthenticationEntryPoint entryPoint;
     private final AgreementService agreements;
@@ -50,7 +53,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 reject(response, 403, "PASSWORD_CHANGE_REQUIRED", "Debe cambiar su contraseña.");
                 return;
             }
-            if (request.getServletPath().startsWith("/api/")) {
+            if (request.getServletPath().startsWith("/api/") && !publishedHistory(request)) {
                 try {
                     String path = request.getServletPath();
                     Long institution = institution(path);
@@ -70,6 +73,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
         // Do not catch downstream controller exceptions as authentication failures.
         chain.doFilter(request, response);
+    }
+
+    private static boolean publishedHistory(HttpServletRequest request) {
+        if (!"GET".equals(request.getMethod())) return false;
+        String path = request.getServletPath();
+        return path.equals("/api/evaluations/student/results")
+                || PATHS.match("/api/evaluations/student/attempts/*/result", path)
+                || PATHS.match(CLASS_PATH + "/evaluation-execution/NEW/v1/evaluations/*/deliveries/*/revisions/*/own-attempts/*/correction", path)
+                || PATHS.match(CLASS_PATH + "/evaluation-reads/*/evaluations/*/deliveries/*/revisions/*/own-attempts/*/correction", path)
+                || PATHS.match(CLASS_PATH + "/whiteboards/v1/student/history", path)
+                || PATHS.match(CLASS_PATH + "/whiteboards/v1/student/*/snapshot", path);
     }
 
     private static boolean recoveryOrAgreement(HttpServletRequest request) {
