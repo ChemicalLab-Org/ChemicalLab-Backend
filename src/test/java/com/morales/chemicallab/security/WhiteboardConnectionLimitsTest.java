@@ -12,7 +12,8 @@ class WhiteboardConnectionLimitsTest {
     @Test void instanceAccountSubscriptionAndTargetEdgesReleaseOnClose() throws Exception {
         var limits = new TransportLimits(); limits.setConnections(4); limits.setAccountConnections(3); limits.setAccountSubscriptions(3); limits.setConnectionTargets(1);
         var registry = new WhiteboardConnections(mock(AccountSessionService.class), mock(WhiteboardRealtimeAccess.class),
-                limits, new AccountTrafficLimits(limits), null, mock(com.morales.chemicallab.agreement.AgreementService.class));
+                limits, new AccountTrafficLimits(limits), null, mock(com.morales.chemicallab.agreement.AgreementService.class),
+                mock(com.morales.chemicallab.subscription.SubscriptionLedger.class));
         var handler = registry.decorate(mock(WebSocketHandler.class));
         var principal = new SessionPrincipal(1L, "fictitious", UUID.randomUUID(), 0, Role.ESTUDIANTE, false);
         try {

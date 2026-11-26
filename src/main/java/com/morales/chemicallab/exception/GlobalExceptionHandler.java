@@ -172,6 +172,10 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String,Object>> handleStorage(RuntimeException ex) {
         if(ex instanceof org.springframework.dao.QueryTimeoutException || ex instanceof org.springframework.transaction.TransactionTimedOutException)
             return ResponseEntity.status(503).body(Map.of("status",503,"code","QUERY_TIMEOUT","message","La consulta excedió el tiempo disponible. Reduce el intervalo o los filtros e inténtalo de nuevo."));
+        if (com.morales.chemicallab.security.storage.StorageErrors.sqlState(ex, "PCL01")) {
+            return ResponseEntity.status(409).body(Map.of("status", 409, "code", "ACTIVE_USER_QUOTA_EXCEEDED",
+                    "message", "Se alcanzó el límite de usuarios activos de la institución."));
+        }
         if(com.morales.chemicallab.security.storage.StorageErrors.quota(ex))
             return ResponseEntity.status(409).body(Map.of("status",409,"code","STORAGE_QUOTA_EXCEEDED","message",com.morales.chemicallab.security.storage.StorageErrors.message()));
         return ResponseEntity.status(500).body(Map.of("status",500,"message","No se pudo guardar la operación."));

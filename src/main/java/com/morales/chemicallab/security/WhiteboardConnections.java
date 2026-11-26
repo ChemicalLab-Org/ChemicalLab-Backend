@@ -28,6 +28,7 @@ public class WhiteboardConnections {
     private final AccountTrafficLimits traffic;
     private final com.morales.chemicallab.service.InstitutionalWhiteboardAccess institutional;
     private final AgreementService agreements;
+    private final com.morales.chemicallab.subscription.SubscriptionLedger subscriptions;
     private final Map<String, Connection> connections = new ConcurrentHashMap<>();
     private final ScheduledExecutorService watchdog = Executors.newSingleThreadScheduledExecutor(r -> daemon(r, "whiteboard-watchdog"));
     private final ThreadPoolExecutor validators = new ThreadPoolExecutor(4, 4, 0, TimeUnit.SECONDS,
@@ -190,6 +191,9 @@ public class WhiteboardConnections {
         if (agreements.requiredOutstanding(principal.userId(), institution)) {
             throw new AccessDeniedException("AGREEMENTS_REQUIRED");
         }
+        if (institution != null && subscriptions.blocked(institution)) {
+            throw new AccessDeniedException("INSTITUTION_SUBSCRIPTION_REQUIRED");
+        }
         if (agreements.academicHold(principal.userId(), institution)) {
             throw new AccessDeniedException("ACADEMIC_AUTHORIZATION_REQUIRED");
         }
@@ -199,7 +203,8 @@ public class WhiteboardConnections {
         if (error instanceof InputRejectedException) close(id, 4429, "TRAFFIC_LIMIT");
         else if (error instanceof AuthenticationException) close(id, 4001, "SESSION_INVALID");
         else if (error instanceof AccessDeniedException) close(id, 4003, switch (error.getMessage()) {
-            case "BOARD_ACCESS_LOST", "AGREEMENTS_REQUIRED", "ACADEMIC_AUTHORIZATION_REQUIRED" -> error.getMessage();
+            case "BOARD_ACCESS_LOST", "AGREEMENTS_REQUIRED", "ACADEMIC_AUTHORIZATION_REQUIRED",
+                    "INSTITUTION_SUBSCRIPTION_REQUIRED" -> error.getMessage();
             default -> "PROTOCOL_REJECTED";
         });
         else close(id, 4503, "VALIDATION_UNAVAILABLE");

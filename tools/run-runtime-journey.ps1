@@ -7,6 +7,8 @@ param(
     [switch]$Boards,
     [switch]$Administration,
     [switch]$Agreements,
+    [switch]$Subscriptions,
+    [int]$SubscriptionMockPort = 18094,
     [string]$PredecessorJar,
     [int]$DatabasePort = 55472,
     [int]$HttpPort = 18092
@@ -16,6 +18,7 @@ $repo = Split-Path $PSScriptRoot -Parent
 $jarFile = (Resolve-Path -LiteralPath $Jar).Path
 if ($Content -and ($PredecessorJar -or $Boards -or $Administration)) { throw 'Choose one runtime install or upgrade.' }
 if ($Agreements -and (!$Administration -or $PredecessorJar)) { throw 'Agreements require a fresh disposable administration runtime.' }
+if ($Subscriptions -and (!$Administration -or $Agreements -or $PredecessorJar)) { throw 'Subscription verification requires fresh administration with agreements disabled.' }
 $applicationJar = if ($PredecessorJar) { (Resolve-Path -LiteralPath $PredecessorJar).Path } else { $jarFile }
 $run = [IO.Path]::GetFullPath($RunDirectory)
 if (Test-Path -LiteralPath $run) { throw 'Choose a new directory for the disposable cluster.' }
@@ -45,6 +48,19 @@ function Start-Application([string]$Stage, [string]$Ddl, [switch]$PrepareEmptySc
     $processEnvironment = @{}
     if ($ProvisionPlatform) {
         $processEnvironment = @{ APP_BOOTSTRAP_ADMIN_USERNAME=$platformUser; APP_BOOTSTRAP_ADMIN_PASSWORD=$platformTemporary }
+    }
+    if ($Subscriptions -and !$PrepareEmptySchema) {
+        $processEnvironment += @{
+            APP_SUBSCRIPTIONS_MODE = 'LOCAL_TEST'
+            APP_SUBSCRIPTIONS_LOCAL_API = "http://127.0.0.1:$SubscriptionMockPort"
+            APP_SUBSCRIPTIONS_RETURN_URL = "http://127.0.0.1:4200/suscripcion-institucional"
+            APP_SUBSCRIPTIONS_SELLER_ID = '1101'
+            APP_SUBSCRIPTIONS_APPLICATION_ID = '1102'
+            APP_SUBSCRIPTIONS_BUYER_ID = '1103'
+            APP_SUBSCRIPTIONS_BUYER_EMAIL = 'subscription-buyer@example.invalid'
+            APP_SUBSCRIPTIONS_WEBHOOK_SECRET = 'fictitious-local-signature-2026'
+            APP_SUBSCRIPTIONS_WORK_DELAY_MS = '1000'
+        }
     }
     $app = Start-Process -FilePath $Java -ArgumentList $arguments -Environment $processEnvironment -WindowStyle Hidden -PassThru -RedirectStandardOutput "$run/$Stage.log" -RedirectStandardError "$run/$Stage.err"
     try {
@@ -78,7 +94,7 @@ try {
     & "$PostgresBin/psql.exe" @sql --single-transaction -c 'set search_path to public' -f "$repo/src/main/resources/security/t07b-storage.sql" -f "$repo/src/main/resources/security/t08-audit.sql" *> "$run/preparation-prerequisites.log"
     if ($LASTEXITCODE -ne 0) { Get-Content "$run/preparation-prerequisites.log" -Tail 15; throw 'T07B or T08 preparation failed.' }
     $evaluationFiles = @('-f', "$repo/src/main/resources/db/runtime/evaluation-v1.sql")
-    if (!$Administration -or $PredecessorJar -or $Agreements) { $evaluationFiles += @('-f', "$PSScriptRoot/runtime-demo.sql") }
+    if (!$Administration -or $PredecessorJar -or $Agreements -or $Subscriptions) { $evaluationFiles += @('-f', "$PSScriptRoot/runtime-demo.sql") }
     & "$PostgresBin/psql.exe" @sql @evaluationFiles *> "$run/preparation.log"
     if ($LASTEXITCODE -ne 0) { Get-Content "$run/preparation.log" -Tail 15; throw 'Schema or dataset preparation failed.' }
     if ($Content -or $Boards -or $Administration) {
@@ -106,6 +122,10 @@ try {
         $after = (Get-FileHash -LiteralPath "$run/agreements-after.sql").Hash
         if ($before -ne $after) { throw 'An existing table or sequence changed during agreement installation.' }
         $before | Set-Content "$run/agreements-preservation.sha256"
+    }
+    if ($Subscriptions) {
+        & "$PostgresBin/psql.exe" @sql -f "$repo/src/main/resources/db/runtime/agreements-v1.sql" -f "$repo/src/main/resources/db/runtime/subscriptions-v1.sql" *> "$run/subscriptions-install.log"
+        if ($LASTEXITCODE -ne 0) { Get-Content "$run/subscriptions-install.log" -Tail 15; throw 'Subscription installation failed.' }
     }
     $app = Start-Application 'runtime' 'validate' -ProvisionPlatform:$Administration
     if ($Administration) {
