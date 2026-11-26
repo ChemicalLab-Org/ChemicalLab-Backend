@@ -1,6 +1,5 @@
 package com.morales.chemicallab.subscription;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.morales.chemicallab.security.SessionPrincipal;
 import com.morales.chemicallab.service.InstitutionalAdministration;
 import jakarta.validation.Valid;
@@ -23,6 +22,8 @@ import java.time.OffsetDateTime;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 
 import static com.morales.chemicallab.subscription.SubscriptionLedger.error;
 
@@ -70,9 +71,8 @@ class SubscriptionController {
 
     @PostMapping(SCHOOL + "/checkout")
     ResponseEntity<SubscriptionLedger.Overview> checkout(@AuthenticationPrincipal SessionPrincipal actor,
-                                                         @PathVariable long school, @RequestBody JsonNode command) {
-        if (!command.isObject() || command.size() != 1 || !command.path("confirmed").isBoolean()
-                || !command.path("confirmed").asBoolean()) {
+                                                         @PathVariable long school, @RequestBody Map<String,Object> command) {
+        if (command.size() != 1 || !Boolean.TRUE.equals(command.get("confirmed"))) {
             throw error(HttpStatus.BAD_REQUEST, "Confirme la autorización para abrir el checkout de prueba.");
         }
         workflow.checkout(school, actor.userId());
@@ -104,15 +104,16 @@ class SubscriptionController {
     @PostMapping("/subscriptions/v1/mercado-pago/webhook")
     ResponseEntity<Void> notify(@RequestParam("data.id") String id,
             @RequestHeader("x-signature") String signature, @RequestHeader("x-request-id") String request,
-            @RequestBody JsonNode body) {
+            @RequestBody Map<String,Object> body) {
         ledger.enabled();
         if (!validSignature(id, request, signature, settings.webhookSecret(), Instant.now())
-                || !id.equalsIgnoreCase(body.path("data").path("id").asText())
-                || body.path("user_id").asLong() != settings.sellerId()
-                || !body.path("live_mode").isBoolean() || body.path("live_mode").asBoolean()) {
+                || !(body.get("data") instanceof Map<?,?> data)
+                || !id.equalsIgnoreCase(Objects.toString(data.get("id"), ""))
+                || !Long.toString(settings.sellerId()).equals(Objects.toString(body.get("user_id"), ""))
+                || !Boolean.FALSE.equals(body.get("live_mode"))) {
             throw error(HttpStatus.UNAUTHORIZED, "Notificación sin autenticar.");
         }
-        String type = body.path("type").asText();
+        String type = Objects.toString(body.get("type"), "");
         if (SubscriptionWorkflow.TOPICS.contains(type)) ledger.notice(type, id.toLowerCase(Locale.ROOT), request);
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).build();
     }

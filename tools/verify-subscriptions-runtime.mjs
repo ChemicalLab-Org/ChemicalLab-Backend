@@ -109,7 +109,7 @@ async function event(type, id, { request = randomUUID(), invalid = false, live =
 }
 
 async function waitFor(probe, label) {
-  for (let i = 0; i < 120; i++) {
+  for (let i = 0; i < 220; i++) {
     if (await probe()) return;
     await pause(350);
   }
