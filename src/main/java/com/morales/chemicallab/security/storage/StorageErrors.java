@@ -4,9 +4,12 @@ import java.util.*;
 public final class StorageErrors {
     private StorageErrors(){}
     public static boolean quota(Throwable ex) {
+        return sqlState(ex, "P7501");
+    }
+    public static boolean sqlState(Throwable error, String state) {
         var seen=Collections.newSetFromMap(new IdentityHashMap<Throwable,Boolean>());
-        for(Throwable t=ex;t!=null && seen.add(t);t=t.getCause()) {
-            if(t instanceof SQLException sql) for(SQLException s=sql;s!=null;s=s.getNextException()) if("P7501".equals(s.getSQLState()))return true;
+        for(Throwable t=error;t!=null && seen.add(t);t=t.getCause()) {
+            if(t instanceof SQLException sql) for(SQLException s=sql;s!=null;s=s.getNextException()) if(state.equals(s.getSQLState()))return true;
         }
         return false;
     }

@@ -60,7 +60,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 reject(response, 403, "PASSWORD_CHANGE_REQUIRED", "Debe cambiar su contraseña.");
                 return;
             }
-            if (request.getServletPath().startsWith("/api/") && !publishedHistory(request)) {
+            if (request.getServletPath().startsWith("/api/") && !publishedHistory(request) && !subscriptionManagement(request)) {
                 try {
                     String path = request.getServletPath();
                     Long institution = institution(path);
@@ -82,6 +82,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
         // Do not catch downstream controller exceptions as authentication failures.
         chain.doFilter(request, response);
+    }
+
+    private static boolean subscriptionManagement(HttpServletRequest request) {
+        String path = request.getServletPath();
+        return path.equals("/api/subscriptions/v1/institutions")
+                || PATHS.match("/api/institutions/*/subscription/v1", path)
+                || PATHS.match("/api/institutions/*/subscription/v1/*", path);
     }
 
     private static boolean publishedHistory(HttpServletRequest request) {

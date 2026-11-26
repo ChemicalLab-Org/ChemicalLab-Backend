@@ -64,7 +64,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // Rutas públicas
                         .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/login",
+                                "/api/subscriptions/v1/mercado-pago/webhook").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/agreements/public", "/api/agreements/public/{id}").permitAll()
                         .requestMatchers(HttpMethod.HEAD, "/api/agreements/public", "/api/agreements/public/{id}").permitAll()
 
