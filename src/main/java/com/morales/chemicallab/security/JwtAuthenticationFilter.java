@@ -1,11 +1,13 @@
 package com.morales.chemicallab.security;
 
+import com.morales.chemicallab.agreement.AgreementService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
+import org.springframework.dao.DataAccessException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
@@ -18,6 +20,7 @@ import java.io.IOException;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final AccountSessionService sessions;
     private final RestAuthenticationEntryPoint entryPoint;
+    private final AgreementService agreements;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
@@ -27,6 +30,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             chain.doFilter(request, response);
             return;
         }
+        SessionPrincipal principal;
         try {
             if (!header.startsWith("Bearer ")) {
                 throw new org.springframework.security.authentication.BadCredentialsException("Bearer requerido.");
@@ -34,31 +38,67 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             var authentication = sessions.authenticate(header.substring(7).trim());
             authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
             SecurityContextHolder.getContext().setAuthentication(authentication);
-            var principal = (SessionPrincipal) authentication.getPrincipal();
+            principal = (SessionPrincipal) authentication.getPrincipal();
             request.setAttribute(com.morales.chemicallab.security.audit.AuditRequestFilter.ACTOR,principal);
-            if (principal.temporaryPassword() && !allowedWhileTemporary(request)) {
-                response.setStatus(403);
-                response.setContentType("application/json");
-                response.setCharacterEncoding("UTF-8");
-                response.getWriter().write("{\"status\":403,\"code\":\"PASSWORD_CHANGE_REQUIRED\",\"message\":\"Debe cambiar su contraseña.\"}");
-                return;
-            }
         } catch (AuthenticationException ex) {
             SecurityContextHolder.clearContext();
             entryPoint.commence(request, response, ex);
             return;
         }
+        if (!recoveryOrAgreement(request)) {
+            if (principal.temporaryPassword()) {
+                reject(response, 403, "PASSWORD_CHANGE_REQUIRED", "Debe cambiar su contraseña.");
+                return;
+            }
+            if (request.getServletPath().startsWith("/api/")) {
+                try {
+                    String path = request.getServletPath();
+                    Long institution = institution(path);
+                    if (agreements.requiredOutstanding(principal.userId(), institution)) {
+                        reject(response, 403, "AGREEMENTS_REQUIRED", "Revise los acuerdos pendientes para continuar.");
+                        return;
+                    }
+                    if (institution != null && path.contains("/classes/") && agreements.academicHold(principal.userId(), institution)) {
+                        reject(response, 403, "ACADEMIC_AUTHORIZATION_REQUIRED", "La participación académica está pendiente en este colegio.");
+                        return;
+                    }
+                } catch (DataAccessException ex) {
+                    reject(response, 503, "AGREEMENTS_UNAVAILABLE", "No se pudieron comprobar las condiciones de acceso.");
+                    return;
+                }
+            }
+        }
         // Do not catch downstream controller exceptions as authentication failures.
         chain.doFilter(request, response);
     }
 
-    private boolean allowedWhileTemporary(HttpServletRequest request) {
+    private static boolean recoveryOrAgreement(HttpServletRequest request) {
         String path = request.getServletPath();
         return switch (request.getMethod()) {
-            case "GET" -> path.equals("/api/auth/me");
+            case "GET" -> path.equals("/api/auth/me") || path.equals("/api/health")
+                    || path.equals("/api/agreements/public") || path.startsWith("/api/agreements/public/")
+                    || path.equals("/api/agreements/account") || path.startsWith("/api/agreements/account/");
             case "PATCH" -> path.equals("/api/auth/change-temporary-password");
-            case "POST" -> path.equals("/api/auth/logout") || path.equals("/api/auth/logout-all");
+            case "POST" -> path.equals("/api/auth/logout") || path.equals("/api/auth/logout-all")
+                    || path.equals("/api/auth/login") || path.startsWith("/api/agreements/account/versions/");
             default -> false;
         };
+    }
+
+    private static Long institution(String path) {
+        String prefix = "/api/institutions/";
+        if (!path.startsWith(prefix)) return null;
+        int end = path.indexOf('/', prefix.length());
+        String segment = end == -1 ? path.substring(prefix.length()) : path.substring(prefix.length(), end);
+        try { return Long.valueOf(segment); }
+        catch (NumberFormatException ex) { return null; } // The institution catalog has a nonnumeric segment.
+    }
+
+    private static void reject(HttpServletResponse response, int status, String code, String message) throws IOException {
+        response.setStatus(status);
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
+        response.setContentType("application/json");
+        response.setCharacterEncoding("UTF-8");
+        response.getWriter().write("{\"status\":" + status + ",\"code\":\"" + code + "\",\"message\":\"" + message + "\"}");
     }
 }

@@ -1,5 +1,6 @@
 package com.morales.chemicallab.security;
 
+import com.morales.chemicallab.agreement.AgreementService;
 import com.morales.chemicallab.security.limits.AccountTrafficLimits;
 import com.morales.chemicallab.security.limits.InputRejectedException;
 import com.morales.chemicallab.security.limits.TransportLimits;
@@ -26,6 +27,7 @@ public class WhiteboardConnections {
     private final TransportLimits limits;
     private final AccountTrafficLimits traffic;
     private final com.morales.chemicallab.service.InstitutionalWhiteboardAccess institutional;
+    private final AgreementService agreements;
     private final Map<String, Connection> connections = new ConcurrentHashMap<>();
     private final ScheduledExecutorService watchdog = Executors.newSingleThreadScheduledExecutor(r -> daemon(r, "whiteboard-watchdog"));
     private final ThreadPoolExecutor validators = new ThreadPoolExecutor(4, 4, 0, TimeUnit.SECONDS,
@@ -83,10 +85,12 @@ public class WhiteboardConnections {
     public void authenticated(String id, SessionPrincipal principal, String requested) {
         if (!institutional.installed()) {
             if (requested != null) throw new AccessDeniedException("PROTOCOL_REJECTED");
+            checkAgreements(principal, null);
             authenticated(id, principal);
             return;
         }
         var target = WhiteboardScope.parse(requested);
+        checkAgreements(principal, target);
         institutional.observe(principal, target, true);
         register(id, principal, target);
     }
@@ -105,6 +109,7 @@ public class WhiteboardConnections {
         SessionPrincipal principal = principal(id);
         sessions.revalidate(principal);
         var target = target(id);
+        checkAgreements(principal, target);
         if (target != null) institutional.observe(principal, target, true);
         return principal;
     }
@@ -157,6 +162,7 @@ public class WhiteboardConnections {
         var principal = principal(id);
         sessions.revalidate(principal);
         var target = connection.target;
+        checkAgreements(principal, target);
         if (target != null) institutional.observe(principal, target, false);
         Long board = subscription == null ? null : connection.subscriptions.get(subscription);
         if (board == null) throw new AccessDeniedException("PROTOCOL_REJECTED");
@@ -179,11 +185,23 @@ public class WhiteboardConnections {
         return connection.target != null && (connection.target.scope().teacher() || connection.principal.userId() == account);
     }
 
+    private void checkAgreements(SessionPrincipal principal, WhiteboardScope.Target target) {
+        Long institution = target == null ? null : target.scope().institution();
+        if (agreements.requiredOutstanding(principal.userId(), institution)) {
+            throw new AccessDeniedException("AGREEMENTS_REQUIRED");
+        }
+        if (agreements.academicHold(principal.userId(), institution)) {
+            throw new AccessDeniedException("ACADEMIC_AUTHORIZATION_REQUIRED");
+        }
+    }
+
     public void reject(String id, Exception error) {
         if (error instanceof InputRejectedException) close(id, 4429, "TRAFFIC_LIMIT");
         else if (error instanceof AuthenticationException) close(id, 4001, "SESSION_INVALID");
-        else if (error instanceof AccessDeniedException) close(id, 4003,
-                "BOARD_ACCESS_LOST".equals(error.getMessage()) ? "BOARD_ACCESS_LOST" : "PROTOCOL_REJECTED");
+        else if (error instanceof AccessDeniedException) close(id, 4003, switch (error.getMessage()) {
+            case "BOARD_ACCESS_LOST", "AGREEMENTS_REQUIRED", "ACADEMIC_AUTHORIZATION_REQUIRED" -> error.getMessage();
+            default -> "PROTOCOL_REJECTED";
+        });
         else close(id, 4503, "VALIDATION_UNAVAILABLE");
     }
     public void close(String id, int code, String reason) {

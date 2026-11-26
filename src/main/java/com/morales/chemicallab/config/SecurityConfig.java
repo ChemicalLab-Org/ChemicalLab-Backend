@@ -65,6 +65,7 @@ public class SecurityConfig {
                         // Rutas públicas
                         .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/agreements/public", "/api/agreements/public/{id}").permitAll()
 
                         // Cambio de contraseña temporal — requiere autenticación JWT
                         .requestMatchers(HttpMethod.PATCH, "/api/auth/change-temporary-password").authenticated()

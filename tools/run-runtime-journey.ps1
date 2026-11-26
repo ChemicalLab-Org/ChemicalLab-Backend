@@ -6,6 +6,7 @@ param(
     [switch]$Content,
     [switch]$Boards,
     [switch]$Administration,
+    [switch]$Agreements,
     [string]$PredecessorJar,
     [int]$DatabasePort = 55472,
     [int]$HttpPort = 18092
@@ -14,6 +15,7 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 $jarFile = (Resolve-Path -LiteralPath $Jar).Path
 if ($Content -and ($PredecessorJar -or $Boards -or $Administration)) { throw 'Choose one runtime install or upgrade.' }
+if ($Agreements -and (!$Administration -or $PredecessorJar)) { throw 'Agreements require a fresh disposable administration runtime.' }
 $applicationJar = if ($PredecessorJar) { (Resolve-Path -LiteralPath $PredecessorJar).Path } else { $jarFile }
 $run = [IO.Path]::GetFullPath($RunDirectory)
 if (Test-Path -LiteralPath $run) { throw 'Choose a new directory for the disposable cluster.' }
@@ -38,7 +40,8 @@ function Start-Application([string]$Stage, [string]$Ddl, [switch]$PrepareEmptySc
         "--spring.datasource.username=$role", '--spring.datasource.password=fictitious', "--app.jwt.secret=$secret",
         '--app.cors.allowed-origins=http://127.0.0.1:[*],http://localhost:[*]',
         "--spring.jpa.hibernate.ddl-auto=$Ddl", '--app.demo.enabled=false',
-        "--app.bootstrap.admin.enabled=$($ProvisionPlatform.ToString().ToLowerInvariant())")
+        "--app.bootstrap.admin.enabled=$($ProvisionPlatform.ToString().ToLowerInvariant())",
+        "--app.agreements.enabled=$((!$PrepareEmptySchema -and $Agreements).ToString().ToLowerInvariant())")
     $processEnvironment = @{}
     if ($ProvisionPlatform) {
         $processEnvironment = @{ APP_BOOTSTRAP_ADMIN_USERNAME=$platformUser; APP_BOOTSTRAP_ADMIN_PASSWORD=$platformTemporary }
@@ -75,7 +78,7 @@ try {
     & "$PostgresBin/psql.exe" @sql --single-transaction -c 'set search_path to public' -f "$repo/src/main/resources/security/t07b-storage.sql" -f "$repo/src/main/resources/security/t08-audit.sql" *> "$run/preparation-prerequisites.log"
     if ($LASTEXITCODE -ne 0) { Get-Content "$run/preparation-prerequisites.log" -Tail 15; throw 'T07B or T08 preparation failed.' }
     $evaluationFiles = @('-f', "$repo/src/main/resources/db/runtime/evaluation-v1.sql")
-    if (!$Administration -or $PredecessorJar) { $evaluationFiles += @('-f', "$PSScriptRoot/runtime-demo.sql") }
+    if (!$Administration -or $PredecessorJar -or $Agreements) { $evaluationFiles += @('-f', "$PSScriptRoot/runtime-demo.sql") }
     & "$PostgresBin/psql.exe" @sql @evaluationFiles *> "$run/preparation.log"
     if ($LASTEXITCODE -ne 0) { Get-Content "$run/preparation.log" -Tail 15; throw 'Schema or dataset preparation failed.' }
     if ($Content -or $Boards -or $Administration) {
@@ -89,6 +92,20 @@ try {
     if ($Administration -and !$PredecessorJar) {
         & "$PostgresBin/psql.exe" @sql -f "$repo/src/main/resources/db/runtime/administration-v1.sql" *> "$run/administration-install.log"
         if ($LASTEXITCODE -ne 0) { throw 'Administration installation failed.' }
+    }
+    if ($Agreements) {
+        $snapshot = @('-h','127.0.0.1','-p',"$DatabasePort",'-U',$role,'-d',$db,'--data-only',
+            '--exclude-schema=agreement_runtime','--restrict-key=AgreementVerification2026')
+        & "$PostgresBin/pg_dump.exe" @snapshot --file="$run/agreements-before.sql"
+        if ($LASTEXITCODE -ne 0) { throw 'Pre-install snapshot failed.' }
+        & "$PostgresBin/psql.exe" @sql -f "$repo/src/main/resources/db/runtime/agreements-v1.sql" -f "$PSScriptRoot/agreements-demo.sql" *> "$run/agreements-install.log"
+        if ($LASTEXITCODE -ne 0) { throw 'Agreement installation or seed failed.' }
+        & "$PostgresBin/pg_dump.exe" @snapshot --file="$run/agreements-after.sql"
+        if ($LASTEXITCODE -ne 0) { throw 'Post-install snapshot failed.' }
+        $before = (Get-FileHash -LiteralPath "$run/agreements-before.sql").Hash
+        $after = (Get-FileHash -LiteralPath "$run/agreements-after.sql").Hash
+        if ($before -ne $after) { throw 'An existing table or sequence changed during agreement installation.' }
+        $before | Set-Content "$run/agreements-preservation.sha256"
     }
     $app = Start-Application 'runtime' 'validate' -ProvisionPlatform:$Administration
     if ($Administration) {
@@ -108,6 +125,10 @@ try {
     $ready = @{origin="http://127.0.0.1:$HttpPort";mode='runtime';teacherA='runtime-teacher-a';teacherB='runtime-teacher-b';
         student='runtime-student';password='FictitiousRuntime-2026!';a=1;b=2;pid=$app.Id}
     if ($Administration) { $ready.platform = $platformUser; $ready.platformTemporary = $platformTemporary }
+    if ($Agreements) {
+        $ready.familyMembership = [long](& "$PostgresBin/psql.exe" @sql -At -c "select m.id from evaluation_runtime.memberships m join user_accounts u on u.id=m.account_id where u.username='runtime-student' and m.institution_id=1")
+        if ($LASTEXITCODE -ne 0 -or !$ready.familyMembership) { throw 'Agreement fixture membership lookup failed.' }
+    }
     $ready | ConvertTo-Json | Set-Content (Join-Path $browser.FullName 'ready.json') -Encoding utf8NoBOM
     Write-Output "Ready: $($browser.FullName)"
     $restart = Join-Path $browser.FullName 'restart'
