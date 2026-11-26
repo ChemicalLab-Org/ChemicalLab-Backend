@@ -181,7 +181,10 @@ try {
   await get(other.path + '/own-attempts/' + start.attemptId, student, 403);
   log('T+1 µs | respuestas y consumo conservados, sin reapertura ni efecto sobre el colegio B');
 
-  await pause(Math.max(0, Date.parse(aDeadline) - Date.now()) + 500);
+  // The T05 resolver also uses statement_timestamp(). Restore the live clock before testing academic closure.
+  sql('UPDATE expiry_fixture.clock SET instant=NULL');
+  await waitFor(() => sql(`SELECT (statement_timestamp()>=due_at)::int FROM evaluation_runtime.deliveries
+    WHERE id=${active.delivery}`) === '1', 'vencimiento académico real');
   assert.equal((await get(own + '/correction', student)).answers[0].selectedOptionId, 2);
   await post(own + '/answers', student, command({ answer: answer(active.revision, 1) }), 403);
   assert.deepEqual(snapshot(ready.a), completed);

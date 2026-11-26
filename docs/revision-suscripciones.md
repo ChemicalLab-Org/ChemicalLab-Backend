@@ -6,7 +6,7 @@ El módulo queda deshabilitado por defecto. Los modos de prueba se rechazan en e
 
 El corte comercial excluye el instante exacto de vencimiento. Un intento abierto conserva su fecha y plazo académico. El corte impide iniciar otro intento. La recuperación, el guardado y el envío existentes siguen la autorización y el plazo académico original, y la entrega de la corrección sigue T05. En el retorno de checkout, el servidor agrega el identificador del colegio a una URL configurada. El navegador usa esa referencia para consultar el estado del colegio por HTTP y conserva la sesión en la misma pestaña. El estado de pago no se deriva de los parámetros de retorno.
 
-El escenario por HTTP se ejecuta con el runner de [la guía](suscripciones-institucionales.md), en una base nueva con `-Administration -Subscriptions`. El escenario prepara entregas académicas reales por HTTP. Cambia la resolución de `statement_timestamp()` solamente en la base desechable. Así compara un microsegundo antes, el instante exacto y un microsegundo después sin depender de la latencia de la red. Los plazos académicos siguen el reloj real.
+El escenario por HTTP se ejecuta con el runner de [la guía](suscripciones-institucionales.md), en una base nueva con `-Administration -Subscriptions`. El escenario prepara entregas académicas reales por HTTP. Cambia la resolución de `statement_timestamp()` solamente en la base desechable. Así compara un microsegundo antes, el instante exacto y un microsegundo después sin depender de la latencia de la red. Después del borde se restablece el reloj real y se espera el vencimiento académico para comprobar T05.
 
 ```powershell
 node tools/verify-subscription-attempt-expiry.mjs "<directorio-nuevo>" "<bin>/psql.exe" 55542
