@@ -1,6 +1,7 @@
 package com.morales.chemicallab.service;
 
 import com.morales.chemicallab.entity.*;
+import com.morales.chemicallab.agreement.AgreementService;
 import com.morales.chemicallab.repository.UserAccountRepository;
 import com.morales.chemicallab.security.PasswordPolicy;
 import com.morales.chemicallab.security.SessionPrincipal;
@@ -40,6 +41,7 @@ public class InstitutionalAdministration {
     private final UserAccountRepository users;
     private final PasswordEncoder passwords;
     private final AuditLogWriter audit;
+    private final AgreementService agreements;
 
     public enum MemberRole { ADMIN_INSTITUCION, DOCENTE, ESTUDIANTE }
     public enum MemberState { SUSPEND, RESUME, END }
@@ -87,7 +89,7 @@ public class InstitutionalAdministration {
     public long createInstitution(SessionPrincipal actor, String name) {
         String label = label(name, 200);
         return available(actor, () -> platformOnly(actor, () -> {
-            long institution = id("insert into evaluation_runtime.institutions(name) values(?) returning id", label);
+            long institution = id("insert into evaluation_runtime.institutions(name,active) values(?,?) returning id", label, !agreements.enabled());
             jdbc.update("insert into evaluation_runtime.quotas(institution_id,max_rows,max_bytes) values(?,10000,67108864)", institution);
             evidence(actor, institution, "INSTITUTION_CREATED", "Institution", institution, null);
             return institution;
@@ -97,6 +99,9 @@ public class InstitutionalAdministration {
     public void institutionState(SessionPrincipal actor, long institution, boolean active) {
         available(actor, () -> platformOnly(actor, () -> {
             lock(institution, true);
+            if (active && !agreements.mayActivateInstitution(institution)) {
+                throw conflict("El director verificado debe aceptar las condiciones institucionales vigentes antes de habilitar el colegio.");
+            }
             changed(jdbc.update("""
                 update evaluation_runtime.institutions set active=? where id=? and active<>?
                 """, active, institution, active));

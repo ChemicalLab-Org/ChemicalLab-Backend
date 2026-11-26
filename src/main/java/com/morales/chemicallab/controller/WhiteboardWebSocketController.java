@@ -53,7 +53,7 @@ public class WhiteboardWebSocketController {
         if (event == null || event.length() != 36) throw InputRejectedException.invalid();
         java.util.UUID id = java.util.UUID.fromString(event);
         if (!id.toString().equals(event)) throw InputRejectedException.invalid();
-        institutional.draw(connections.principal(connectionId), target, id, request);
+        institutional.draw(connections.validate(connectionId), target, id, request);
     }
 
     @MessageMapping("/institutions/{institution}/classes/{clazz}/whiteboards/v1/{board}/ready")
