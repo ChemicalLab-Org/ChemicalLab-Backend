@@ -2,6 +2,7 @@ package com.morales.chemicallab.repository;
 import com.morales.chemicallab.dto.*;
 import com.morales.chemicallab.entity.*;
 import com.morales.chemicallab.security.storage.QueryLimits;
+import com.morales.chemicallab.service.WhiteboardInteractionPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -38,6 +39,31 @@ public class WhiteboardQueryRepository {
         String columns=METADATA+",(select count(*) from board_runtime.current_admissions a where a.board_id=b.id) participants";
         return query(columns,SCOPE,scope(institution,clazz),page,size,"b.created_at desc,b.id desc",WhiteboardQueryRepository::teacherRow);
     }
+    public Optional<WhiteboardSessionResponse> scopedTeacherHeader(long institution, long clazz, long board) {
+        var params = scope(institution, clazz);
+        params.put("board", board);
+        // Keep the shared lock and the same availability test as the entity, even for older rows.
+        var rows = jdbc.query("select " + METADATA + ",octet_length(b.final_snapshot_data)>0 snapshot_available"
+            + FROM + SCOPE + " and b.id=:board for share of b", params,
+            (row, index) -> teacherRow(row, 0, row.getBoolean("snapshot_available")));
+        return rows.stream().findFirst();
+    }
+
+    public List<WhiteboardParticipantResponse> currentParticipants(long board, String grade, String section, boolean enabled) {
+        return jdbc.query("""
+            select p.id,p.student_id,s.names,s.last_names,p.interaction_override,p.joined_at,p.last_seen_at
+            from board_runtime.current_admissions a
+            join whiteboard_participants p on p.id=a.participant_id
+            join student_profiles s on s.id=p.student_id
+            where a.board_id=:board
+            order by p.id
+            """, Map.of("board", board), (row, index) -> {
+                var override = WhiteboardInteractionOverride.valueOf(row.getString("interaction_override"));
+                return new WhiteboardParticipantResponse(row.getLong("id"), row.getLong("student_id"),
+                    row.getString("names") + " " + row.getString("last_names"), "", grade, section, override,
+                    WhiteboardInteractionPolicy.effective(enabled, override), date(row, "joined_at"), date(row, "last_seen_at"));
+            });
+    }
     public QueryPage<WhiteboardStudentSessionResponse> scopedActive(long institution,long clazz,long account,int page,int size) {
         var params=scope(institution,clazz);
         params.put("account",account);
@@ -60,7 +86,15 @@ public class WhiteboardQueryRepository {
         return new HashMap<>(Map.of("institution",institution,"class",clazz));
     }
     private static WhiteboardSessionResponse teacherRow(ResultSet r,int row)throws SQLException {
-        return new WhiteboardSessionResponse(r.getLong("id"),r.getString("name"),r.getString("description"),r.getLong("teacher_id"),r.getString("teacher_name"),r.getString("grade"),r.getString("section"),status(r),r.getBoolean("interaction_enabled"),r.getInt("participants"),snapshot(r),date(r,"created_at"),date(r,"started_at"),date(r,"paused_at"),date(r,"resumed_at"),date(r,"closed_at"),r.getString("closed_by"));
+        return teacherRow(r, r.getInt("participants"), snapshot(r));
+    }
+    private static WhiteboardSessionResponse teacherRow(ResultSet row, int participants, boolean snapshotAvailable)
+            throws SQLException {
+        return new WhiteboardSessionResponse(row.getLong("id"), row.getString("name"), row.getString("description"),
+            row.getLong("teacher_id"), row.getString("teacher_name"), row.getString("grade"), row.getString("section"),
+            status(row), row.getBoolean("interaction_enabled"), participants, snapshotAvailable,
+            date(row, "created_at"), date(row, "started_at"), date(row, "paused_at"), date(row, "resumed_at"),
+            date(row, "closed_at"), row.getString("closed_by"));
     }
     public QueryPage<WhiteboardAdminSessionResponse> admin(int page,int size) {
         return query(COLUMNS,"",new HashMap<>(),page,size,"b.created_at desc,b.id desc",(r,n)->new WhiteboardAdminSessionResponse(r.getLong("id"),r.getString("name"),r.getLong("teacher_id"),r.getString("teacher_name"),r.getString("grade"),r.getString("section"),status(r),r.getBoolean("interaction_enabled"),r.getInt("participants"),snapshot(r),date(r,"created_at"),date(r,"closed_at")));
