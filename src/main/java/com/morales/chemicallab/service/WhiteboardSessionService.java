@@ -486,12 +486,12 @@ public class WhiteboardSessionService {
     // CAPTURA FINAL
     // =========================================================================
 
-    private SnapshotData validateSnapshot(MultipartFile snapshot) {
+    SnapshotData validateSnapshot(MultipartFile snapshot) {
         var validated = fileValidationService.snapshot(snapshot);
         return new SnapshotData(validated.data(), validated.contentType(), validated.fileName());
     }
 
-    private WhiteboardSnapshotDownload requireSnapshot(WhiteboardSession session) {
+    WhiteboardSnapshotDownload requireSnapshot(WhiteboardSession session) {
         if (!session.hasSnapshot()) {
             throw new EntityNotFoundException("La sesión no tiene una captura final disponible.");
         }
@@ -500,7 +500,7 @@ public class WhiteboardSessionService {
         return new WhiteboardSnapshotDownload(validated.data(), validated.contentType(), validated.fileName());
     }
 
-    private record SnapshotData(byte[] bytes, String contentType, String fileName) {
+    record SnapshotData(byte[] bytes, String contentType, String fileName) {
     }
 
     // =========================================================================
@@ -534,6 +534,10 @@ public class WhiteboardSessionService {
     }
 
     private WhiteboardSessionResponse toTeacherResponse(WhiteboardSession session) {
+        return toTeacherResponse(session, (int) participantRepository.countBySession(session));
+    }
+
+    WhiteboardSessionResponse toTeacherResponse(WhiteboardSession session, int participantCount) {
         TeacherProfile teacher = session.getTeacher();
         return new WhiteboardSessionResponse(
                 session.getId(),
@@ -545,7 +549,7 @@ public class WhiteboardSessionService {
                 session.getSection(),
                 session.getStatus(),
                 Boolean.TRUE.equals(session.getInteractionEnabled()),
-                (int) participantRepository.countBySession(session),
+                participantCount,
                 session.hasSnapshot(),
                 session.getCreatedAt(),
                 session.getStartedAt(),
@@ -555,7 +559,7 @@ public class WhiteboardSessionService {
                 session.getClosedBy());
     }
 
-    private WhiteboardParticipantResponse toParticipantResponse(WhiteboardSession session,
+    WhiteboardParticipantResponse toParticipantResponse(WhiteboardSession session,
                                                                 WhiteboardParticipant participant) {
         StudentProfile student = participant.getStudent();
         boolean effective = WhiteboardInteractionPolicy.effective(
@@ -574,10 +578,14 @@ public class WhiteboardSessionService {
     }
 
     private WhiteboardStudentSessionResponse toStudentResponse(WhiteboardSession session, StudentProfile student) {
-        TeacherProfile teacher = session.getTeacher();
         WhiteboardParticipant participant = participantRepository
                 .findBySessionAndStudent(session, student)
                 .orElse(null);
+        return toStudentResponse(session, participant);
+    }
+
+    WhiteboardStudentSessionResponse toStudentResponse(WhiteboardSession session, WhiteboardParticipant participant) {
+        TeacherProfile teacher = session.getTeacher();
         boolean joined = participant != null;
         boolean canInteract = joined
                 && session.getStatus() == WhiteboardSessionStatus.ACTIVE
@@ -600,7 +608,7 @@ public class WhiteboardSessionService {
                 session.getClosedAt());
     }
 
-    private WhiteboardBoardStateResponse toBoardState(WhiteboardSession session) {
+    WhiteboardBoardStateResponse toBoardState(WhiteboardSession session) {
         return new WhiteboardBoardStateResponse(
                 session.getId(),
                 session.getStatus(),
@@ -638,7 +646,7 @@ public class WhiteboardSessionService {
                 session.getClosedAt());
     }
 
-    private WhiteboardControlEventResponse controlEvent(WhiteboardSession session,
+    WhiteboardControlEventResponse controlEvent(WhiteboardSession session,
                                                         WhiteboardControlEventType type, Long targetStudentId) {
         return new WhiteboardControlEventResponse(
                 session.getId(),

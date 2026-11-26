@@ -25,6 +25,7 @@ public class WhiteboardConnections {
     private final WhiteboardRealtimeAccess access;
     private final TransportLimits limits;
     private final AccountTrafficLimits traffic;
+    private final com.morales.chemicallab.service.InstitutionalWhiteboardAccess institutional;
     private final Map<String, Connection> connections = new ConcurrentHashMap<>();
     private final ScheduledExecutorService watchdog = Executors.newSingleThreadScheduledExecutor(r -> daemon(r, "whiteboard-watchdog"));
     private final ThreadPoolExecutor validators = new ThreadPoolExecutor(4, 4, 0, TimeUnit.SECONDS,
@@ -37,7 +38,9 @@ public class WhiteboardConnections {
         final Map<String, Long> subscriptions = new ConcurrentHashMap<>(); // 0 = own error queue
         final Set<Long> targets = ConcurrentHashMap.newKeySet();
         final AtomicBoolean validating = new AtomicBoolean();
+        final AtomicBoolean ready = new AtomicBoolean();
         volatile SessionPrincipal principal;
+        volatile WhiteboardScope.Target target;
         volatile long validatedAt = System.nanoTime();
         volatile long attemptedAt;
         volatile Future<?> validation;
@@ -74,10 +77,26 @@ public class WhiteboardConnections {
     }
 
     public synchronized void authenticated(String id, SessionPrincipal principal) {
+        register(id, principal, null);
+    }
+
+    public void authenticated(String id, SessionPrincipal principal, String requested) {
+        if (!institutional.installed()) {
+            if (requested != null) throw new AccessDeniedException("PROTOCOL_REJECTED");
+            authenticated(id, principal);
+            return;
+        }
+        var target = WhiteboardScope.parse(requested);
+        institutional.observe(principal, target, true);
+        register(id, principal, target);
+    }
+
+    private synchronized void register(String id, SessionPrincipal principal, WhiteboardScope.Target target) {
         Connection connection = require(id);
         if (connection.principal != null) throw new AccessDeniedException("PROTOCOL_REJECTED");
         if (connections.values().stream().filter(c -> c.principal != null && c.principal.userId().equals(principal.userId())).count() >= limits.getAccountConnections())
             throw new InputRejectedException(429, "CONNECTION_LIMIT", "Demasiadas conexiones para esta cuenta.");
+        connection.target = target;
         connection.principal = principal;
         connection.validatedAt = System.nanoTime();
     }
@@ -85,7 +104,20 @@ public class WhiteboardConnections {
     public SessionPrincipal validate(String id) {
         SessionPrincipal principal = principal(id);
         sessions.revalidate(principal);
+        var target = target(id);
+        if (target != null) institutional.observe(principal, target, true);
         return principal;
+    }
+
+    public WhiteboardScope.Target target(String id) { return require(id).target; }
+
+    public void ready(String id) {
+        var connection = require(id);
+        var target = connection.target;
+        if (target == null || !connection.subscriptions.containsValue(target.board())
+            || !connection.subscriptions.containsValue(0L) || !connection.ready.compareAndSet(false, true)) {
+            throw new AccessDeniedException("PROTOCOL_REJECTED");
+        }
     }
 
     public SessionPrincipal principal(String id) {
@@ -95,6 +127,7 @@ public class WhiteboardConnections {
     }
 
     public void observe(String id, long board) {
+        if (target(id) != null) throw new AccessDeniedException("PROTOCOL_REJECTED");
         var principal = validate(id);
         access.observe(principal, board);
         synchronized (this) {
@@ -120,17 +153,30 @@ public class WhiteboardConnections {
             throw new AccessDeniedException("PROTOCOL_REJECTED");
     }
     public void delivery(String id, String subscription, String destination) {
-        SessionPrincipal principal = validate(id);
-        Long board = subscription == null ? null : require(id).subscriptions.get(subscription);
+        var connection = require(id);
+        var principal = principal(id);
+        sessions.revalidate(principal);
+        var target = connection.target;
+        if (target != null) institutional.observe(principal, target, false);
+        Long board = subscription == null ? null : connection.subscriptions.get(subscription);
         if (board == null) throw new AccessDeniedException("PROTOCOL_REJECTED");
         if (board > 0) {
-            if (!("/topic/whiteboards/" + board).equals(destination)) throw new AccessDeniedException("PROTOCOL_REJECTED");
-            access.observe(principal, board);
+            if (target == null) {
+                if (!("/topic/whiteboards/" + board).equals(destination)) throw new AccessDeniedException("PROTOCOL_REJECTED");
+                access.observe(principal, board);
+            } else if (target.board() != board || !target.topic().equals(destination)) {
+                throw new AccessDeniedException("PROTOCOL_REJECTED");
+            }
         } else if (destination == null || !destination.startsWith("/queue/whiteboard-errors-user")) {
             throw new AccessDeniedException("PROTOCOL_REJECTED");
         }
         // A watchdog close may have happened while a database read was waiting.
         require(id);
+    }
+
+    public boolean includesParticipantEvent(String id, long account) {
+        var connection = require(id);
+        return connection.target != null && (connection.target.scope().teacher() || connection.principal.userId() == account);
     }
 
     public void reject(String id, Exception error) {
@@ -182,7 +228,7 @@ public class WhiteboardConnections {
                 connection.validation = validators.submit(() -> {
                     long started = System.nanoTime();
                     try {
-                        sessions.revalidate(connection.principal);
+                        validate(id);
                         for (long board : connection.targets) access.observe(connection.principal, board);
                         connection.validatedAt = started;
                     } catch (Exception ex) { reject(id, ex); }

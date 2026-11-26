@@ -22,7 +22,7 @@ import java.util.*;
 import java.util.function.Supplier;
 import static com.morales.chemicallab.service.EvaluationDeliveryAccessService.*;
 
-/** Fixture-only NEW_V1. No legacy academic writer or B8 simulation mutation. */
+/** Shared NEW_V1 academic operations; the stores and their guards remain isolated. */
 @Service
 public class NewEvaluationExecutionService {
     private final JdbcTemplate jdbc;
@@ -33,10 +33,14 @@ public class NewEvaluationExecutionService {
     private final EntityManager entities;
     private final ObjectMapper json;
     private final TransactionTemplate transaction;
+    private final EvaluationRuntime runtime;
+    private final EvaluationRuntimeExecution nativeAccess;
 
     public NewEvaluationExecutionService(JdbcTemplate jdbc,Environment environment,EvaluationDeliveryAccessService access,
-        AccountSessionService sessions,AuditLogWriter audit,EntityManager entities,ObjectMapper json,PlatformTransactionManager manager) {
+        AccountSessionService sessions,AuditLogWriter audit,EntityManager entities,ObjectMapper json,PlatformTransactionManager manager,
+        EvaluationRuntime runtime,EvaluationRuntimeExecution nativeAccess) {
         this.jdbc=jdbc;this.environment=environment;this.access=access;this.sessions=sessions;this.audit=audit;this.entities=entities;this.json=json;
+        this.runtime=runtime;this.nativeAccess=nativeAccess;
         transaction=new TransactionTemplate(manager);transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         transaction.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);transaction.setTimeout(30);
     }
@@ -59,7 +63,7 @@ public class NewEvaluationExecutionService {
         }
         return new Request(Contract.NEW,action,institution,clazz,evaluation,delivery,revision,recipient,attempt);
     }
-    private <T>T unit(SessionPrincipal actor,boolean writing,java.util.function.Function<String,T> work) {
+    <T>T unit(SessionPrincipal actor,boolean writing,java.util.function.Function<String,T> work) {
         String schema=enabled();
         return guarded(()->transaction.execute(status->{
             InstitutionalFixtureUnit.lock(jdbc,schema,writing);
@@ -89,20 +93,26 @@ public class NewEvaluationExecutionService {
            || context.path("enrollmentId").asLong()!=number(row,"enrollment_id").longValue())throw denied();
         return row;
     }
+    private <T> T executionUnit(SessionPrincipal actor, long institution, long evaluation, boolean writing, UUID operation,
+                                java.util.function.Function<String,T> work) {
+        if (runtime.installed()) return runtime.unit(actor,institution,evaluation,writing,operation,
+            () -> work.apply(EvaluationRuntime.SCHEMA));
+        return unit(actor,writing,work);
+    }
     private Map<String,Object> attempt(String ctl,long id){return jdbc.queryForMap("select * from "+ctl+".attempts where id=?",id);}
     private PublishedEvaluationContent content(Map<String,Object> binding){return new PublishedEvaluationContent(tree((String)binding.get("payload")));}
     private Scope scope(Request q){return new Scope("NEW_V1",q.institutionId(),q.classId(),q.evaluationId(),q.deliveryId(),q.revisionId());}
 
     public Object read(SessionPrincipal actor,long institution,long clazz,long evaluation,long delivery,long revision,Long id,String projection,Long recipient) {
-        return unit(actor,false,ctl->{
+        return executionUnit(actor,institution,evaluation,false,null,ctl->{
             boolean teacher=projection.equals("review");
             Action action=switch(projection){case "delivery"->Action.READ_DELIVERY;case "review"->Action.REVIEW_ATTEMPT;case "correction"->Action.READ_CORRECTION;default->Action.READ_OWN_ATTEMPT;};
             Request q=request(actor,institution,clazz,evaluation,delivery,revision,id,teacher,action,ctl);
             if(projection.equals("delivery") && recipient!=null)q=new Request(q.contract(),q.action(),institution,clazz,evaluation,delivery,revision,recipient,null);
-            Context decision=access.authorizeExecution(actor,q);
+            var decision=resolve(ctl,actor,q);
             if(decision.projection()==Projection.SUPERVISION_METADATA)
-                return new InstitutionalEvaluationRead.Metadata(new InstitutionalEvaluationRead.Scope(Contract.NEW,institution,clazz,evaluation,delivery,revision),"SUPERVISION_METADATA",decision.observedAt());
-            var binding=binding(q);
+                return new InstitutionalEvaluationRead.Metadata(new InstitutionalEvaluationRead.Scope(Contract.NEW,institution,clazz,evaluation,delivery,revision),"SUPERVISION_METADATA",decision.observed());
+            var binding=decision.binding();
             var content=content(binding);
             if(projection.equals("delivery")) {
                 var cfg=content.configuration;
@@ -110,7 +120,7 @@ public class NewEvaluationExecutionService {
                     cfg.path("title").asText(),nullableText(cfg,"description"),nullableText(cfg,"instructions"),nullableText(cfg,"topic"),content.minutes,
                     cfg.path("allow_chemical_calculator").asBoolean(),cfg.path("allow_periodic_table").asBoolean(),cfg.path("track_tab_exit").asBoolean(),
                     cfg.path("question_display_mode").asText(),content.random,content.questions.stream().map(x->new InstitutionalEvaluationRead.Question(
-                        x.id(),x.text(),x.type(),x.points(),x.order(),x.required(),x.options().stream().map(o->new InstitutionalEvaluationRead.Option(o.id(),o.text(),o.order())).toList())).toList(),decision.observedAt());
+                        x.id(),x.text(),x.type(),x.points(),x.order(),x.required(),x.options().stream().map(o->new InstitutionalEvaluationRead.Option(o.id(),o.text(),o.order())).toList())).toList(),decision.observed());
             }
             var a=attempt(ctl,id);validateFrozen(a,binding,content);
             ObjectNode answers=object(a,"answers");
@@ -142,32 +152,65 @@ public class NewEvaluationExecutionService {
         });
     }
 
+    private EvaluationRuntimeExecution.Resolved resolve(String ctl, SessionPrincipal actor, Request request) {
+        if (EvaluationRuntime.SCHEMA.equals(ctl)) return nativeAccess.resolve(actor,request);
+        Context decision=access.authorizeExecution(actor,request);
+        Map<String,Object> bound=decision.projection()==Projection.SUPERVISION_METADATA ? Map.of() : binding(request);
+        return new EvaluationRuntimeExecution.Resolved(bound,decision.projection(),decision.observedAt());
+    }
+
     public Receipt write(SessionPrincipal actor,long institution,long clazz,long evaluation,long delivery,long revision,Long id,
         String operation,Long child,UUID key,Answer answer,List<Answer> submitted,Integer score,BigDecimal amount,String text) {
         if(key==null)throw denied();
-        return unit(actor,true,ctl->{
+        return executionUnit(actor,institution,evaluation,true,key,ctl->{
+            boolean nativeRuntime=EvaluationRuntime.SCHEMA.equals(ctl);
             boolean teacher=Set.of("GRADE","COMPLETE","ADD","REMOVE","FEEDBACK","CLOSE").contains(operation);
             Request q=request(actor,institution,clazz,evaluation,delivery,revision,id,teacher,id==null?Action.READ_DELIVERY:teacher?Action.REVIEW_ATTEMPT:Action.READ_OWN_ATTEMPT,ctl);
             Map<String,Object> input=new TreeMap<>();input.put("engine","NEW_V1");input.put("operation",operation);input.put("actor",actor.userId());input.put("recipient",q.recipientAccountId());
             input.put("institution",institution);input.put("class",clazz);input.put("evaluation",evaluation);input.put("delivery",delivery);input.put("revision",revision);input.put("attempt",id);
             input.put("child",child);input.put("answer",answer);input.put("answers",submitted);input.put("score",score);input.put("amount",amount);input.put("text",text);
             String encoded=encode(input);
-            var previous=jdbc.queryForList("select request::text,result::text from "+ctl+".operations where operation_id=?",key);
-            if(!previous.isEmpty()) {
-                Receipt receipt=decode((String)previous.get(0).get("result"));
-                access.authorizeExecution(actor,new Request(Contract.NEW,teacher?Action.REVIEW_ATTEMPT:Action.READ_OWN_ATTEMPT,institution,clazz,evaluation,delivery,revision,q.recipientAccountId(),receipt.attemptId()));
-                if(!tree((String)previous.get(0).get("request")).equals(tree(encoded)))throw new ResponseStatusException(HttpStatus.CONFLICT,"Operación incompatible.");
-                return receipt;
+            String auditAction=operation+"_NEW_EXECUTION";
+            Action recover=teacher?Action.REVIEW_ATTEMPT:Action.READ_OWN_ATTEMPT;
+            if (nativeRuntime) {
+                var rights=runtime.rights(actor,institution,clazz);
+                if (teacher ? !rights.teacher() : !rights.student()) throw denied();
+                Receipt replay=runtime.replay(actor,institution,clazz,key,auditAction,encoded,Receipt.class);
+                if (replay!=null) {
+                    nativeAccess.resolve(actor,new Request(Contract.NEW,recover,institution,clazz,evaluation,delivery,revision,
+                        q.recipientAccountId(),replay.attemptId()));
+                    return replay;
+                }
+            } else {
+                var previous=jdbc.queryForList("select request::text,result::text from "+ctl+".operations where operation_id=?",key);
+                if(!previous.isEmpty()) {
+                    Receipt receipt=decode((String)previous.get(0).get("result"));
+                    access.authorizeExecution(actor,new Request(Contract.NEW,recover,institution,clazz,evaluation,delivery,
+                        revision,q.recipientAccountId(),receipt.attemptId()));
+                    if(!tree((String)previous.get(0).get("request")).equals(tree(encoded)))
+                        throw new ResponseStatusException(HttpStatus.CONFLICT,"Operación incompatible.");
+                    return receipt;
+                }
             }
-            access.authorizeExecution(actor,q);
-            var bound=binding(q);var content=content(bound);
             Action mutation=switch(operation){case "START"->Action.START_OWN_ATTEMPT;case "SAVE"->Action.SAVE_OWN_ANSWER;case "SUBMIT"->Action.SUBMIT_OWN_ATTEMPT;default->Action.GRADE_ATTEMPT;};
-            access.authorizeExecution(actor,new Request(Contract.NEW,mutation,institution,clazz,evaluation,delivery,revision,q.recipientAccountId(),id));
-            if(teacher && !Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from teacher_profiles where user_id=?)",Boolean.class,actor.userId())))throw denied();
-            jdbc.queryForObject("select "+ctl+".begin_operation(?,?::jsonb,?::jsonb)",Object.class,key,encoded,bound.get("context"));
-            long target;String previousStatus=id==null?null:(String)attempt(ctl,id).get("status");
+            Request requested=new Request(Contract.NEW,mutation,institution,clazz,evaluation,delivery,revision,q.recipientAccountId(),id);
+            Map<String,Object> bound;
+            if (nativeRuntime) {
+                bound=nativeAccess.resolve(actor,requested).binding();
+            } else {
+                access.authorizeExecution(actor,q);
+                bound=binding(q);
+                access.authorizeExecution(actor,requested);
+            }
+            var content=content(bound);
+            if(!nativeRuntime && teacher && !Boolean.TRUE.equals(jdbc.queryForObject(
+                "select exists(select 1 from teacher_profiles where user_id=?)",Boolean.class,actor.userId())))throw denied();
+            if(nativeRuntime) runtime.begin(actor,institution,clazz,evaluation,key,auditAction,encoded);
+            else beginFixtureOperation(ctl,key,encoded,bound.get("context"));
+            var prior=id==null?null:attempt(ctl,id);
+            long target;String previousStatus=prior==null?null:(String)prior.get("status");
             if(operation.equals("START"))target=start(ctl,q,bound,content);
-            else {target=id;mutate(ctl,q,attempt(ctl,id),bound,content,operation,child,answer,submitted,score,amount,text,actor.userId());}
+            else {target=id;mutate(ctl,q,prior,bound,content,operation,child,answer,submitted,score,amount,text,actor.userId());}
             var changed=attempt(ctl,target);
             Long resultChild=child;
             if(operation.equals("ADD"))resultChild=Long.valueOf(tree(changed.get("adjustments").toString()).size());
@@ -177,10 +220,16 @@ public class NewEvaluationExecutionService {
             if(operation.equals("SUBMIT") && changed.get("status").equals("PENDING_MANUAL_REVIEW"))audit.persist(event(actor,LogEventType.EVALUATION_ATTEMPT_PENDING_REVIEW,"PENDING_REVIEW",evaluation,key));
             if(operation.equals("GRADE") && !"GRADED".equals(previousStatus) && changed.get("status").equals("GRADED"))audit.persist(event(actor,LogEventType.EVALUATION_REVIEW_COMPLETED,"REVIEW_COMPLETED",evaluation,key));
             entities.flush();jdbc.execute("set local synchronous_commit=on");
-            jdbc.queryForObject("select "+ctl+".finish_operation(?,?,?::jsonb,?)",Object.class,key,target,encode(result),event.getId());
-            access.authorizeExecution(actor,new Request(Contract.NEW,teacher?Action.REVIEW_ATTEMPT:Action.READ_OWN_ATTEMPT,institution,clazz,evaluation,delivery,revision,q.recipientAccountId(),target));
+            if (nativeRuntime) {
+                runtime.finish(key,evaluation,result,event.getId());
+                nativeAccess.resolve(actor,new Request(Contract.NEW,operation.equals("START")?mutation:recover,
+                    institution,clazz,evaluation,delivery,revision,q.recipientAccountId(),target));
+            } else {
+                jdbc.queryForObject("select "+ctl+".finish_operation(?,?,?::jsonb,?)",Object.class,key,target,encode(result),event.getId());
+                access.authorizeExecution(actor,new Request(Contract.NEW,recover,institution,clazz,evaluation,delivery,revision,q.recipientAccountId(),target));
+            }
             if(operation.equals("START")) {
-                access.authorizeExecution(actor,new Request(Contract.NEW,Action.START_OWN_ATTEMPT,institution,clazz,evaluation,delivery,revision,q.recipientAccountId(),null));
+                if(!nativeRuntime) access.authorizeExecution(actor,new Request(Contract.NEW,Action.START_OWN_ATTEMPT,institution,clazz,evaluation,delivery,revision,q.recipientAccountId(),null));
                 if(!answersOpen(changed,now()))throw denied();
             }
             // A save that crossed the frozen deadline rolls back the whole receipt and audit.
@@ -190,6 +239,15 @@ public class NewEvaluationExecutionService {
                && !now().isBefore(time(changed,"deadline")))throw denied();
             return result;
         });
+    }
+
+    private void beginFixtureOperation(String ctl,UUID key,String encoded,Object context) {
+        String schema="t03_"+ctl.substring(5);
+        String assignment=InstitutionalFixtureUnit.assignmentControl(jdbc,schema);
+        String authoring=InstitutionalFixtureUnit.authoringControl(jdbc,schema);
+        String begin=assignment!=null?assignment+".begin_execution":
+            authoring!=null?authoring+".begin_execution":ctl+".begin_operation";
+        jdbc.queryForObject("select "+begin+"(?,?::jsonb,?::jsonb)",Object.class,key,encoded,context);
     }
     private long start(String ctl,Request q,Map<String,Object> binding,PublishedEvaluationContent content) {
         long used=jdbc.queryForObject("select count(*) from "+ctl+".attempts where resource_id=? and account_id=?",Long.class,binding.get("resource_id"),q.recipientAccountId());

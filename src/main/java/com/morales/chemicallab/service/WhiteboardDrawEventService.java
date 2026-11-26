@@ -158,6 +158,26 @@ public class WhiteboardDrawEventService {
             default -> throw new IllegalArgumentException("El rol del usuario no permite dibujar.");
         }
 
+        var event = buildResponse(session, request, eventType, tool, actorRole, actorDisplayName);
+        var response = objectState.apply(session, user, event);
+        broadcastService.broadcastDraw(response);
+        return response;
+    }
+
+    WhiteboardDrawEventResponse applyInstitutional(WhiteboardSession session, UserAccount user,
+            WhiteboardDrawEventRequest request, boolean teacher, String displayName) {
+        if (request == null) throw new IllegalArgumentException("El evento de dibujo es obligatorio.");
+        var type = requireEventType(request.eventType());
+        if (!teacher && TEACHER_ONLY_EVENTS.contains(type)) {
+            throw new IllegalArgumentException("Esta acción de la pizarra está reservada al docente.");
+        }
+        var role = teacher ? Role.DOCENTE : Role.ESTUDIANTE;
+        var event = buildResponse(session, request, type, requireTool(request.tool()), role, displayName);
+        return objectState.apply(session, user, event, teacher);
+    }
+
+    private WhiteboardDrawEventResponse buildResponse(WhiteboardSession session, WhiteboardDrawEventRequest request,
+            WhiteboardDrawEventType eventType, WhiteboardDrawTool tool, Role actorRole, String actorDisplayName) {
         // Los eventos de texto (TEXT/TEXT_DELETE) viajan por el mismo canal con su propio payload;
         // el resto (DRAW/ERASE/CLEAR) conservan exactamente la validación anterior.
         validateInput(request);
@@ -174,8 +194,6 @@ public class WhiteboardDrawEventService {
             response = buildDrawResponse(session, eventType, tool, request, actorRole, actorDisplayName);
         }
 
-        response = objectState.apply(session, user, response);
-        broadcastService.broadcastDraw(response);
         return response;
     }
 

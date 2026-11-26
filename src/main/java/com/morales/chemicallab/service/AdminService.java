@@ -18,6 +18,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 
 import com.morales.chemicallab.security.PasswordPolicy;
 import java.util.ArrayList;
@@ -44,12 +45,14 @@ public class AdminService {
     private final TeacherProfileRepository teacherProfileRepository;
     private final StudentProfileRepository studentProfileRepository;
     private final ConceptContentRepository conceptContentRepository;
+    private final InstitutionalContentService institutionalContents;
     private final EvaluationRepository evaluationRepository;
     private final EvaluationAttemptRepository evaluationAttemptRepository;
     private final com.morales.chemicallab.security.AccountSessionService sessions;
     private final PasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
     private final AdminQueryRepository queries;
+    private final LegacyEvaluationVisibility legacyVisibility;
 
     // Tipo de recurso afectado en los eventos de trazabilidad de gestión de usuarios.
     private static final String TARGET_USER = "UserAccount";
@@ -58,6 +61,7 @@ public class AdminService {
     // RESUMEN / MÉTRICAS
     // =========================================================================
 
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public AdminSummaryResponse getSummary() {
         long totalAdmins = userAccountRepository.countByRole(Role.ADMINISTRADOR);
         long totalTeachers = userAccountRepository.countByRole(Role.DOCENTE);
@@ -70,9 +74,12 @@ public class AdminService {
         long activeStudents = userAccountRepository.countByRoleAndActive(Role.ESTUDIANTE, true);
 
         // Métricas complementarias de módulos. Si un módulo no tiene datos, el conteo es 0.
-        long totalConcepts = conceptContentRepository.count();
-        long publishedConcepts = conceptContentRepository.countByStatus(ConceptStatus.PUBLISHED);
-        long totalEvaluations = evaluationRepository.count();
+        boolean institutional = institutionalContents.installed();
+        long totalConcepts = institutional ? 0 : conceptContentRepository.count();
+        long publishedConcepts = institutional ? 0 : conceptContentRepository.countByStatus(ConceptStatus.PUBLISHED);
+        var excludedEvaluations = legacyVisibility.excludedIds();
+        long totalEvaluations = excludedEvaluations.isEmpty() ? evaluationRepository.count()
+                : evaluationRepository.countByIdNotIn(excludedEvaluations);
         long publishedEvaluations = evaluationRepository.countByStatus(EvaluationStatus.PUBLISHED);
         long submittedAttempts = evaluationAttemptRepository.countByStatusIn(
                 List.of(AttemptStatus.SUBMITTED, AttemptStatus.GRADED));
@@ -157,6 +164,7 @@ public class AdminService {
             case ADMINISTRADOR -> createAdministrator(request, encoded);
             case DOCENTE -> createTeacher(request, encoded);
             case ESTUDIANTE -> createStudent(request, encoded);
+            case INSTITUCIONAL -> throw new IllegalArgumentException("Usa el alta institucional.");
         };
 
         return new AdminUserCreatedResponse(toAdminUserResponse(createdUser), temporaryPassword);
@@ -415,16 +423,20 @@ public class AdminService {
     // ACTIVIDAD RECIENTE (derivada de registros existentes)
     // =========================================================================
 
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public AdminActivityResponse getActivity() {
         List<AdminActivityItem> recentUsers = userAccountRepository.findTop8ByOrderByCreatedAtDesc().stream()
                 .map(this::toUserActivityItem)
                 .toList();
 
-        List<AdminActivityItem> recentEvaluations = evaluationRepository.findTop5ByOrderByCreatedAtDesc().stream()
+        var excludedEvaluations = legacyVisibility.excludedIds();
+        var evaluations = excludedEvaluations.isEmpty() ? evaluationRepository.findTop5ByOrderByCreatedAtDesc()
+                : evaluationRepository.findTop5ByIdNotInOrderByCreatedAtDesc(excludedEvaluations);
+        List<AdminActivityItem> recentEvaluations = evaluations.stream()
                 .map(e -> new AdminActivityItem(e.getTitle(), teacherFullName(e.getCreatedByTeacher()), e.getCreatedAt()))
                 .toList();
 
-        List<AdminActivityItem> recentConcepts = conceptContentRepository.findTop5ByOrderByCreatedAtDesc().stream()
+        List<AdminActivityItem> recentConcepts = institutionalContents.installed() ? List.of() : conceptContentRepository.findTop5ByOrderByCreatedAtDesc().stream()
                 .map(c -> new AdminActivityItem(c.getTitle(), teacherFullName(c.getCreatedByTeacher()), c.getCreatedAt()))
                 .toList();
 
@@ -499,6 +511,7 @@ public class AdminService {
             case ADMINISTRADOR -> "Administrador";
             case DOCENTE -> "Docente";
             case ESTUDIANTE -> "Estudiante";
+            case INSTITUCIONAL -> "Institucional";
         };
         return new AdminActivityItem(user.getUsername(), roleLabel, user.getCreatedAt());
     }

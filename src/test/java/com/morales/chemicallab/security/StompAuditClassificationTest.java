@@ -29,7 +29,7 @@ class StompAuditClassificationTest {
     void verifyError(Exception exception,LogEventType type,String outcome,String reason,String code,String error){
         var writer=mock(AuditLogWriter.class);when(writer.persistRejection(any())).thenReturn(true);
         var audit=new AuditRejections(writer,new AuditSignals(new SimpleMeterRegistry()));
-        var controller=new WhiteboardWebSocketController(null,null,null,audit);
+        var controller=new WhiteboardWebSocketController(null,null,null,audit,null);
         var actor=new SessionPrincipal(7L,"synthetic-actor",UUID.randomUUID(),0L,Role.ESTUDIANTE,false);
         var headers=StompHeaderAccessor.create(StompCommand.SEND);headers.setDestination("/app/whiteboards/42/draw");
         headers.setUser(new UsernamePasswordAuthenticationToken(actor,null,List.of()));

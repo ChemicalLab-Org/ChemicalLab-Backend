@@ -18,6 +18,8 @@ public class WhiteboardOutboundInterceptor implements ExecutorChannelInterceptor
         try {
             connections.delivery(id, SimpMessageHeaderAccessor.getSubscriptionId(message.getHeaders()),
                     SimpMessageHeaderAccessor.getDestination(message.getHeaders()));
+            if (message.getHeaders().get("boardParticipantAudience") instanceof Long account
+                && !connections.includesParticipantEvent(id, account)) return null;
             return message;
         } catch (Exception ex) {
             connections.reject(id, ex);

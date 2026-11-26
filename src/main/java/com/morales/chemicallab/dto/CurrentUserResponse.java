@@ -16,5 +16,6 @@ public record CurrentUserResponse(
         String lastNames,
         Role role,
         Boolean active,
-        Boolean temporaryPassword
+        Boolean temporaryPassword,
+        @lombok.With boolean institutionalInstallation
 ) {}

@@ -62,6 +62,8 @@ class AdminServiceTest {
     private com.morales.chemicallab.security.AccountSessionService sessions;
 
     @Mock private AdminQueryRepository queries;
+    @Mock private LegacyEvaluationVisibility legacyVisibility;
+    @Mock private InstitutionalContentService institutionalContents;
     @InjectMocks
     private AdminService service;
 

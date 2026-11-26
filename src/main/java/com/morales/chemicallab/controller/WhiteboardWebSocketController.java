@@ -42,6 +42,37 @@ public class WhiteboardWebSocketController {
     private final WhiteboardSessionService whiteboardSessionService;
     private final WhiteboardConnections connections;
     private final com.morales.chemicallab.security.audit.AuditRejections audit;
+    private final com.morales.chemicallab.service.InstitutionalWhiteboardService institutional;
+
+    @MessageMapping("/institutions/{institution}/classes/{clazz}/whiteboards/v1/{board}/draw")
+    public void institutionalDraw(@DestinationVariable long institution, @DestinationVariable long clazz,
+            @DestinationVariable long board, @Payload WhiteboardDrawEventRequest request,
+            @Header("simpSessionId") String connectionId) {
+        var target = scopedTarget(connectionId, institution, clazz, board);
+        String event = request.clientEventId();
+        if (event == null || event.length() != 36) throw InputRejectedException.invalid();
+        java.util.UUID id = java.util.UUID.fromString(event);
+        if (!id.toString().equals(event)) throw InputRejectedException.invalid();
+        institutional.draw(connections.principal(connectionId), target, id, request);
+    }
+
+    @MessageMapping("/institutions/{institution}/classes/{clazz}/whiteboards/v1/{board}/ready")
+    @SendToUser(destinations = "/queue/whiteboard-errors", broadcast = false)
+    public Map<String, Boolean> institutionalReady(@DestinationVariable long institution, @DestinationVariable long clazz,
+            @DestinationVariable long board, @Header("simpSessionId") String connectionId) {
+        scopedTarget(connectionId, institution, clazz, board);
+        connections.ready(connectionId);
+        return Map.of("ready", true);
+    }
+
+    private com.morales.chemicallab.security.WhiteboardScope.Target scopedTarget(String id, long institution, long clazz, long board) {
+        var target = connections.target(id);
+        if (target == null || target.scope().institution() != institution || target.scope().clazz() != clazz
+                || target.board() != board) {
+            throw new org.springframework.security.access.AccessDeniedException("BOARD_ACCESS_LOST");
+        }
+        return target;
+    }
 
     @MessageMapping("/whiteboards/{sessionId}/draw")
     public void draw(@DestinationVariable Long sessionId,
@@ -71,7 +102,8 @@ public class WhiteboardWebSocketController {
         var actor=accessor.getUser() instanceof org.springframework.security.core.Authentication authentication && authentication.getPrincipal() instanceof com.morales.chemicallab.security.SessionPrincipal p ? p : null;
         var correlation=message.getHeaders().get("auditCorrelation") instanceof java.util.UUID id ? id : java.util.UUID.randomUUID();
         boolean quota=com.morales.chemicallab.security.storage.StorageErrors.quota(ex);
-        boolean rejected=quota || ex instanceof IllegalArgumentException || ex instanceof org.springframework.security.access.AccessDeniedException;
+        boolean rejected=quota || ex instanceof IllegalArgumentException || ex instanceof org.springframework.security.access.AccessDeniedException
+            || ex instanceof org.springframework.web.server.ResponseStatusException status && status.getStatusCode().is4xxClientError();
         try(var context=com.morales.chemicallab.security.audit.AuditContext.open(correlation)){
             if(audit!=null) audit.record(rejected ? com.morales.chemicallab.entity.LogEventType.STOMP_DENIED : com.morales.chemicallab.entity.LogEventType.OPERATION_FAILED,
                 actor,"STOMP",com.morales.chemicallab.security.audit.AuditSafety.requestedId(accessor.getDestination()),"reason="+(quota?"STORAGE_QUOTA_EXCEEDED":rejected?"STOMP_PERMISSION":"STOMP_FAILURE"),null);

@@ -26,7 +26,8 @@ class LoginHardeningTest {
         });
         var service = new AuthService(users, mock(TeacherProfileRepository.class), mock(StudentProfileRepository.class),
                 encoder, mock(AccountSessionService.class), mock(AuditLogService.class));
-        var mvc = MockMvcBuilders.standaloneSetup(new com.morales.chemicallab.controller.AuthController(service, mock(com.morales.chemicallab.security.audit.AuditRejections.class), limits))
+        var mvc = MockMvcBuilders.standaloneSetup(new com.morales.chemicallab.controller.AuthController(
+                service, mock(com.morales.chemicallab.security.audit.AuditRejections.class), limits, mock(WhiteboardRuntimeContract.class)))
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
         String expected = null;
         for (String identifier : new String[]{"absent", "absent@example.test", "active", "active@example.test", "inactive", "inactive@example.test"}) {

@@ -178,6 +178,7 @@ public class ConceptMaterialService {
             case DOCENTE -> requireOwnedConcept(conceptId, requireTeacher(username));
             case ESTUDIANTE -> requireConceptVisibleToStudent(username, conceptId);
             case ADMINISTRADOR -> requireExistingConcept(conceptId);
+            case INSTITUCIONAL -> throw new org.springframework.security.access.AccessDeniedException("Usa el contenido institucional.");
             default -> throw new IllegalArgumentException("El rol del usuario no permite esta operación.");
         }
 
@@ -195,6 +196,7 @@ public class ConceptMaterialService {
             case DOCENTE -> requireOwnedConcept(conceptId, requireTeacher(username));
             case ESTUDIANTE -> requireConceptVisibleToStudent(username, conceptId);
             case ADMINISTRADOR -> requireExistingConcept(conceptId);
+            case INSTITUCIONAL -> throw new org.springframework.security.access.AccessDeniedException("Usa el contenido institucional.");
             default -> throw new IllegalArgumentException("El rol del usuario no permite esta operación.");
         }
 
