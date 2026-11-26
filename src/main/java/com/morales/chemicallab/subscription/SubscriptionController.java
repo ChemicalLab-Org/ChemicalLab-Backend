@@ -154,6 +154,6 @@ class SubscriptionController {
     }
 
     private static ResponseEntity<Void> noContent() {
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).build();
+        return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
     }
 }

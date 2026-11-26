@@ -114,6 +114,7 @@ public class EvaluationRuntime {
         } catch (DataAccessException | TransactionException failure) {
             if (com.morales.chemicallab.security.storage.StorageErrors.quota(failure)) throw failure;
             String state = sqlState(failure);
+            if ("PCL01".equals(state)) throw failure;
             if ("23505".equals(state)) throw conflict();
             LOG.warn("Institutional evaluation transaction rejected sqlState={}", state);
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Operación no disponible.");
