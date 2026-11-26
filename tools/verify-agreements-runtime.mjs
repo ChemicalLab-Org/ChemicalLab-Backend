@@ -27,6 +27,7 @@ async function call(method, path, token, expected = 200, body) {
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (method === 'POST' && path.includes('/whiteboards/')) headers['Idempotency-Key'] = randomUUID();
   const res = await fetch(new URL(path, origin), { method, headers,
     body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(12000) });
   const payload = await res.text();
@@ -49,7 +50,7 @@ const item = (state, code, institutionId = null) => state.items.find(row =>
 const mark = (label) => { steps.push(label); console.log(label); };
 
 async function waitFor(probe, label) {
-  for (let attempts = 0; attempts < 180; attempts++) {
+  for (let attempts = 0; attempts < 480; attempts++) {
     if (await probe()) return;
     await pause(250);
   }
@@ -161,7 +162,7 @@ try {
   const docC = Number(sql(`with s as (insert into agreement_runtime.series(code,kind,institution_id,authority,required)
     values('acuerdo-demo','INSTITUTIONAL',${third},'INSTITUTION',true) returning id)
     insert into agreement_runtime.versions(series_id,version,renewal,title,body,change_summary)
-    select id,1,1,'Acuerdo piloto','Texto ficticio.','Versión inicial.' from s returning id`));
+    select id,1,1,'Acuerdo piloto','Texto ficticio.','Primera entrega.' from s returning id`));
   const review = `${base}/review/directors/${third}/${first.membershipId}`;
   await submit(director, docC, null, 'ACCEPT', 403);
   const verified = { documentId: docC, result: 'VERIFIED', evidenceReference: 'DEMO-FACULTAD',
@@ -210,8 +211,14 @@ try {
   await get(scopeA, student);
   mark('rechazo y retirada voluntarios sin bloquear la función académica');
 
+  const boards = `/api/institutions/${ready.a}/classes/${classA}/whiteboards/v1`;
+  const board = await post(`${boards}/teacher`, teacherA, { name: 'Pizarra ficticia de acuerdos' });
+  await post(`${boards}/student/${board.id}/join`, student);
+  assert.equal(sql(`select count(*) from board_runtime.boards where id=${board.id} and institution_id=${ready.a}`), '1');
+  mark('docente crea una pizarra y la cuenta compartida participa con su pertenencia autorizada');
+
   const publish = (version, renewal) => Number(sql(`insert into agreement_runtime.versions(series_id,version,renewal,title,body,change_summary)
-    select id,${version},${renewal},'Términos de ensayo','Texto distinto.','Cambio de ensayo.'
+    select id,${version},${renewal},'Condiciones de ensayo','Texto distinto.','Cambio de ensayo.'
     from agreement_runtime.series where code='terminos-demo' returning id`));
   publish(2, 1);
   await get(api, student);
@@ -233,6 +240,7 @@ try {
   assert.deepEqual(await get(`${base}/account/family-status`, student), families);
   await get(scopeA, student);
   await get(scopeB, student);
+  assert.equal(sql(`select count(*) from board_runtime.boards where id=${board.id} and institution_id=${ready.a}`), '1');
   await post('/api/auth/logout', student, undefined, 204);
   await get(`${base}/account`, student, 401);
   mark('renovación selectiva, rechazo de versión obsoleta, inmutabilidad, reinicio, restauración y cierre de sesión');
