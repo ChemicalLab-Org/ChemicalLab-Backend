@@ -96,11 +96,13 @@ public class InstitutionalWhiteboardService {
     }
 
     public WhiteboardSessionDetailResponse teacherDetail(SessionPrincipal actor, Target target) {
-        require(target.scope().teacher());
-        return unit(actor, target.scope(), null, account -> {
-            var board = board(target, false);
-            var rows = currentParticipants(board);
-            return new WhiteboardSessionDetailResponse(projection.toTeacherResponse(board, rows.size()), rows);
+        var scope = target.scope();
+        require(scope.teacher());
+        return unit(actor, scope, null, account -> {
+            var board = queries.scopedTeacherHeader(scope.institution(), scope.clazz(), target.board())
+                .orElseThrow(EvaluationRuntime::denied);
+            var rows = queries.currentParticipants(board.id(), board.grade(), board.section(), board.interactionEnabled());
+            return new WhiteboardSessionDetailResponse(board.withParticipantCount(rows.size()), rows);
         });
     }
 
@@ -319,12 +321,6 @@ public class InstitutionalWhiteboardService {
         var ids = jdbc.queryForList("select participant_id from board_runtime.current_admissions where board_id=? and account_id=?",
             Long.class, board.getId(), account);
         return ids.isEmpty() ? null : participants.findById(ids.get(0)).orElseThrow(EvaluationRuntime::denied);
-    }
-
-    private List<WhiteboardParticipantResponse> currentParticipants(WhiteboardSession board) {
-        var ids = jdbc.queryForList("select participant_id from board_runtime.current_admissions where board_id=? order by participant_id",
-            Long.class, board.getId());
-        return participants.findAllById(ids).stream().map(p -> participantResponse(board, p)).toList();
     }
 
     private WhiteboardParticipantResponse participantResponse(WhiteboardSession board, WhiteboardParticipant p) {

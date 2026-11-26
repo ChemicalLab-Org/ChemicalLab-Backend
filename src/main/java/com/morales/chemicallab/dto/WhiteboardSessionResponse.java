@@ -1,6 +1,7 @@
 package com.morales.chemicallab.dto;
 
 import com.morales.chemicallab.entity.WhiteboardSessionStatus;
+import lombok.With;
 
 import java.time.LocalDateTime;
 
@@ -18,7 +19,7 @@ public record WhiteboardSessionResponse(
         String section,
         WhiteboardSessionStatus status,
         boolean interactionEnabled,
-        int participantCount,
+        @With int participantCount,
         boolean snapshotAvailable,
         LocalDateTime createdAt,
         LocalDateTime startedAt,
