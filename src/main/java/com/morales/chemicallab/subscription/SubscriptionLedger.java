@@ -368,7 +368,9 @@ public class SubscriptionLedger implements InitializingBean {
                     reconcile_at=clock_timestamp()+make_interval(mins=>CASE WHEN :done THEN 1440 ELSE
                         least(720,1<<least(attempts,10)) END)
                 WHERE ref=:ref AND attempts=:attempts
-                """).param("ref", contract.ref()).param("done", done).param("attempts", contract.attempts()).update();
+                  AND cancel_requested_at IS NOT DISTINCT FROM CAST(:claimedCancellation AS timestamptz)
+                """).param("ref", contract.ref()).param("done", done).param("attempts", contract.attempts())
+                .param("claimedCancellation", contract.cancelAt(), java.sql.Types.TIMESTAMP_WITH_TIMEZONE).update();
     }
 
     public boolean blocked(long school) {

@@ -20,6 +20,9 @@ let posts = 0;
 let requests = 0;
 let remote;
 let lose = true;
+let ambiguous = true;
+let delaySearch = false;
+let resumeSearch;
 const invoices = new Map();
 const payments = new Map();
 const setup = (school) => `/api/platform/institutions/${school}/subscription/v1`;
@@ -37,6 +40,7 @@ const server = createServer(async (req, res) => {
     assert.deepEqual(command.auto_recurring, { currency_id: 'PEN', frequency_type: 'months', frequency: 1, transaction_amount: 99 });
     assert.equal(command.status, 'pending');
     assert.equal(command.payer_email, 'subscription-buyer@example.invalid');
+    assert.equal(new URL(command.back_url).searchParams.get('institucion'), String(ready.a));
     remote = { ...command, id: 'subtest1', collector_id: 1101, application_id: 1102, payer_id: 1103,
       init_point: `http://127.0.0.1:${mockPort}/checkout/subtest1`, last_modified: new Date().toISOString() };
     if (lose) {
@@ -46,7 +50,8 @@ const server = createServer(async (req, res) => {
     }
     result = remote;
   } else if (url.pathname === '/preapproval/search') {
-    result = { results: remote && url.searchParams.get('q') === remote.reason ? [remote] : [] };
+    result = { results: remote && url.searchParams.get('q') === remote.reason
+      ? ambiguous ? [remote, { ...remote, id: 'duplicate-fixture' }] : [remote] : [] };
   } else if (remote && url.pathname === '/preapproval/' + remote.id) {
     if (req.method === 'PUT') {
       const chunks = [];
@@ -58,6 +63,10 @@ const server = createServer(async (req, res) => {
   } else if (url.pathname === '/authorized_payments/search') {
     const preapproval = url.searchParams.get('preapproval_id');
     const payment = url.searchParams.get('payment_id');
+    if (preapproval && delaySearch) {
+      delaySearch = false;
+      await new Promise(resolve => { resumeSearch = resolve; });
+    }
     const offset = Number(url.searchParams.get('offset'));
     result = { results: [...invoices.values()].filter(i => i.preapproval_id === preapproval || String(i.payment?.id) === payment)
       .slice(offset, offset + 20) };
@@ -181,22 +190,30 @@ try {
   assert(outcomes.every(value => ['EXPIRED', 'VERIFYING'].includes(value.status)));
   assert.equal(posts, 1);
   assert.equal(sql('SELECT count(*) FROM subscription_runtime.contract'), '1');
+  await event('subscription_preapproval', remote.id, { request: 'ambiguous-fixture' });
+  await waitFor(() => sql("SELECT attempts FROM subscription_runtime.inbox WHERE request_id='ambiguous-fixture'") === '1',
+    'consulta de la referencia ambigua');
+  assert.equal((await get(billing(1), teacherA)).status, 'VERIFYING');
+  assert.equal(sql("SELECT count(*) FROM subscription_runtime.contract WHERE provider_id IS NULL"), '1');
+  await post(billing(1) + '/checkout', teacherA, { confirmed: true });
+  assert.equal(posts, 1);
+  ambiguous = false;
   sql('UPDATE subscription_runtime.contract SET reconcile_at=clock_timestamp()');
   await waitFor(async () => (await get(billing(1), teacherA)).status === 'CHECKOUT_PENDING', 'checkout reinstated');
   assert.equal(posts, 1);
   const countBefore = providerCalls;
   for (let i = 0; i < 4; i++) await get(billing(1), teacherA);
   assert.equal(providerCalls, countBefore);
-  mark('Respuesta perdida recuperada, una sola creación con solicitudes concurrentes y cero consultas al proveedor en lecturas.');
+  mark('Respuesta perdida recuperada, reserva ambigua sin asociación ni segundo POST y cero consultas al proveedor en lecturas.');
 
   changeContract('authorized');
   await event('subscription_preapproval', remote.id, { invalid: true });
   await event('subscription_preapproval', remote.id, { live: true });
   await event('subscription_preapproval', remote.id, { seller: 9999 });
-  assert.equal(sql('SELECT count(*) FROM subscription_runtime.inbox'), '0');
+  assert.equal(sql("SELECT count(*) FROM subscription_runtime.inbox WHERE request_id<>'ambiguous-fixture'"), '0');
   const first = await event('subscription_preapproval', remote.id);
   await event('subscription_preapproval', remote.id, { request: first });
-  assert.equal(sql('SELECT count(*) FROM subscription_runtime.inbox'), '1');
+  assert.equal(sql("SELECT count(*) FROM subscription_runtime.inbox WHERE request_id<>'ambiguous-fixture'"), '1');
   await waitFor(async () => (await get(billing(1), teacherA)).status === 'AUTHORIZED_UNPAID', 'authorized');
   makeInvoice('2101', '3101', 'pending');
   await event('subscription_authorized_payment', '2101');
@@ -223,7 +240,11 @@ try {
   mark('Firma, entorno, vendedor, deduplicación, pendiente, rechazo, aprobación y renovación futura comprobados.');
 
   await post(billing(1) + '/cancel-renewal', teacherB, {}, 403);
+  delaySearch = true;
+  sql('UPDATE subscription_runtime.contract SET reconcile_at=clock_timestamp()');
+  await waitFor(() => resumeSearch, 'reconciliación en vuelo antes de cancelar');
   await post(billing(1) + '/cancel-renewal', teacherA, {});
+  resumeSearch();
   await waitFor(async () => (await get(billing(1), teacherA)).status === 'CANCELLED_PAID', 'cancellation');
   assert.equal((await get(billing(1), teacherA)).paidUntil, paid.paidUntil);
   sql('UPDATE evaluation_runtime.institutions SET active=false WHERE id=1');
@@ -238,7 +259,7 @@ try {
   await post(setup(1) + '/authority', platform, { ...representation, validUntil: null }, 204);
   await post(billing(1) + '/cancel-renewal', teacherA, {}, 403);
   assert.equal((await get(billing(2), teacherB)).status, 'TRIAL');
-  mark('Cancelación conserva el período, contracargo lo revierte, observación antigua no lo restaura y revocación impide operar.');
+  mark('Cancelación durante reconciliación conserva el período, contracargo lo revierte, observación antigua no lo restaura y revocación impide operar.');
 
   sql(`INSERT INTO user_accounts(username,password,role,active,temporary_password,credentials_version,created_at)
        SELECT 'quota-fixture-'||id,'unused','ESTUDIANTE',true,false,0,clock_timestamp() FROM generate_series(1,200) id;
@@ -266,6 +287,7 @@ try {
   assert.equal(sql('SELECT count(*) FROM subscription_runtime.contract'), '1');
   mark('Estado conservado tras reinicio y restauración lógica PostgreSQL.');
 } finally {
+  resumeSearch?.();
   server.close();
   writeFileSync(join(run, 'browser/stop'), '1');
   writeFileSync(join(run, 'subscription-results.json'), JSON.stringify({ recorded, providerCalls, callbacks, posts, requests }, null, 2));

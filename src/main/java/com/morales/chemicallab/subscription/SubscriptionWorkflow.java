@@ -44,7 +44,7 @@ class SubscriptionWorkflow {
         }
         if (!ledger.claimCreation(contract)) return;
         try {
-            var created = provider.create(contract.ref(), contract.plan().name(), contract.plan().monthlyAmount(),
+            var created = provider.create(contract.ref(), contract.institutionId(), contract.plan().name(), contract.plan().monthlyAmount(),
                     contract.plan().currency());
             String id = checkedId(created.path("id").asText());
             observeContract(contract, provider.subscription(id), id);
@@ -115,7 +115,7 @@ class SubscriptionWorkflow {
         return switch (topic) {
             case "subscription_preapproval" -> {
                 var subscription = provider.subscription(id);
-                var contract = byReference(subscription);
+                var contract = recoverableContract(subscription, id);
                 if (contract == null) yield false;
                 observeContract(contract, subscription, id);
                 yield true;
@@ -130,6 +130,16 @@ class SubscriptionWorkflow {
             }
             default -> true;
         };
+    }
+
+    private Contract recoverableContract(JsonNode subscription, String id) {
+        var contract = byReference(subscription);
+        if (contract == null || contract.sentAt() == null) return null;
+        // A notification does not resolve a lost creation if the exact reference still matches multiple objects.
+        if (contract.providerId() == null && !provider.find(contract.ref(), contract.plan().name()).equals(List.of(id))) {
+            return null;
+        }
+        return contract;
     }
 
     private Contract byReference(JsonNode node) {
@@ -179,7 +189,7 @@ class SubscriptionWorkflow {
         Contract contract = known;
         if (contract == null) {
             var subscription = provider.subscription(subscriptionId);
-            contract = byReference(subscription);
+            contract = recoverableContract(subscription, subscriptionId);
             if (contract == null) return false;
             observeContract(contract, subscription, subscriptionId);
         }

@@ -3,6 +3,7 @@ package com.morales.chemicallab.subscription;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
 import java.util.Arrays;
@@ -57,7 +58,9 @@ public class SubscriptionSettings {
     public boolean enabled() { return mode != Mode.DISABLED; }
     Mode mode() { return mode; }
     URI api() { return mode == Mode.LOCAL_TEST ? localApi : URI.create("https://api.mercadopago.com"); }
-    URI returnUrl() { return returnUrl; }
+    String returnUrl(long institutionId) {
+        return UriComponentsBuilder.fromUri(returnUrl).replaceQueryParam("institucion", institutionId).build(true).toUriString();
+    }
     String token() { return token; }
     String webhookSecret() { return webhookSecret; }
     long sellerId() { return sellerId; }

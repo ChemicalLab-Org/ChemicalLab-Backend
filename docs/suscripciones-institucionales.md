@@ -1,6 +1,6 @@
 # Suscripciones institucionales de ChemicalLab
 
-El módulo queda deshabilitado por defecto. Los modos disponibles son `LOCAL_TEST` y `MERCADO_PAGO_TEST`. El perfil `prod` rechaza ambos. El navegador muestra el entorno de prueba y abre un checkout hospedado. La URL de retorno solo lleva de vuelta al panel.
+El módulo queda deshabilitado por defecto. Los modos disponibles son `LOCAL_TEST` y `MERCADO_PAGO_TEST`. El perfil `prod` rechaza ambos. El navegador muestra el entorno de prueba y abre un checkout hospedado. La URL de retorno lleva de vuelta al panel del colegio en la misma pestaña. El panel consulta el estado al servidor.
 
 ## Alta, plan y consumo
 
@@ -48,3 +48,5 @@ En frontend, ejecuta `npm ci`, `npm run build` y `npm test -- --watch=false`. El
 4. En la prueba externa, confirma la URL de checkout emitida, las fechas de débito, la respuesta de cancelación, los reintentos y los eventos de devolución o disputa. Registra el resultado con IDs anonimizados. El módulo queda en pruebas hasta contar con validación externa, condiciones comerciales definitivas y el procedimiento operativo acordado.
 
 Fuentes oficiales de Mercado Pago Perú. [Suscripción con pago pendiente](https://www.mercadopago.com.pe/developers/es/docs/subscriptions/integration-configuration/subscription-no-associated-plan/pending-payments) · [Crear suscripción](https://www.mercadopago.com.pe/developers/es/reference/online-payments/subscriptions/create-preapproval/post) · [Gestión y cancelación](https://www.mercadopago.com.pe/developers/es/docs/subscriptions/subscription-management) · [Factura recurrente](https://www.mercadopago.com.pe/developers/es/reference/online-payments/subscriptions/get-authorized-payment/get) · [Webhooks y firma](https://www.mercadopago.com.pe/developers/es/docs/links-and-debts/additional-content/your-integrations/notifications/webhooks) · [Credenciales de prueba](https://www.mercadopago.com.pe/developers/es/docs/subscriptions/additional-content/your-integrations/credentials).
+
+[Revisión de integración y escenarios de vencimiento y Edge](revision-suscripciones.md).

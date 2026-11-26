@@ -42,10 +42,10 @@ class MercadoPagoSubscriptions {
                 && StreamSupport.stream(user.path("tags").spliterator(), false).anyMatch(tag -> "test_user".equals(tag.asText())));
     }
 
-    JsonNode create(UUID reference, String name, BigDecimal amount, String currency) {
+    JsonNode create(UUID reference, long institutionId, String name, BigDecimal amount, String currency) {
         return send("POST", "/preapproval", Map.of("status", "pending", "reason", reason(name, reference),
                 "external_reference", reference.toString(), "payer_email", settings.buyerEmail(),
-                "back_url", settings.returnUrl().toString(), "auto_recurring", Map.of(
+                "back_url", settings.returnUrl(institutionId), "auto_recurring", Map.of(
                         "frequency", 1, "frequency_type", "months", "transaction_amount", amount, "currency_id", currency)));
     }
 
