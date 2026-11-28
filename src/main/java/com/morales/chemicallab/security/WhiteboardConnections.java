@@ -127,7 +127,11 @@ public class WhiteboardConnections {
     }
 
     public SessionPrincipal principal(String id) {
-        var principal = require(id).principal;
+        return principal(require(id));
+    }
+
+    private static SessionPrincipal principal(Connection connection) {
+        var principal = connection.principal;
         if (principal == null) throw new AccessDeniedException("CONNECT_REQUIRED");
         return principal;
     }
@@ -158,9 +162,9 @@ public class WhiteboardConnections {
         if (subscription == null || require(id).subscriptions.remove(subscription) == null)
             throw new AccessDeniedException("PROTOCOL_REJECTED");
     }
-    public void delivery(String id, String subscription, String destination) {
+    public boolean delivery(String id, String subscription, String destination, Long participantAudience) {
         var connection = require(id);
-        var principal = principal(id);
+        var principal = principal(connection);
         sessions.revalidate(principal);
         var target = connection.target;
         checkAgreements(principal, target);
@@ -177,13 +181,17 @@ public class WhiteboardConnections {
         } else if (destination == null || !destination.startsWith("/queue/whiteboard-errors-user")) {
             throw new AccessDeniedException("PROTOCOL_REJECTED");
         }
-        // A watchdog close may have happened while a database read was waiting.
-        require(id);
+        // Audience and authorization must refer to the same registered connection.
+        return (participantAudience == null || includesParticipantEvent(connection, participantAudience))
+            && connections.get(id) == connection;
     }
 
     public boolean includesParticipantEvent(String id, long account) {
-        var connection = require(id);
-        return connection.target != null && (connection.target.scope().teacher() || connection.principal.userId() == account);
+        return includesParticipantEvent(require(id), account);
+    }
+
+    private static boolean includesParticipantEvent(Connection connection, long account) {
+        return connection.target != null && (connection.target.scope().teacher() || principal(connection).userId() == account);
     }
 
     private void checkAgreements(SessionPrincipal principal, WhiteboardScope.Target target) {

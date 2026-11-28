@@ -8,14 +8,19 @@ import com.morales.chemicallab.security.WhiteboardOutboundInterceptor;
 import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.SmartInitializingSingleton;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
+import org.springframework.messaging.support.AbstractSubscribableChannel;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * Configuración WebSocket/STOMP para la sincronización en vivo de la pizarra interactiva.
@@ -79,6 +84,14 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override public void configureClientOutboundChannel(ChannelRegistration registration) {
         registration.interceptors(outboundInterceptor);
         registration.taskExecutor().corePoolSize(4).maxPoolSize(4).queueCapacity(256);
+    }
+
+    @Bean
+    public SmartInitializingSingleton orderOutboundInterceptors(
+            @Qualifier("clientOutboundChannel") AbstractSubscribableChannel outbound) {
+        // Spring inserts the broker's ordered callback at the front of the channel list, but appends
+        // it to the executor's list. Reapply the channel order so late discards complete the queue.
+        return () -> outbound.setInterceptors(List.copyOf(outbound.getInterceptors()));
     }
 
     @Override public void configureWebSocketTransport(WebSocketTransportRegistration registration) {

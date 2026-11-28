@@ -81,6 +81,15 @@ public class AccountSessionService {
                 || user.getRole() != principal.role() || Boolean.TRUE.equals(user.getTemporaryPassword())) throw invalid();
     }
 
+    /** The caller holds the account and session locks in a READ COMMITTED transaction. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void revalidateLocked(SessionPrincipal principal) {
+        // Read fresh fields without managed entities. Evaluate expiration after the database returns.
+        var session = sessions.findSessionValidity(principal.sessionId(), principal.userId(), principal.role(),
+            principal.credentialsVersion()).orElseThrow(AccountSessionService::invalid);
+        if (!session.getUsername().equals(principal.username()) || !session.getExpiresAt().isAfter(Instant.now())) throw invalid();
+    }
+
     @Transactional(propagation = Propagation.MANDATORY)
     public UserAccount currentLocked() {
         var authentication = SecurityContextHolder.getContext().getAuthentication();
