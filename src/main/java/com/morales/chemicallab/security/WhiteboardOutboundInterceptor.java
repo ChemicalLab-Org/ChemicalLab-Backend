@@ -29,9 +29,9 @@ public class WhiteboardOutboundInterceptor implements ExecutorChannelInterceptor
         if (SimpMessageHeaderAccessor.getMessageType(message.getHeaders()) != SimpMessageType.MESSAGE) return message;
         String id = SimpMessageHeaderAccessor.getSessionId(message.getHeaders());
         try {
-            connections.delivery(id, SimpMessageHeaderAccessor.getSubscriptionId(message.getHeaders()),
-                    SimpMessageHeaderAccessor.getDestination(message.getHeaders()));
-            return message;
+            var audience = message.getHeaders().get("boardParticipantAudience", Long.class);
+            return connections.delivery(id, SimpMessageHeaderAccessor.getSubscriptionId(message.getHeaders()),
+                    SimpMessageHeaderAccessor.getDestination(message.getHeaders()), audience) ? message : null;
         } catch (Exception ex) {
             connections.reject(id, ex);
             return null;

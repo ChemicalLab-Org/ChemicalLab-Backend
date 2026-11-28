@@ -84,9 +84,10 @@ public class AccountSessionService {
     /** The caller holds the account and session locks in a READ COMMITTED transaction. */
     @Transactional(propagation = Propagation.MANDATORY)
     public void revalidateLocked(SessionPrincipal principal) {
-        // A scalar result reads persistent state without reusing managed account/session entities.
-        if (!sessions.isCurrent(principal.sessionId(), principal.userId(), principal.username(), principal.role(),
-            principal.credentialsVersion(), Instant.now())) throw invalid();
+        // Read fresh fields without managed entities. Evaluate expiration after the database returns.
+        var session = sessions.findSessionValidity(principal.sessionId(), principal.userId(), principal.role(),
+            principal.credentialsVersion()).orElseThrow(AccountSessionService::invalid);
+        if (!session.getUsername().equals(principal.username()) || !session.getExpiresAt().isAfter(Instant.now())) throw invalid();
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
